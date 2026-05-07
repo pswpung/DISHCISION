@@ -1,0 +1,27 @@
+{
+    "destination": "U80331df377f3189b3cf0e55be0d3b167",
+    "events": [
+        {
+            "type": "message",
+            "message": {
+                "type": "text",
+                "id": "612909971793248258",
+                "quoteToken": "xJcEyc8iaYViQkph6m8yp0ZWU_CxbrxABgAbUmCFbBS9bhUek2BZ_hy0LlqEuUr5ChAmezlJEcmQvFyLJLDERaFZqnIpE-56W4kb3AUQo7vvVGnGwlTrcwHiBXVNPrxcgLE9sJ3vhvpTz6w6IwJdKw",
+                "markAsReadToken": "85s6IYzj_XbvdM7MUH9Ej4YS42BrS-nX3c0ADrOguzqLVys0sCbCwhNwu1idl-m9Zxhb0G2R218TGq_VbB0lxZBKeV0PvabZiHcW6G_oG3R_Yx4lAk1OYe7GvxV09SHYecZFm0F_1ZR6fwjqAqye0RJho4cthOfHneEFz6xUHmy_XDOXjIxmawYWpm2pzPN1pWFNi1DPrPU1-yXMLXoPxg",
+                "text": "#register"
+            },
+            "webhookEventId": "01KR13X4WYH04TQAPWCJMWZ69B",
+            "deliveryContext": {
+                "isRedelivery": true
+            },
+            "timestamp": 1778154115492,
+            "source": {
+                "type": "group",
+                "groupId": "Cdff945c9beb00514dc31f71af0f96b3b",
+                "userId": "Uda21609874de254af4e41885c97e1cf1"
+            },
+            "replyToken": "e0a1d19de90240cb820f3675e598702c",
+            "mode": "active"
+        }
+    ]
+}
