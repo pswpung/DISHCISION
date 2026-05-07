@@ -52,7 +52,8 @@ const InviteeVotePage = () => {
                     startDate: data.initial_data?.start_date,
                     endDate: data.initial_data?.end_date,
                     mealTime: data.initial_data?.meal_time,
-                    organizerId: data.initial_data?.organizer_id
+                    organizerId: data.initial_data?.organizer_id,
+                    fixedRestaurants: data.initial_data?.fixed_restaurants || []
                 };
                 setMeetingData(uiData);
 
@@ -105,7 +106,8 @@ const InviteeVotePage = () => {
                         startDate: data.initial_data?.start_date,
                         endDate: data.initial_data?.end_date,
                         mealTime: data.initial_data?.meal_time,
-                        organizerId: data.initial_data?.organizer_id
+                        organizerId: data.initial_data?.organizer_id,
+                        fixedRestaurants: data.initial_data?.fixed_restaurants || []
                     });
                 } catch (e) {
                     console.error("Failed to load public meeting data", e);
@@ -198,7 +200,12 @@ const InviteeVotePage = () => {
             return;
         }
         setAvailability(dates);
-        setCurrentStep(3);
+
+        if (meetingData?.fixedRestaurants && meetingData.fixedRestaurants.length > 0) {
+            handleSubmitVote('yes', dates, {});
+        } else {
+            setCurrentStep(3);
+        }
     };
 
     const handleFinalSubmit = (prefs: any) => {
@@ -301,13 +308,13 @@ const InviteeVotePage = () => {
                         <h1 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 tracking-tight px-10">
                             {meetingData?.name}
                         </h1>
-                        <p className="text-muted-foreground text-xs">Step {currentStep} of 3</p>
+                        <p className="text-muted-foreground text-xs">Step {currentStep} of {meetingData?.fixedRestaurants && meetingData.fixedRestaurants.length > 0 ? 2 : 3}</p>
                     </div>
 
                     <div className="w-full bg-white/10 h-1 mt-4 rounded-full overflow-hidden">
                         <div
                             className="bg-primary h-full transition-all duration-300"
-                            style={{ width: `${(currentStep / 3) * 100}%` }}
+                            style={{ width: `${(currentStep / (meetingData?.fixedRestaurants && meetingData.fixedRestaurants.length > 0 ? 2 : 3)) * 100}%` }}
                         ></div>
                     </div>
                 </header>
@@ -361,7 +368,9 @@ const InviteeVotePage = () => {
                             onClick={() => handleAvailabilitySubmit(availability)}
                             className="glass-button w-full py-4 rounded-xl font-bold mt-4"
                         >
-                            Next: Preferences
+                            {meetingData?.fixedRestaurants && meetingData.fixedRestaurants.length > 0 
+                                ? "Submit Vote" 
+                                : "Next: Preferences"}
                         </button>
                     </div>
                 )}
