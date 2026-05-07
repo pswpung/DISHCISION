@@ -27,3 +27,32 @@ Cloudflare Tunnels (`cloudflared`) is completely free and **does not** inject an
 
 **Notes & Limitations**: 
 - URLs are randomly generated upon every restart unless you link a Cloudflare account with a purchased domain name.
+
+## Running the Application Locally
+
+1. **Start the Frontend**:
+   Navigate to the frontend directory and start the development server:
+   ```bash
+   cd frontend
+   npm run dev
+   ```
+
+2. **Start the Backend**:
+   Navigate to the backend directory and run the main application using `uv`:
+   ```bash
+   cd backend
+   uv run main.py
+   ```
+
+3. **Start the Tunnels**:
+   Expose your local servers to the public internet using Cloudflare and ngrok. Open separate terminal windows for these:
+   
+   - **Cloudflare (for Frontend)**:
+     ```bash
+     ./start-cloudflared.sh
+     ```
+   - **ngrok (for Backend)**:
+     ```bash
+     ./start-ngrok.sh
+     ```
+   *(Ensure you update your LINE Developer Console with the generated public URLs.)*
