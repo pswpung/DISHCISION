@@ -89,6 +89,8 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
 
     // Changed to array of objects
     const [preferredRestaurant, setPreferredRestaurant] = useState<any[]>([]);
+    const [fixedRestaurants, setFixedRestaurants] = useState<any[]>([]);
+    
     // Location State
     const [locationCoords, setLocationCoords] = useState<{ lat: number; lng: number } | null>(null);
     const [isLocating, setIsLocating] = useState(false);
@@ -96,6 +98,22 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [searchResults, setSearchResults] = useState<any[]>([]);
     const [isSearching, setIsSearching] = useState(false);
+
+    const [searchTermFixed, setSearchTermFixed] = useState('');
+    const [searchResultsFixed, setSearchResultsFixed] = useState<any[]>([]);
+    const searchWrapperRefFixed = useRef<HTMLDivElement>(null);
+    
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (searchWrapperRefFixed.current && !searchWrapperRefFixed.current.contains(event.target as Node)) {
+                setSearchResultsFixed([]);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, [searchWrapperRefFixed]);
 
     // Availability
     const [availability, setAvailability] = useState<any>({});
@@ -136,6 +154,33 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
 
     const removeRestaurant = (name: string) => {
         setPreferredRestaurant(preferredRestaurant.filter(r => r.name !== name));
+    };
+
+    const handleSearchFixed = async (keyword: string) => {
+        setSearchTermFixed(keyword);
+        if (keyword.length > 2) {
+            try {
+                const { apiService } = await import('@/app/services/api');
+                const results = await apiService.searchRestaurants(keyword, priceRange);
+                setSearchResultsFixed(results);
+            } catch (e) {
+                console.error(e);
+            }
+        } else {
+            setSearchResultsFixed([]);
+        }
+    };
+
+    const selectFixedRestaurant = (place: any) => {
+        if (!fixedRestaurants.some(r => r.name === place.name)) {
+            setFixedRestaurants([...fixedRestaurants, place]);
+        }
+        setSearchTermFixed('');
+        setSearchResultsFixed([]);
+    };
+
+    const removeFixedRestaurant = (name: string) => {
+        setFixedRestaurants(fixedRestaurants.filter(r => r.name !== name));
     };
 
     // Date validation helpers
@@ -302,15 +347,17 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
             return;
         }
 
-        // 1. Validation: Mandatory Location
-        if (!departureLocation || departureLocation.trim() === "") {
-            alert("Please provide a Departure Location.");
-            return;
-        }
+        // 1. Validation: Mandatory Location (Only if no fixed restaurants)
+        if (fixedRestaurants.length === 0) {
+            if (!departureLocation || departureLocation.trim() === "") {
+                alert("Please provide a Departure Location.");
+                return;
+            }
 
-        if (!locationCoords) {
-            alert("Could not determine coordinates for the location. Please select a valid location from the search or map.");
-            return;
+            if (!locationCoords) {
+                alert("Could not determine coordinates for the location. Please select a valid location from the search or map.");
+                return;
+            }
         }
 
         // 2. Validation: At least one time slot
@@ -353,6 +400,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
             attendees,
             keyPersons,
             mealTime,
+            fixedRestaurants,
             organizerId: initialUserId || profile?.userId || 'guest-organizer',
             groupId: groupId,
             status: 'open',
@@ -505,7 +553,57 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                             ))}
                         </div>
                     </div>
+                    {/* List of Selected Restaurants */}
+                    <div className="space-y-2 relative" ref={searchWrapperRefFixed}>
+                        <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">List of Selected Restaurants (Optional)</label>
 
+                        {/* Selected Restaurants Chips */}
+                        <div className="flex flex-wrap gap-2 mb-2">
+                            {fixedRestaurants.length > 0 && fixedRestaurants.map((rest: any) => (
+                                <span key={rest.name} className="px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-500/20 border border-emerald-500/40 text-emerald-700 dark:text-emerald-200 flex items-center gap-2">
+                                    {rest.name}
+                                    <button type="button" onClick={() => removeFixedRestaurant(rest.name)} className="hover:text-emerald-900 dark:hover:text-white transition-colors">×</button>
+                                </span>
+                            ))}
+                        </div>
+
+                        <input
+                            type="text"
+                            placeholder="Search & Add restaurants..."
+                            value={searchTermFixed}
+                            onChange={(e) => handleSearchFixed(e.target.value)}
+                            className="glass-input w-full p-3 rounded-xl focus:ring-2 focus:ring-primary transition-all text-sm"
+                        />
+
+                        {/* Search Results Dropdown */}
+                        {searchResultsFixed.length > 0 && (
+                            <div className="absolute z-50 w-full mt-1 bg-white dark:bg-black/90 border border-gray-200 dark:border-white/10 rounded-xl shadow-xl max-h-48 overflow-y-auto backdrop-blur-md">
+                                {searchResultsFixed.map((place, idx) => (
+                                    <button
+                                        key={idx}
+                                        type="button"
+                                        onClick={() => selectFixedRestaurant(place)}
+                                        className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-white/10 border-b border-gray-100 dark:border-white/5 last:border-0 transition-colors"
+                                    >
+                                        <p className="font-bold text-sm text-foreground">{place.name}</p>
+                                        <div className="flex justify-between items-start">
+                                            <p className="text-xs text-muted-foreground truncate">
+                                                {place.category?.[0]} • {place.price}
+                                                {place.rating > 0 && (
+                                                    <span className="text-amber-500"> • ★ {Number(place.rating).toFixed(1)}</span>
+                                                )}
+                                            </p>
+                                        </div>
+                                        {place.breadcrumbs && place.breadcrumbs.length > 0 && (
+                                            <p className="text-[10px] text-muted-foreground/70 truncate mt-0.5">
+                                                📍 {place.breadcrumbs[place.breadcrumbs.length - 1]}
+                                            </p>
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 </div>
 
                 {/* Availability Section (New) */}
@@ -530,6 +628,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                 </div>
 
                 {/* Organizer Preferences Section */}
+                {fixedRestaurants.length === 0 && (
                 <div className="space-y-4">
                     <h2 className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">
                         3. Your Preferences
@@ -643,54 +742,55 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                     <div className="space-y-2 relative" ref={searchWrapperRef}>
                         <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Preferred Restaurants (Optional)</label>
 
-                        {/* Selected Restaurants Chips */}
-                        <div className="flex flex-wrap gap-2 mb-2">
-                            {preferredRestaurant.length > 0 && preferredRestaurant.map((rest: any) => (
-                                <span key={rest.name} className="px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-500/20 border border-emerald-500/40 text-emerald-700 dark:text-emerald-200 flex items-center gap-2">
-                                    {rest.name}
-                                    <button type="button" onClick={() => removeRestaurant(rest.name)} className="hover:text-emerald-900 dark:hover:text-white transition-colors">×</button>
-                                </span>
-                            ))}
-                        </div>
-
-                        <input
-                            type="text"
-                            placeholder="Search & Add restaurants..."
-                            value={searchTerm}
-                            onChange={(e) => handleSearch(e.target.value)}
-                            className="glass-input w-full p-3 rounded-xl focus:ring-2 focus:ring-primary transition-all text-sm"
-                        />
-
-                        {/* Search Results Dropdown */}
-                        {searchResults.length > 0 && (
-                            <div className="absolute z-50 w-full mt-1 bg-white dark:bg-black/90 border border-gray-200 dark:border-white/10 rounded-xl shadow-xl max-h-48 overflow-y-auto backdrop-blur-md">
-                                {searchResults.map((place, idx) => (
-                                    <button
-                                        key={idx}
-                                        type="button"
-                                        onClick={() => selectRestaurant(place)}
-                                        className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-white/10 border-b border-gray-100 dark:border-white/5 last:border-0 transition-colors"
-                                    >
-                                        <p className="font-bold text-sm text-foreground">{place.name}</p>
-                                        <div className="flex justify-between items-start">
-                                            <p className="text-xs text-muted-foreground truncate">
-                                                {place.category?.[0]} • {place.price}
-                                                {place.rating > 0 && (
-                                                    <span className="text-amber-500"> • ★ {Number(place.rating).toFixed(1)}</span>
-                                                )}
-                                            </p>
-                                        </div>
-                                        {place.breadcrumbs && place.breadcrumbs.length > 0 && (
-                                            <p className="text-[10px] text-muted-foreground/70 truncate mt-0.5">
-                                                📍 {place.breadcrumbs[place.breadcrumbs.length - 1]}
-                                            </p>
-                                        )}
-                                    </button>
+                            {/* Selected Restaurants Chips */}
+                            <div className="flex flex-wrap gap-2 mb-2">
+                                {preferredRestaurant.length > 0 && preferredRestaurant.map((rest: any) => (
+                                    <span key={rest.name} className="px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-500/20 border border-emerald-500/40 text-emerald-700 dark:text-emerald-200 flex items-center gap-2">
+                                        {rest.name}
+                                        <button type="button" onClick={() => removeRestaurant(rest.name)} className="hover:text-emerald-900 dark:hover:text-white transition-colors">×</button>
+                                    </span>
                                 ))}
                             </div>
-                        )}
-                    </div>
+
+                            <input
+                                type="text"
+                                placeholder="Search & Add restaurants..."
+                                value={searchTerm}
+                                onChange={(e) => handleSearch(e.target.value)}
+                                className="glass-input w-full p-3 rounded-xl focus:ring-2 focus:ring-primary transition-all text-sm"
+                            />
+
+                            {/* Search Results Dropdown */}
+                            {searchResults.length > 0 && (
+                                <div className="absolute z-50 w-full mt-1 bg-white dark:bg-black/90 border border-gray-200 dark:border-white/10 rounded-xl shadow-xl max-h-48 overflow-y-auto backdrop-blur-md">
+                                    {searchResults.map((place, idx) => (
+                                        <button
+                                            key={idx}
+                                            type="button"
+                                            onClick={() => selectRestaurant(place)}
+                                            className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-white/10 border-b border-gray-100 dark:border-white/5 last:border-0 transition-colors"
+                                        >
+                                            <p className="font-bold text-sm text-foreground">{place.name}</p>
+                                            <div className="flex justify-between items-start">
+                                                <p className="text-xs text-muted-foreground truncate">
+                                                    {place.category?.[0]} • {place.price}
+                                                    {place.rating > 0 && (
+                                                        <span className="text-amber-500"> • ★ {Number(place.rating).toFixed(1)}</span>
+                                                    )}
+                                                </p>
+                                            </div>
+                                            {place.breadcrumbs && place.breadcrumbs.length > 0 && (
+                                                <p className="text-[10px] text-muted-foreground/70 truncate mt-0.5">
+                                                    📍 {place.breadcrumbs[place.breadcrumbs.length - 1]}
+                                                </p>
+                                            )}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                 </div>
+                )}
 
                 <button type="submit" className="glass-button w-full py-4 rounded-xl font-bold text-lg tracking-wide uppercase mt-8">
                     Create & Vote

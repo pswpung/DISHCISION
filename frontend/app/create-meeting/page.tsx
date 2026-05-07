@@ -131,7 +131,7 @@ const CreateMeetingPage = () => {
           // organizer_id: data.organizerId, // Removed as per request example (optional?)
           attendees: data.attendees.map((a: any) => a.userId),
           key_person: data.keyPersons.map((k: any) => k.userId),
-
+          fixed_restaurants: data.fixedRestaurants || [],
           // prefered_restaurants: data.preferredRestaurant || [] // Removed as per request
         }
       };
