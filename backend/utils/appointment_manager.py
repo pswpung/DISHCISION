@@ -7,6 +7,7 @@ from collections import defaultdict
 import pytz
 import ast
 import numpy as np
+from typing import Optional
 
 class Appointment_Manager(object):
     def __init__(self, key_person, attendees, start_date, end_date, meal_time, meeting_duration_hours: int = 2, step_minutes: int = 30):
@@ -609,7 +610,34 @@ class Appointment_Manager(object):
             
         return round(final_score, 1), reason
 
-    def get_suggesested_restaurants(self, attendee_datas: list, attendees_availiability: dict):
+    def get_suggesested_restaurants(self, attendee_datas: list, attendees_availiability: dict, fixed_restaurants: Optional[list] = None):
+        # FAST PATH: Organizer Fixed Restaurants
+        if fixed_restaurants and len(fixed_restaurants) > 0:
+            logger.info("Fixed restaurants provided. Bypassing suggestion algorithm.")
+            formatted_fixed = []
+            for r in fixed_restaurants:
+                r_dict = dict(r)
+                r_dict['score'] = 100.0
+                r_dict['reason'] = ["[Key] Organizer Fixed"]
+                formatted_fixed.append(r_dict)
+
+            suggestions_map = {}
+            for date_key, slots in attendees_availiability.items():
+                date_str = date_key.strftime("%Y-%m-%d") if hasattr(date_key, 'strftime') else str(date_key)
+                suggestions_map[date_str] = {}
+                for slot in slots:
+                    slot_start = slot['start']
+                    slot_end = slot['end']
+                    time_key = f"""{slot_start.strftime("%H:%M")}-{slot_end.strftime("%H:%M")}"""
+                    
+                    suggestions_map[date_str][time_key] = {
+                        "restaurants": formatted_fixed,
+                        "scores": slot.get("scores", {}),
+                        "final_score": slot.get("final_score", 0),
+                        "attendees": slot.get("attendees", [])
+                    }
+            return suggestions_map
+
         # 1. Split Attendees & Summarize Preferences
         key_persons_data = [d for d in attendee_datas if d.get('is_key_person', False)]
         general_persons_data = [d for d in attendee_datas if not d.get('is_key_person', False)]

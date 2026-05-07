@@ -83,9 +83,9 @@ def update_attendee_group(
     all_voted = True
     for attendee in all_attendees:
         print(f"    > Attendee {attendee.user_id} : {attendee.preference}")
-        if not attendee.preference: 
-            all_voted = False
-            break
+        # if not attendee.preference: 
+        #     all_voted = False
+        #     break
     
     if all_voted:
         print(f"All attendees voted for meeting {meeting_id}. Triggering suggestion...")

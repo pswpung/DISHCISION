@@ -50,7 +50,7 @@ class SuggestionWorkflows:
         attendees_availiability = appointments_manager.get_suggested_slots(attendee_availability)
 
         # SECTION: SUGGEST RESTAURANTS
-        suggesested_restaurants = appointments_manager.get_suggesested_restaurants(attendee_datas, attendees_availiability)
+        suggesested_restaurants = appointments_manager.get_suggesested_restaurants(attendee_datas, attendees_availiability, fixed_restaurants=initial_data.get("fixed_restaurants", None))
         import json
 
         with open("./suggested_restaurants.json", "w") as f:
