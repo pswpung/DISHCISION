@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLiff } from '@/app/context/LiffContext';
 import dynamic from 'next/dynamic';
+import { TimeSlotSelector } from '@/app/components/time-slot-selector/time-slot-selector';
 
 // Dynamically import MapPicker to avoid SSR issues with Leaflet
 const MapPicker = dynamic(() => import('@/app/components/map-picker/map-picker'), {
@@ -16,12 +17,14 @@ interface VotingFormProps {
 
 const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormProps) => {
     const { profile } = useLiff();
+    const [currentStep, setCurrentStep] = useState(1);
+    const [rsvp, setRsvp] = useState<'yes' | 'no' | null>(null);
+    const [availability, setAvailability] = useState<any>({}); // { date: [ {start, end} ] }
 
     // Preferences State
-    const [priceRange, setPriceRange] = useState<string>('Any');
+    const [priceRange, setPriceRange] = useState<string>('');
     const [preferredMealTime, setPreferredMealTime] = useState<string>('Any');
 
-    // START RESTORED CODE
     const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
     const [selectedGoodFors, setSelectedGoodFors] = useState<string[]>([]);
     const [avoidCategories, setAvoidCategories] = useState<string[]>([]);
@@ -29,10 +32,12 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
     const [selectedParking, setSelectedParking] = useState(false);
 
     // Location State
-    const [departureLocation, setDepartureLocation] = useState('');
-    const [locationCoords, setLocationCoords] = useState<{ lat: number; lng: number } | null>(null);
+    const [departureLocation, setDepartureLocation] = useState(meetingData?.fixLocation || '');
+    const [locationCoords, setLocationCoords] = useState<{ lat: number; lng: number } | null>(
+        meetingData?.lat && meetingData?.lng ? { lat: meetingData.lat, lng: meetingData.lng } : null
+    );
     const [isLocating, setIsLocating] = useState(false);
-    const [mapPickerTarget, setMapPickerTarget] = useState<'fix' | 'prefer'>('fix');
+    const [mapPickerTarget, setMapPickerTarget] = useState<'fix' | 'prefer'>('prefer');
 
     // Restaurant Search State
     const [preferredRestaurant, setPreferredRestaurant] = useState<any[]>([]);
@@ -42,7 +47,7 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
     const [priceFocused, setPriceFocused] = useState(false);
     const [cuisineFocused, setCuisineFocused] = useState(false);
     const [avoidCuisineFocused, setAvoidCuisineFocused] = useState(false);
-    
+
     const priceRef = useRef<HTMLDivElement>(null);
     const cuisineSearchRef = useRef<HTMLDivElement>(null);
     const avoidCuisineSearchRef = useRef<HTMLDivElement>(null);
@@ -76,15 +81,33 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
         };
     }, [searchWrapperRef]);
 
+    // Geocode fixed location if coordinates are missing
+    useEffect(() => {
+        if (meetingData?.fixLocation && (!meetingData?.lat || !meetingData?.lng)) {
+            const geocodeFixed = async () => {
+                try {
+                    const response = await fetch(
+                        `https://nominatim.openstreetmap.org/search?` +
+                        `format=json&q=${encodeURIComponent(meetingData.fixLocation)}` +
+                        `&countrycodes=th&limit=1`
+                    );
+                    const data = await response.json();
+                    if (data && data.length > 0) {
+                        setLocationCoords({
+                            lat: parseFloat(data[0].lat),
+                            lng: parseFloat(data[0].lon)
+                        });
+                    }
+                } catch (error) {
+                    console.error("Geocoding fixed location failed:", error);
+                }
+            };
+            geocodeFixed();
+        }
+    }, [meetingData?.fixLocation]);
+
     // Map picker state
     const [showMapPicker, setShowMapPicker] = useState(false);
-
-    // Init from Config if available (optional)
-    useEffect(() => {
-        if (restaurantConfig) {
-            // Pre-select defaults if needed, or just let user choose
-        }
-    }, [restaurantConfig]);
 
     // --- Helpers ---
     const toggleSelection = (id: string, list: string[], setList: (val: string[]) => void) => {
@@ -112,52 +135,16 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
     const isLocationValid = (lat: number, lng: number) => {
         const bangkokCenter = { lat: 13.7563, lng: 100.5018 };
         const distance = calculateDistance(lat, lng, bangkokCenter.lat, bangkokCenter.lng);
-        // Approx 50km radius covers Bangkok and vicinity
         return distance <= 50;
     }
 
-    const handleCurrentLocation = () => {
-        if (!navigator.geolocation) {
-            alert("Geolocation is not supported by your browser");
-            return;
-        }
-        setIsLocating(true);
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                const lat = position.coords.latitude;
-                const lng = position.coords.longitude;
-
-                if (!isLocationValid(lat, lng)) {
-                    alert("Location is outside of available service area (Bangkok & Vicinity)");
-                    setDepartureLocation("");
-                    setLocationCoords(null);
-                    setIsLocating(false);
-                    return;
-                }
-
-                setLocationCoords({
-                    lat: lat,
-                    lng: lng
-                });
-                setDepartureLocation("Current Location");
-                setIsLocating(false);
-            },
-            (error) => {
-                console.error("Error getting location:", error);
-                alert("Unable to retrieve your location");
-                setIsLocating(false);
-            }
-        );
-    };
-
     const handleLocationBlur = async () => {
         if (departureLocation && departureLocation !== "Current Location") {
-            // Geocoding using Nominatim
             try {
                 const response = await fetch(
                     `https://nominatim.openstreetmap.org/search?` +
                     `format=json&q=${encodeURIComponent(departureLocation)}` +
-                    `&countrycodes=th` + // Removed strict bounding box
+                    `&countrycodes=th` +
                     `&limit=5`
                 );
                 const data = await response.json();
@@ -172,11 +159,7 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
                         return;
                     }
 
-                    setLocationCoords({
-                        lat: lat,
-                        lng: lng
-                    });
-                    console.log("Geocoded:", lat, lng);
+                    setLocationCoords({ lat, lng });
                 }
             } catch (error) {
                 console.error("Geocoding failed:", error);
@@ -190,7 +173,6 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
         if (keyword.length > 2) {
             setIsSearching(true);
             try {
-                // Dynamic import to avoid circular dependency issues if any, or just direct import
                 const { apiService } = await import('@/app/services/api');
                 const results = await apiService.searchRestaurants(keyword);
                 setSearchResults(results);
@@ -214,12 +196,60 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
     const removeRestaurant = (name: string) => {
         setPreferredRestaurant(preferredRestaurant.filter(r => r.name !== name));
     };
-    // END RESTORED CODE
+
+    const handleRSVP = (status: 'yes' | 'no') => {
+        setRsvp(status);
+        if (status === 'yes') {
+            if (meetingData?.timingMode === 'fixed') {
+                const fixedAvail = {
+                    [meetingData.fixedDate]: [
+                        { start: meetingData.fixedStartTime, end: meetingData.fixedEndTime }
+                    ]
+                };
+                setAvailability(fixedAvail);
+                if (meetingData?.allowOthersSuggest || meetingData?.allowSystemSuggest) {
+                    setCurrentStep(3);
+                } else {
+                    onVoteSubmit({
+                        status: 'yes',
+                        availability: fixedAvail,
+                        preferences: {}
+                    });
+                }
+            } else {
+                setCurrentStep(2);
+            }
+        } else {
+            onVoteSubmit({
+                status: 'no',
+                availability: {},
+                preferences: {}
+            });
+        }
+    };
+
+    const handleAvailabilitySubmit = (dates: any) => {
+        const hasSlots = Object.values(dates).some((slots: any) => slots.length > 0);
+        if (!hasSlots) {
+            alert("Please select at least one available time slot.");
+            return;
+        }
+        setAvailability(dates);
+
+        if (!meetingData?.allowOthersSuggest && !meetingData?.allowSystemSuggest) {
+            onVoteSubmit({
+                status: 'yes',
+                availability: dates,
+                preferences: {}
+            });
+        } else {
+            setCurrentStep(3);
+        }
+    };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
 
-        // Validate Location
         if (!departureLocation || departureLocation.trim() === "") {
             alert("Please provide a Departure Location.");
             return;
@@ -230,11 +260,7 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
             return;
         }
 
-        const voteData = {
-            userId: profile?.userId || 'guest',
-            userName: profile?.displayName || 'Guest',
-
-            // Preference Object matching Creator's Structure
+        const prefs = {
             meal_time: preferredMealTime,
             price: priceRange,
             category: selectedCategories,
@@ -242,19 +268,20 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
             good_fors: selectedGoodFors,
             alcohols: selectedAlcohols ? true : null,
             parking: selectedParking ? true : null,
-
-            // Location
             departureLocation,
             lat: locationCoords?.lat || null,
             lng: locationCoords?.lng || null,
-
-            // Restaurants
-            preferredRestaurant // Array of objects
+            preferredRestaurant
         };
-        onVoteSubmit(voteData);
+
+        onVoteSubmit({
+            status: 'yes',
+            availability,
+            preferences: prefs
+        });
     };
 
-    // Helper for rendering dropdown selections
+    // Helper for rendering chip selections
     const renderDropdown = (
         label: string,
         value: string,
@@ -270,18 +297,18 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
                 <button
                     type="button"
                     onClick={() => setIsOpen(!isOpen)}
-                    className="glass-input w-full p-3 rounded-xl text-left text-sm font-medium flex justify-between items-center transition-all hover:bg-white/5"
+                    className="glass-input w-full p-3 rounded-xl text-left text-sm font-medium flex justify-between items-center"
                 >
-                    <span className={value && value !== "Any" ? "text-gray-800 dark:text-white" : "text-muted-foreground"}>
-                        {value === "Any" ? "Select Budget..." : value}
+                    <span className={value && value !== "" ? "text-foreground" : "text-muted-foreground"}>
+                        {value || "Select Budget..."}
                     </span>
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={`w-4 h-4 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
                     </svg>
                 </button>
 
                 {isOpen && (
-                    <div className="absolute z-50 w-full mt-2 bg-white dark:bg-[#121212] border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl max-h-48 overflow-y-auto backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="absolute z-50 w-full mt-2 bg-dropdown-bg border border-dropdown-border rounded-xl shadow-2xl max-h-48 overflow-y-auto backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200">
                         {items.map((item) => (
                             <button
                                 key={item}
@@ -290,9 +317,9 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
                                     onChange(item);
                                     setIsOpen(false);
                                 }}
-                                className="w-full text-left px-5 py-4 hover:bg-gray-100 dark:hover:bg-white/5 border-b border-gray-100 dark:border-white/5 last:border-0 transition-colors group"
+                                className="w-full text-left px-5 py-4 hover:bg-dropdown-hover border-b border-dropdown-border last:border-0 transition-colors group"
                             >
-                                <p className={`font-bold text-sm ${value === item ? 'text-primary' : 'text-gray-800 dark:text-white'} group-hover:text-primary transition-colors`}>{item}</p>
+                                <p className={`font-bold text-sm ${value === item ? 'text-primary' : 'text-foreground'} group-hover:text-primary transition-colors`}>{item}</p>
                             </button>
                         ))}
                     </div>
@@ -325,14 +352,15 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
             ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
             : "bg-rose-500/10 border-rose-500/20 text-rose-400";
 
+        const labelColor = variant === 'positive' ? 'text-emerald-500' : 'text-rose-500';
+
         return (
             <div className="space-y-2 relative" ref={wrapperRef}>
-                <label className={`block text-sm font-medium uppercase tracking-wider ${variant === 'positive' ? 'text-emerald-500' : 'text-rose-500'}`}>{label}</label>
+                <label className={`block text-sm font-medium uppercase tracking-wider ${labelColor}`}>{label}</label>
 
-                {/* Selected Chips */}
                 <div className="flex flex-wrap gap-2 mb-2">
                     {selected.map((item) => (
-                        <span key={item} className={`px-3 py-1.5 rounded-full text-xs font-bold border flex items-center gap-2 ${chipStyles}`}>
+                        <span key={item} className={`px-3 py-1.5 rounded-full text-[10px] font-bold border flex items-center gap-2 ${chipStyles}`}>
                             {item}
                             <button type="button" onClick={() => setSelected(selected.filter(i => i !== item))} className="hover:text-white transition-colors">×</button>
                         </span>
@@ -345,12 +373,11 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
                     value={searchTerm}
                     onFocus={() => setIsFocused(true)}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="glass-input w-full p-4 rounded-xl text-sm font-medium transition-all focus:ring-2 focus:ring-primary/20"
+                    className="glass-input w-full p-3 rounded-xl text-sm font-medium transition-all"
                 />
 
-                {/* Search Results Dropdown */}
                 {isFocused && filteredItems.length > 0 && (
-                    <div className="absolute z-50 w-full mt-2 bg-white dark:bg-[#121212] border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl max-h-48 overflow-y-auto backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="absolute z-50 w-full mt-2 bg-dropdown-bg border border-dropdown-border rounded-2xl shadow-2xl max-h-48 overflow-y-auto backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200">
                         {filteredItems.map((item) => (
                             <button
                                 key={item}
@@ -360,9 +387,9 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
                                     setSearchTerm('');
                                     setIsFocused(false);
                                 }}
-                                className="w-full text-left px-5 py-4 hover:bg-gray-100 dark:hover:bg-white/5 border-b border-gray-100 dark:border-white/5 last:border-0 transition-colors group"
+                                className="w-full text-left px-5 py-4 hover:bg-dropdown-hover border-b border-dropdown-border last:border-0 transition-colors group"
                             >
-                                <p className="font-bold text-sm text-gray-800 dark:text-white group-hover:text-primary transition-colors">{item}</p>
+                                <p className="font-bold text-sm text-foreground group-hover:text-primary transition-colors">{item}</p>
                             </button>
                         ))}
                     </div>
@@ -382,7 +409,7 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
                         onClick={() => toggleSelection(item, selected, setSelected)}
                         className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${selected.includes(item)
                             ? 'bg-primary border-primary text-white shadow-lg'
-                            : 'bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10'
+                            : 'bg-black/5 dark:bg-white/5 border-black/10 dark:border-white/10 text-muted-foreground hover:bg-black/10 dark:bg-white/10'
                             }`}
                     >
                         {item}
@@ -392,173 +419,330 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
         </div>
     );
 
-    // Fallbacks if config not loaded
     const categories = restaurantConfig?.category || ["Japanese", "Thai", "Italian", "Chinese", "Korean", "Buffet", "Cafe", "Izakaya"];
     const goodFors = restaurantConfig?.good_fors || ["Friends", "Business", "Date", "Family", "Party"];
     const prices = restaurantConfig?.price ? [...restaurantConfig.price, 'Any'] : ['< 500', '500-1000', '1000-2000', '> 2000', 'Any'];
+
     return (
-        <>
-            <form onSubmit={handleSubmit} className="w-full max-w-lg mx-auto space-y-6">
-                {/* Header (Optional, but keeping for standalone use) */}
-                <div className="space-y-2 pb-4 border-b border-white/10">
-                    <h2 className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 tracking-tight">
-                        Your Preferences
-                    </h2>
-                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Set your personal filter for this meeting</p>
+        <div className="w-full max-w-lg mx-auto">
+            <div className="mb-8 px-2">
+                <div className="flex justify-between items-center mb-3">
+                    <span className="text-xs font-bold text-primary uppercase tracking-wider">
+                        {currentStep === 1 && "Step 1: RSVP"}
+                        {currentStep === 2 && "Step 2: Availability"}
+                        {currentStep === 3 && "Step 3: Preferences"}
+                    </span>
+                    <span className="text-xs text-muted-foreground font-bold">{currentStep} / 3</span>
                 </div>
+                <div className="w-full bg-black/10 dark:bg-white/10 h-1.5 rounded-full overflow-hidden backdrop-blur-sm">
+                    <div
+                        className="bg-primary h-full transition-all duration-500 ease-out shadow-[0_0_10px_rgba(var(--primary-rgb),0.5)]"
+                        style={{ width: `${(currentStep / 3) * 100}%` }}
+                    ></div>
+                </div>
+            </div>
 
-                {/* Preferences Content - Only show if no fixed restaurants */}
-                {meetingData?.fixedRestaurants?.length === 0 && (
-                    <div className="space-y-6">
-                        {/* System Suggestion Preferences (Hide if allowSystemSuggest is false) */}
-                        {meetingData.allowSystemSuggest !== false && (
-                            <>
-                                {/* Meal Time (If Meeting is Any and Timing is not Fixed) */}
-                                {meetingData.mealTime === 'Any' && meetingData.timingMode !== 'fixed' && (
-                                    <div className="space-y-2">
-                                        <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Preferred Meal Time</label>
-                                        <div className="flex bg-white/5 rounded-xl p-1 gap-1 border border-white/5">
-                                            {['Lunch', 'Dinner', 'Any'].map((time) => (
-                                                <button
-                                                    key={time}
-                                                    type="button"
-                                                    onClick={() => setPreferredMealTime(time)}
-                                                    className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${preferredMealTime === time ? 'bg-primary text-white shadow-md' : 'text-muted-foreground hover:bg-white/5'}`}
-                                                >
-                                                    {time}
-                                                </button>
-                                            ))}
-                                        </div>
+            <form onSubmit={handleSubmit} className="glass-panel p-6 rounded-2xl space-y-6 animate-in fade-in zoom-in duration-500">
+                {/* STEP 1: RSVP */}
+                {currentStep === 1 && (
+                    <div className="space-y-6 animate-in slide-in-from-right duration-500">
+                        <div className="space-y-2 pb-4 border-b border-black/10 dark:border-white/10 text-center">
+                            <h2 className="text-xl font-bold text-foreground tracking-tight">Will you join us?</h2>
+                            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Confirm attendance for <span className="text-primary">{meetingData?.name}</span></p>
+                        </div>
+
+                        <div className="bg-black/5 dark:bg-white/5 p-6 rounded-2xl border border-black/5 dark:border-white/5 space-y-6">
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em]">Meeting Topic</label>
+                                <p className="text-xl font-black text-foreground tracking-tight">{meetingData?.name}</p>
+                            </div>
+
+                            <div className="py-4 border-y border-black/5 dark:border-white/5">
+                                <div className="space-y-1.5">
+                                    <div className="flex items-center gap-1.5 text-primary">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2" /><line x1="16" x2="16" y1="2" y2="6" /><line x1="8" x2="8" y1="2" y2="6" /><line x1="3" x2="21" y1="10" y2="10" /></svg>
+                                        <label className="text-[10px] font-bold uppercase tracking-wider">When</label>
                                     </div>
-                                )}
-
-                        {/* Price Range */}
-                        {renderDropdown(
-                            "Budget / Person",
-                            priceRange,
-                            setPriceRange,
-                            restaurantConfig?.price ? [...restaurantConfig.price, 'Any'] : ['< 500', '500-1000', '1000-2000', '> 2000', 'Any'],
-                            priceFocused,
-                            setPriceFocused,
-                            priceRef
-                        )}
-
-                        <div className="space-y-5">
-                            {renderSearchableChipGroup("Prefer Cuisine", categories, selectedCategories, setSelectedCategories, cuisineSearchTerm, setCuisineSearchTerm, "Search cuisines...", cuisineSearchRef, cuisineFocused, setCuisineFocused, avoidCategories)}
-                            {renderSearchableChipGroup("Avoid Cuisine", categories, avoidCategories, setAvoidCategories, avoidCuisineSearchTerm, setAvoidCuisineSearchTerm, "Avoid cuisines...", avoidCuisineSearchRef, avoidCuisineFocused, setAvoidCuisineFocused, selectedCategories, 'negative')}
-                        </div>
-
-                        {renderChipGroup("Vibe / Good For", goodFors, selectedGoodFors, setSelectedGoodFors)}
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="flex items-center justify-between glass-panel p-3 rounded-xl border border-white/5">
-                                <span className="text-sm font-medium uppercase tracking-wider">Alcohol</span>
-                                <input type="checkbox" checked={selectedAlcohols} onChange={e => setSelectedAlcohols(e.target.checked)} className="toggle" />
-                            </div>
-                            <div className="flex items-center justify-between glass-panel p-3 rounded-xl border border-white/5">
-                                <span className="text-sm font-medium uppercase tracking-wider">Parking</span>
-                                <input type="checkbox" checked={selectedParking} onChange={e => setSelectedParking(e.target.checked)} className="toggle" />
-                            </div>
-                        </div>
-
-                        {!meetingData?.fixLocation && (
-                            <div className="space-y-2">
-                                <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Prefer Location</label>
-                                <div className="relative flex gap-2">
-                                    <input
-                                        type="text"
-                                        placeholder="e.g. Siam Paragon"
-                                        value={departureLocation}
-                                        onChange={(e) => setDepartureLocation(e.target.value)}
-                                        onBlur={handleLocationBlur}
-                                        className="glass-input w-full p-3 rounded-xl text-sm font-medium"
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={() => { setMapPickerTarget('prefer'); setShowMapPicker(true); }}
-                                        className="glass-button px-4 py-3 rounded-xl hover:bg-white/10 transition-all"
-                                    >
-                                        {isLocating ? (
-                                            <div className="w-5 h-5 border-2 border-white/50 border-t-white rounded-full animate-spin" />
-                                        ) : (
-                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
-                                            </svg>
-                                        )}
-                                    </button>
+                                    {meetingData?.timingMode === 'fixed' ? (
+                                        <div className="space-y-0.5">
+                                            <p className="text-sm font-bold text-foreground">{meetingData.fixedDate}</p>
+                                            <p className="text-[10px] text-muted-foreground font-medium">{meetingData.fixedStartTime} - {meetingData.fixedEndTime}</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-0.5">
+                                            <p className="text-sm font-bold text-foreground">{meetingData?.startDate} - {meetingData?.endDate}</p>
+                                            <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">{meetingData?.mealTime}</p>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
-                        )}
-                    </>
-                )}
-                    </div>
-                )}
 
+                            {meetingData?.fixLocation && (
+                                <div className="space-y-2">
+                                    <div className="flex items-center gap-1.5 text-primary">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" /><circle cx="12" cy="10" r="3" /></svg>
+                                        <label className="text-[10px] font-bold uppercase tracking-wider">Where</label>
+                                    </div>
+                                    <p className="text-sm font-medium text-foreground bg-black/5 dark:bg-white/5 p-3 rounded-xl border border-black/5 dark:border-white/5">{meetingData.fixLocation}</p>
+                                </div>
+                            )}
 
-                {/* Preferred Restaurant */}
-                {meetingData?.allowOthersSuggest && (
-                    <div className="space-y-4 pt-6 border-t border-white/10">
-                        <div className="space-y-3 relative" ref={searchWrapperRef}>
-                            <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Add Suggested Restaurants (Optional)</label>
-
-                            <div className="flex flex-wrap gap-2 mb-2">
-                                {preferredRestaurant.map((rest: any) => (
-                                    <span key={rest.name} className="px-3 py-1.5 rounded-full text-[10px] font-bold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center gap-2">
-                                        {rest.name}
-                                        <button type="button" onClick={() => removeRestaurant(rest.name)} className="text-xs hover:text-white transition-colors">×</button>
-                                    </span>
-                                ))}
-                            </div>
-
-                            <input
-                                type="text"
-                                placeholder="Search venues..."
-                                value={searchTerm}
-                                onChange={(e) => handleSearch(e.target.value)}
-                                className="glass-input w-full p-3 rounded-xl text-sm font-medium"
-                            />
-
-                            {/* Search Results Dropdown */}
-                            {searchResults.length > 0 && (
-                                <div className="absolute z-50 w-full mt-2 bg-white dark:bg-[#121212] border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl max-h-48 overflow-y-auto backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200">
-                                    {searchResults.map((place, idx) => (
-                                        <button
-                                            key={idx}
-                                            type="button"
-                                            onClick={() => selectRestaurant(place)}
-                                            className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-white/5 border-b border-gray-100 dark:border-white/5 last:border-0 transition-colors"
-                                        >
-                                            <p className="font-bold text-sm text-primary dark:text-white">{place.name}</p>
-                                            <p className="text-[10px] text-gray-500 dark:text-muted-foreground">{place.category?.[0]} • {place.price}</p>
-                                        </button>
-                                    ))}
+                            {meetingData?.fixedRestaurants && meetingData.fixedRestaurants.length > 0 && (
+                                <div className="space-y-2">
+                                    <div className="flex items-center gap-1.5 text-primary">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 13.8V4a2 2 0 0 1 3.88-.68" /><path d="M13.9 6.2c.4-2 2.2-3.3 4.1-3.3v13.5" /><path d="M6 18c0 .5.5 1 1 1h10c.5 0 1-.5 1-1V8" /><path d="m9 14 3 3 3-3" /></svg>
+                                        <label className="text-[10px] font-bold uppercase tracking-wider">Proposed Venues</label>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {meetingData.fixedRestaurants.map((rest: any, idx: number) => (
+                                            <span key={idx} className="px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-primary text-[10px] font-bold">
+                                                {rest.name || rest}
+                                            </span>
+                                        ))}
+                                    </div>
                                 </div>
                             )}
                         </div>
+
+                        <div className="flex gap-4 pt-2">
+                            <button
+                                type="button"
+                                onClick={() => handleRSVP('no')}
+                                className="flex-1 py-4 rounded-xl border border-black/10 dark:border-white/10 text-muted-foreground font-bold text-sm hover:bg-black/5 dark:bg-white/5 hover:text-foreground transition-all active:scale-[0.98]"
+                            >
+                                Decline
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => handleRSVP('yes')}
+                                className="flex-[1.5] py-4 rounded-xl bg-primary text-white font-bold text-sm shadow-lg shadow-primary/20 hover:shadow-primary/30 hover:scale-[1.02] transition-all active:scale-[0.98]"
+                            >
+                                I'm Joining
+                            </button>
+                        </div>
                     </div>
                 )}
 
+                {/* STEP 2: AVAILABILITY */}
+                {currentStep === 2 && (
+                    <div className="space-y-6 animate-in slide-in-from-right duration-500">
+                        <button
+                            type="button"
+                            onClick={() => setCurrentStep(1)}
+                            className="text-xs font-bold text-muted-foreground hover:text-primary flex items-center gap-1 uppercase tracking-wider transition-colors mb-2"
+                        >
+                            ← Back
+                        </button>
 
-                <button type="submit" className="glass-button w-full py-4 rounded-xl font-bold text-lg tracking-wide uppercase shadow-lg shadow-primary/10 mt-6 active:scale-[0.98] transition-all">
-                    Submit Preferences
-                </button>
+                        <div className="space-y-2 pb-4 border-b border-black/10 dark:border-white/10">
+                            <h2 className="text-xl font-bold text-foreground tracking-tight">Availability</h2>
+                            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Select the times you're free</p>
+                        </div>
+
+                        <div className="bg-black/5 dark:bg-white/5 rounded-2xl overflow-hidden border border-black/5 dark:border-white/5">
+                            <TimeSlotSelector
+                                startDate={meetingData?.startDate}
+                                endDate={meetingData?.endDate}
+                                value={availability}
+                                onChange={setAvailability}
+                            />
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={() => handleAvailabilitySubmit(availability)}
+                            className="glass-button w-full py-4 rounded-xl font-bold text-lg shadow-xl shadow-primary/10 active:scale-[0.98] transition-all"
+                        >
+                            {meetingData?.allowOthersSuggest && meetingData?.allowSystemSuggest
+                                ? "Submit Vote"
+                                : "Continue"}
+                        </button>
+                    </div>
+                )}
+
+                {/* STEP 3: PREFERENCES */}
+                {currentStep === 3 && (
+                    <div className="space-y-6 animate-in slide-in-from-right duration-500">
+                        <button
+                            type="button"
+                            onClick={() => setCurrentStep(meetingData?.timingMode === 'fixed' ? 1 : 2)}
+                            className="text-xs font-bold text-muted-foreground hover:text-primary flex items-center gap-1 uppercase tracking-wider transition-colors mb-2"
+                        >
+                            ← Back
+                        </button>
+
+                        <div className="space-y-2 pb-4 border-b border-black/10 dark:border-white/10">
+                            <h2 className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 tracking-tight">
+                                {(!meetingData?.allowSystemSuggest && !meetingData?.allowOthersSuggest) ? "Ready to Go!" : "Your Preferences"}
+                            </h2>
+                            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
+                                {(!meetingData?.allowSystemSuggest && !meetingData?.allowOthersSuggest)
+                                    ? "Everything is set for the meeting"
+                                    : "Set your personal filter for this meeting"}
+                            </p>
+                        </div>
+
+                        {(!meetingData?.allowSystemSuggest && !meetingData?.allowOthersSuggest) ? (
+                            <div className="py-12 flex flex-col items-center justify-center space-y-4 animate-in fade-in zoom-in duration-700">
+                                <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center text-4xl shadow-[0_0_20px_rgba(var(--primary-rgb),0.2)] border border-primary/20">
+                                    ✨
+                                </div>
+                                <div className="text-center space-y-2">
+                                    <h3 className="text-lg font-bold text-foreground">The meeting is ready!</h3>
+                                    <p className="text-sm text-muted-foreground max-w-[240px] mx-auto">
+                                        Thank you for joining. All details have been finalized by the organizer.
+                                    </p>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="space-y-6">
+                                <div className="space-y-6">
+                                    <div className="space-y-6">
+                                        {meetingData.allowSystemSuggest !== false && (
+                                            <>
+                                                {/* Meal Time Choice */}
+                                                {meetingData.mealTime === 'Any' && meetingData.timingMode !== 'fixed' && (
+                                                    <div className="space-y-2">
+                                                        <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Preferred Meal Time</label>
+                                                        <div className="flex bg-black/5 dark:bg-white/5 rounded-xl p-1 gap-1 border border-black/5 dark:border-white/5">
+                                                            {['Lunch', 'Dinner', 'Any'].map((time) => (
+                                                                <button
+                                                                    key={time}
+                                                                    type="button"
+                                                                    onClick={() => setPreferredMealTime(time)}
+                                                                    className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${preferredMealTime === time ? 'bg-primary text-white shadow-md' : 'text-muted-foreground hover:bg-black/5 dark:bg-white/5'}`}
+                                                                >
+                                                                    {time}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {renderDropdown(
+                                                    "Budget / Person",
+                                                    priceRange,
+                                                    setPriceRange,
+                                                    prices,
+                                                    priceFocused,
+                                                    setPriceFocused,
+                                                    priceRef
+                                                )}
+
+                                                <div className="space-y-5">
+                                                    {renderSearchableChipGroup("Prefer Cuisine", categories, selectedCategories, setSelectedCategories, cuisineSearchTerm, setCuisineSearchTerm, "Search cuisines...", cuisineSearchRef, cuisineFocused, setCuisineFocused, avoidCategories)}
+                                                    {renderSearchableChipGroup("Avoid Cuisine", categories, avoidCategories, setAvoidCategories, avoidCuisineSearchTerm, setAvoidCuisineSearchTerm, "Avoid cuisines...", avoidCuisineSearchRef, avoidCuisineFocused, setAvoidCuisineFocused, selectedCategories, 'negative')}
+                                                </div>
+
+                                                {renderChipGroup("Vibe / Good For", goodFors, selectedGoodFors, setSelectedGoodFors)}
+
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div className="flex items-center justify-between glass-panel p-3 rounded-xl border border-black/5 dark:border-white/5">
+                                                        <span className="text-sm font-medium uppercase tracking-wider">Alcohol</span>
+                                                        <input type="checkbox" checked={selectedAlcohols} onChange={e => setSelectedAlcohols(e.target.checked)} className="toggle" />
+                                                    </div>
+                                                    <div className="flex items-center justify-between glass-panel p-3 rounded-xl border border-black/5 dark:border-white/5">
+                                                        <span className="text-sm font-medium uppercase tracking-wider">Parking</span>
+                                                        <input type="checkbox" checked={selectedParking} onChange={e => setSelectedParking(e.target.checked)} className="toggle" />
+                                                    </div>
+                                                </div>
+
+                                                {!meetingData?.fixLocation && (
+                                                    <div className="space-y-2">
+                                                        <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Prefer Location</label>
+                                                        <div className="relative flex gap-2">
+                                                            <input
+                                                                type="text"
+                                                                placeholder="e.g. Siam Paragon"
+                                                                value={departureLocation}
+                                                                onChange={(e) => setDepartureLocation(e.target.value)}
+                                                                onBlur={handleLocationBlur}
+                                                                className="glass-input w-full p-3 rounded-xl text-sm font-medium"
+                                                            />
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => { setMapPickerTarget('prefer'); setShowMapPicker(true); }}
+                                                                className="glass-button px-4 py-3 rounded-xl hover:bg-black/10 dark:bg-white/10 transition-all"
+                                                            >
+                                                                {isLocating ? (
+                                                                    <div className="w-5 h-5 border-2 border-black/5 dark:border-white/50 border-t-white rounded-full animate-spin" />
+                                                                ) : (
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
+                                                                    </svg>
+                                                                )}
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
+
+                                    {meetingData?.allowOthersSuggest && (
+                                        <div className="space-y-4 pt-6 border-t border-black/10 dark:border-white/10">
+                                            <div className="space-y-3 relative" ref={searchWrapperRef}>
+                                                <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Add Suggested Restaurants (Optional)</label>
+
+                                                <div className="flex flex-wrap gap-2 mb-2">
+                                                    {preferredRestaurant.map((rest: any) => (
+                                                        <span key={rest.name} className="px-3 py-1.5 rounded-full text-[10px] font-bold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center gap-2">
+                                                            {rest.name}
+                                                            <button type="button" onClick={() => removeRestaurant(rest.name)} className="text-xs hover:text-white transition-colors">×</button>
+                                                        </span>
+                                                    ))}
+                                                </div>
+
+                                                <input
+                                                    type="text"
+                                                    placeholder="Search venues..."
+                                                    value={searchTerm}
+                                                    onChange={(e) => handleSearch(e.target.value)}
+                                                    className="glass-input w-full p-3 rounded-xl text-sm font-medium"
+                                                />
+
+                                                {searchResults.length > 0 && (
+                                                    <div className="absolute z-50 w-full mt-2 bg-dropdown-bg border border-dropdown-border rounded-xl shadow-2xl max-h-48 overflow-y-auto backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                                                        {searchResults.map((place, idx) => (
+                                                            <button
+                                                                key={idx}
+                                                                type="button"
+                                                                onClick={() => selectRestaurant(place)}
+                                                                className="w-full text-left px-4 py-3 hover:bg-dropdown-hover border-b border-dropdown-border last:border-0 transition-colors"
+                                                            >
+                                                                <p className="font-bold text-sm text-primary dark:text-white">{place.name}</p>
+                                                                <p className="text-[10px] text-gray-500 dark:text-muted-foreground">{place.category?.[0]} • {place.price}</p>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        <button type="submit" className="glass-button w-full py-4 rounded-xl font-bold text-lg tracking-wide uppercase shadow-lg shadow-primary/10 mt-6 active:scale-[0.98] transition-all">
+                            Submit Vote
+                        </button>
+                    </div>
+                )}
             </form>
 
-            {/* Map Picker Modal */}
-            {
-                showMapPicker && (
-                    <MapPicker
-                        initialPosition={locationCoords || undefined}
-                        onConfirm={(coords, address) => {
-                            setLocationCoords(coords);
-                            setDepartureLocation(address);
-                        }}
-                        onClose={() => setShowMapPicker(false)}
-                    />
-                )
-            }
-        </>
-    )
+            {showMapPicker && (
+                <MapPicker
+                    initialPosition={locationCoords || undefined}
+                    onConfirm={(coords, address) => {
+                        setLocationCoords(coords);
+                        setDepartureLocation(address);
+                    }}
+                    onClose={() => setShowMapPicker(false)}
+                />
+            )}
+        </div>
+    );
 }
 
-export default VotingForm
+export default VotingForm;

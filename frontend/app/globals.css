@@ -43,6 +43,11 @@
   --glass-input-bg: rgba(0, 0, 0, 0.03);
   --glass-input-active: rgba(0, 0, 0, 0.05);
   --glass-text: var(--foreground);
+  
+  /* Dropdown (Light) */
+  --dropdown-bg: rgba(255, 255, 255, 0.95);
+  --dropdown-hover: rgba(0, 0, 0, 0.05);
+  --dropdown-border: rgba(0, 0, 0, 0.1);
 }
 
 :root[data-theme="dark"] {
@@ -84,6 +89,11 @@
   --glass-input-bg: rgba(255, 255, 255, 0.05);
   --glass-input-active: rgba(255, 255, 255, 0.1);
   --glass-text: white;
+
+  /* Dropdown (Dark) */
+  --dropdown-bg: rgba(20, 20, 25, 0.98);
+  --dropdown-hover: rgba(255, 255, 255, 0.1);
+  --dropdown-border: rgba(255, 255, 255, 0.1);
 }
 
 @theme inline {
@@ -106,6 +116,10 @@
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
+
+  --color-dropdown-bg: var(--dropdown-bg);
+  --color-dropdown-hover: var(--dropdown-hover);
+  --color-dropdown-border: var(--dropdown-border);
 
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);

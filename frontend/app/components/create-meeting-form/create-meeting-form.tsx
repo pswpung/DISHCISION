@@ -533,7 +533,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                     onClick={() => setIsOpen(!isOpen)}
                     className="glass-input w-full p-3 rounded-xl text-left text-sm font-medium flex justify-between items-center"
                 >
-                    <span className={value && value !== "" ? "text-gray-800 dark:text-white" : "text-muted-foreground"}>
+                    <span className={value && value !== "" ? "text-foreground" : "text-muted-foreground"}>
                         {value || "Select Budget..."}
                     </span>
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`}>
@@ -542,7 +542,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                 </button>
 
                 {isOpen && (
-                    <div className="absolute z-50 w-full mt-2 bg-white dark:bg-[#121212] border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl max-h-48 overflow-y-auto backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="absolute z-50 w-full mt-2 bg-dropdown-bg border border-dropdown-border rounded-xl shadow-2xl max-h-48 overflow-y-auto backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200">
                         {items.map((item) => (
                             <button
                                 key={item}
@@ -551,9 +551,9 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                                     onChange(item);
                                     setIsOpen(false);
                                 }}
-                                className="w-full text-left px-5 py-4 hover:bg-gray-100 dark:hover:bg-white/5 border-b border-gray-100 dark:border-white/5 last:border-0 transition-colors group"
+                                className="w-full text-left px-5 py-4 hover:bg-dropdown-hover border-b border-dropdown-border last:border-0 transition-colors group"
                             >
-                                <p className={`font-bold text-sm ${value === item ? 'text-primary' : 'text-gray-800 dark:text-white'} group-hover:text-primary transition-colors`}>{item}</p>
+                                <p className={`font-bold text-sm ${value === item ? 'text-primary' : 'text-foreground'} group-hover:text-primary transition-colors`}>{item}</p>
                             </button>
                         ))}
                     </div>
@@ -632,7 +632,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
 
                 {/* Search Results Dropdown */}
                 {(searchTerm.length > 0 || isFocused) && filteredItems.length > 0 && (
-                    <div className="absolute z-50 w-full mt-2 bg-white dark:bg-[#121212] border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl max-h-48 overflow-y-auto backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="absolute z-50 w-full mt-2 bg-dropdown-bg border border-dropdown-border rounded-2xl shadow-2xl max-h-48 overflow-y-auto backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200">
                         {filteredItems.map((item) => (
                             <button
                                 key={item}
@@ -641,7 +641,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                                     setSelected([...selected, item]);
                                     setSearchTerm('');
                                 }}
-                                className="w-full text-left px-5 py-4 hover:bg-gray-100 dark:hover:bg-white/5 border-b border-gray-100 dark:border-white/5 last:border-0 transition-colors group"
+                                className="w-full text-left px-5 py-4 hover:bg-dropdown-hover border-b border-dropdown-border last:border-0 transition-colors group"
                             >
                                 <p className="font-bold text-sm text-primary dark:text-white transition-colors">{item}</p>
                             </button>
@@ -931,13 +931,13 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                                     className="glass-input w-full p-3 rounded-xl text-sm font-medium"
                                 />
                                 {searchResultsFixed.length > 0 && (
-                                    <div className="absolute z-50 w-full mt-2 bg-white dark:bg-[#121212] border border-gray-200 dark:border-black/10 rounded-xl shadow-2xl max-h-48 overflow-y-auto backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                                    <div className="absolute z-50 w-full mt-2 bg-dropdown-bg border border-dropdown-border rounded-xl shadow-2xl max-h-48 overflow-y-auto backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200">
                                         {searchResultsFixed.map((place, idx) => (
                                             <button
                                                 key={idx}
                                                 type="button"
                                                 onClick={() => selectFixedRestaurant(place)}
-                                                className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-white/5 border-b border-gray-100 dark:border-white/5 last:border-0 transition-colors"
+                                                className="w-full text-left px-4 py-3 hover:bg-dropdown-hover border-b border-dropdown-border last:border-0 transition-colors"
                                             >
                                                 <p className="font-bold text-sm text-primary dark:text-white">{place.name}</p>
                                                 <p className="text-[10px] text-gray-500 dark:text-black/80">{place.category?.[0]} • {place.price}</p>
@@ -1122,9 +1122,9 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                                     </div>
                                     <input type="text" placeholder="Search venues..." value={searchTerm} onChange={(e) => handleSearch(e.target.value)} className="glass-input w-full p-3 rounded-xl text-sm font-medium" />
                                     {searchResults.length > 0 && (
-                                        <div className="absolute z-50 w-full mt-2 bg-white dark:bg-[#121212] border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl max-h-48 overflow-y-auto backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                                        <div className="absolute z-50 w-full mt-2 bg-dropdown-bg border border-dropdown-border rounded-xl shadow-2xl max-h-48 overflow-y-auto backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200">
                                             {searchResults.map((place, idx) => (
-                                                <button key={idx} type="button" onClick={() => selectRestaurant(place)} className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-white/5 border-b border-gray-100 dark:border-white/5 last:border-0 transition-colors">
+                                                <button key={idx} type="button" onClick={() => selectRestaurant(place)} className="w-full text-left px-4 py-3 hover:bg-dropdown-hover border-b border-dropdown-border last:border-0 transition-colors">
                                                     <p className="font-bold text-sm text-primary dark:text-white">{place.name}</p>
                                                     <p className="text-[10px] text-gray-500 dark:text-muted-foreground">{place.category?.[0]} • {place.price}</p>
                                                 </button>

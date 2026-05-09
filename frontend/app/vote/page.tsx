@@ -22,12 +22,8 @@ const InviteeVotePage = () => {
         setParamUserId(searchParams.get('user_id'));
     }, []);
 
-    const [currentStep, setCurrentStep] = useState(1); // 1: RSVP, 2: Availability, 3: Preferences
     const [meetingData, setMeetingData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
-
-    const [rsvp, setRsvp] = useState<'yes' | 'no' | null>(null);
-    const [availability, setAvailability] = useState<any>({}); // UI format: { date: [ {start, end} ] }
 
     const [restaurantConfig, setRestaurantConfig] = useState<any>(null);
 
@@ -77,7 +73,7 @@ const InviteeVotePage = () => {
                     if (attendee) {
                         setIsInvited(true);
                         // Check if already voted (preference exists and not empty)
-                        if (attendee.preference && Object.keys(attendee.preference).length > 0) {
+                        if (attendee.preference) {
                             setHasVoted(true);
                         }
                     } else {
@@ -202,52 +198,8 @@ const InviteeVotePage = () => {
         </div>
     );
 
-    const handleRSVP = (status: 'yes' | 'no') => {
-        setRsvp(status);
-        if (status === 'yes') {
-            if (meetingData?.timingMode === 'fixed') {
-                // Auto-fill availability for fixed time
-                const fixedAvail = {
-                    [meetingData.fixedDate]: [
-                        { start: meetingData.fixedStartTime, end: meetingData.fixedEndTime }
-                    ]
-                };
-                setAvailability(fixedAvail);
-                if (meetingData?.allowOthersSuggest || meetingData?.allowSystemSuggest) {
-                    setCurrentStep(3);
-                } else {
-                    // Submit immediately since no more preferences step
-                    handleSubmitVote('yes', fixedAvail, {});
-                }
-            } else {
-                setCurrentStep(2);
-            }
-        } else {
-            // If No, submit immediately as declined
-            handleSubmitVote(status, {}, {});
-        }
-    };
-
-    const handleAvailabilitySubmit = (dates: any) => {
-        const hasSlots = Object.values(dates).some((slots: any) => slots.length > 0);
-        if (!hasSlots) {
-            alert("Please select at least one available time slot.");
-            return;
-        }
-        setAvailability(dates);
-
-        if (meetingData?.fixedRestaurants && meetingData.fixedRestaurants.length > 0) {
-            handleSubmitVote('yes', dates, {});
-        } else {
-            setCurrentStep(3);
-        }
-    };
-
-    const handleFinalSubmit = (prefs: any) => {
-        handleSubmitVote('yes', availability, prefs);
-    };
-
-    const handleSubmitVote = async (status: 'yes' | 'no', avail: any, prefs: any) => {
+    const handleFinalSubmit = async (data: any) => {
+        const { status, availability: avail, preferences: prefs } = data;
         const effectiveUserId = paramUserId || profile?.userId;
 
         if (!effectiveUserId) {
@@ -260,20 +212,9 @@ const InviteeVotePage = () => {
             return;
         }
 
-        // 1. Transform Data
         const isJoined = status === 'yes';
-
-        // // 2. Ensure User Exists (Idempotent-ish)
-        // await apiService.addAttendee({
-        //     meeting_id: meetingId,
-        //     user_id: effectiveUserId,
-        //     group_id: groupId,
-        //     is_key_person: false,
-        //     is_joined: status === 'yes',
-        // });
-
-        // Transform Availability
         const avaliable_at: any[] = [];
+
         if (isJoined) {
             Object.entries(avail).forEach(([dateStr, slots]: [string, any]) => {
                 slots.forEach((slot: any) => {
@@ -287,12 +228,11 @@ const InviteeVotePage = () => {
             });
         }
 
-        // Transform Preferences (New Structure)
         const preference = isJoined ? {
             price: prefs.price,
             category: prefs.category,
-            avoid_categories: prefs.avoidCategories,
-            good_fors: prefs.goodFors,
+            avoid_categories: prefs.avoid_categories,
+            good_fors: prefs.good_fors,
             alcohols: prefs.alcohols,
             parking: prefs.parking,
             departure_location: prefs.departureLocation,
@@ -302,34 +242,24 @@ const InviteeVotePage = () => {
         } : {};
 
         try {
-            // 3. Submit to Attendee API - Update existing record
-            // Since page is guarded by isInvited, user must exist.
             await apiService.updateAttendee(meetingId, effectiveUserId, {
                 is_joined: isJoined,
                 preference: preference,
                 avaliable_at: avaliable_at
             });
 
-            // 4. Show "All Set" screen instead of redirecting
             setHasVoted(true);
             window.scrollTo({ top: 0, behavior: 'smooth' });
-            // router.push(`/result?group_id=${groupId}&meeting_id=${meetingId}&user_id=${effectiveUserId}`);
         } catch (error) {
             console.error("Failed to submit vote", error);
             alert("Failed to submit vote");
         }
     };
 
-    if (loading) return (
-        <div className="flex items-center justify-center min-h-screen">
-            <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-        </div>
-    );
-
     return (
         <div className="h-[100dvh] flex flex-col overflow-hidden bg-background">
             <div className="flex-1 overflow-y-auto p-4 pb-20">
-                <header className="mb-6 pt-4 relative">
+                <header className="mb-8 pt-4 text-center">
                     <button
                         onClick={() => groupId ? router.push(`/result?group_id=${groupId}`) : router.push('/')}
                         className="absolute left-0 top-6 p-2 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-muted-foreground"
@@ -339,108 +269,20 @@ const InviteeVotePage = () => {
                             <polyline points="9 22 9 12 15 12 15 22" />
                         </svg>
                     </button>
-
-                    <div className="text-center">
-                        <h1 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 tracking-tight px-10">
-                            {meetingData?.name}
-                        </h1>
-                        <p className="text-muted-foreground text-xs">Step {currentStep} of 3</p>
-                    </div>
-
-                    <div className="w-full bg-white/10 h-1 mt-4 rounded-full overflow-hidden">
-                        <div
-                            className="bg-primary h-full transition-all duration-300"
-                            style={{ width: `${(currentStep / 3) * 100}%` }}
-                        ></div>
-                    </div>
+                    <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 tracking-tight mb-2">
+                        DISHCISION
+                    </h1>
+                    <p className="text-muted-foreground text-sm">Join the meeting and vote</p>
                 </header>
 
-                {/* STEP 1: RSVP */}
-                {currentStep === 1 && (
-                    <div className="glass-panel p-6 rounded-2xl text-center space-y-6 animate-in zoom-in">
-                        <h2 className="text-xl font-bold text-foreground">Will you join us?</h2>
-                        <p className="text-muted-foreground">
-                            {meetingData?.timingMode === 'fixed' ? (
-                                <>
-                                    <span className="font-medium text-foreground">{meetingData.fixedDate}</span><br />
-                                    <span className="text-sm">{meetingData.fixedStartTime} - {meetingData.fixedEndTime}</span>
-                                </>
-                            ) : (
-                                <>
-                                    {meetingData?.startDate} - {meetingData?.endDate}<br />
-                                    {meetingData?.mealTime}
-                                </>
-                            )}
-                        </p>
-                        <div className="flex gap-4 justify-center">
-                            <button
-                                onClick={() => handleRSVP('no')}
-                                className="px-6 py-3 rounded-xl border border-white/10 text-muted-foreground hover:bg-white/5 transition-all"
-                            >
-                                Not Available
-                            </button>
-                            <button
-                                onClick={() => handleRSVP('yes')}
-                                className="px-8 py-3 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/30 hover:scale-105 transition-all"
-                            >
-                                I'm In!
-                            </button>
-                        </div>
-                    </div>
-                )}
-
-                {/* STEP 2: AVAILABILITY (Detailed Time Slots) */}
-                {currentStep === 2 && (
-                    <div className="animate-in slide-in-from-right duration-300">
-                        <div className="mb-4">
-                            <button
-                                onClick={() => setCurrentStep(1)}
-                                className="text-xs font-bold text-muted-foreground hover:text-primary flex items-center gap-1 uppercase tracking-wider transition-colors"
-                            >
-                                ← Back
-                            </button>
-                        </div>
-                        <h2 className="text-xl font-bold text-foreground text-center">When are you free?</h2>
-
-                        <TimeSlotSelector
-                            startDate={meetingData?.startDate}
-                            endDate={meetingData?.endDate}
-                            value={availability}
-                            onChange={setAvailability}
-                        />
-
-                        <button
-                            onClick={() => handleAvailabilitySubmit(availability)}
-                            className="glass-button w-full py-4 rounded-xl font-bold mt-4"
-                        >
-                            {meetingData?.fixedRestaurants && meetingData.fixedRestaurants.length > 0
-                                ? "Submit Vote"
-                                : "Next: Preferences"}
-                        </button>
-                    </div>
-                )}
-
-                {/* STEP 3: PREFERENCES */}
-                {currentStep === 3 && (
-                    <div className="glass-panel p-6 rounded-2xl space-y-6 animate-in slide-in-from-right">
-                        <div className="mb-2">
-                            <button
-                                onClick={() => setCurrentStep(meetingData?.timingMode === 'fixed' ? 1 : 2)}
-                                className="text-xs font-bold text-muted-foreground hover:text-primary flex items-center gap-1 uppercase tracking-wider transition-colors"
-                            >
-                                ← Back
-                            </button>
-                        </div>
-                        <VotingForm
-                            meetingData={meetingData}
-                            restaurantConfig={restaurantConfig}
-                            onVoteSubmit={handleFinalSubmit}
-                        />
-                    </div>
-                )}
+                <VotingForm
+                    meetingData={meetingData}
+                    restaurantConfig={restaurantConfig}
+                    onVoteSubmit={handleFinalSubmit}
+                />
             </div>
         </div>
-    )
-}
+    );
+};
 
-export default InviteeVotePage
+export default InviteeVotePage;

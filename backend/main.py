@@ -39,7 +39,7 @@ def main() -> None:
             "main:app",
             host="0.0.0.0",
             port=8081,
-            reload=False,
+            reload=True,
             factory=False,
         )
     except Exception as e:
