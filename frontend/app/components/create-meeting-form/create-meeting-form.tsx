@@ -32,11 +32,21 @@ interface MeetingData {
         meal_time?: string;
     }
     // Location Data
+    fixLocation?: string;
+    fixLocationCoords?: { lat: number; lng: number };
     departureLocation: string;
     locationCoordinates?: { lat: number; lng: number };
     preferredRestaurant: any[];
     // Availability
     availability: any;
+    // New Timing Fields
+    timingMode?: 'period' | 'fixed';
+    fixedDate?: string;
+    fixedStartTime?: string;
+    fixedEndTime?: string;
+    allowSystemSuggest?: boolean;
+    requireAllJoin?: boolean;
+    allowOthersSuggest?: boolean;
 }
 
 interface CreateMeetingFormProps {
@@ -48,16 +58,74 @@ interface CreateMeetingFormProps {
 }
 
 const CreateMeetingForm = (props: CreateMeetingFormProps) => {
-    const { attendeeList, onDataSubmit, initialGroupId, initialUserId, restaurantConfig } = props;
+    const { attendeeList, onDataSubmit, initialGroupId, initialUserId } = props;
     const { profile } = useLiff();
+    const [currentStep, setCurrentStep] = useState(0);
     const [meetingName, setMeetingName] = useState('');
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
     const [mealTime, setMealTime] = useState('Any');
     const [organizerMealTime, setOrganizerMealTime] = useState('Any');
 
+    // Timing Mode
+    const [timingMode, setTimingMode] = useState<'period' | 'fixed'>('period');
+    const [fixedDate, setFixedDate] = useState('');
+    const [fixedStartTime, setFixedStartTime] = useState('');
+    const [fixedEndTime, setFixedEndTime] = useState('');
+
     // Group ID
     const [groupId, setGroupId] = useState(initialGroupId || 'group-1');
+
+    // Sync organizer's preference with meeting's global meal time
+    useEffect(() => {
+        if (mealTime !== 'Any') {
+            setOrganizerMealTime(mealTime);
+        }
+    }, [mealTime]);
+
+    // Navigation Logic
+    const handleNext = () => {
+        if (currentStep === 0) {
+            // Validate Step 0
+            if (!meetingName.trim()) {
+                alert("Please enter a meeting topic.");
+                return;
+            }
+            if (timingMode === 'period') {
+                if (!startDate || !endDate) {
+                    alert("Please select start and end dates.");
+                    return;
+                }
+                if (dateError) {
+                    alert(dateError);
+                    return;
+                }
+                setCurrentStep(1);
+            } else {
+                if (!fixedDate || !fixedStartTime || !fixedEndTime) {
+                    alert("Please select date and time for the fixed meeting.");
+                    return;
+                }
+                setCurrentStep(2); // Skip Step 1 for Fixed Mode
+            }
+        } else if (currentStep === 1) {
+            // Validate Step 1: Availability
+            const hasTimeSlots = Object.values(availability).some((slots: any) => slots.length > 0);
+            if (!hasTimeSlots) {
+                alert("Please select at least one available time slot.");
+                return;
+            }
+            setCurrentStep(2);
+        }
+    };
+
+    const handleBack = () => {
+        if (currentStep === 2 && timingMode === 'fixed') {
+            setCurrentStep(0);
+        } else if (currentStep > 0) {
+            setCurrentStep(currentStep - 1);
+        }
+    };
 
     // Close search dropdown when clicking outside
     const searchWrapperRef = useRef<HTMLDivElement>(null);
@@ -79,20 +147,27 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
     // Organizer Preferences
     const [priceRange, setPriceRange] = useState<string>(''); // Default to empty for selection
     const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+    const [avoidCategories, setAvoidCategories] = useState<string[]>([]);
     const [selectedGoodFors, setSelectedGoodFors] = useState<string[]>([]);
     const [selectedAlcohols, setSelectedAlcohols] = useState<boolean>(false);
     const [selectedParking, setSelectedParking] = useState<boolean>(false);
+    const [allowSystemSuggest, setAllowSystemSuggest] = useState<boolean>(true);
+    const [requireAllJoin, setRequireAllJoin] = useState<boolean>(false);
+    const [allowOthersSuggest, setAllowOthersSuggest] = useState<boolean>(true);
+    const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
 
     // Unused for now or could be text input
+    const [fixLocation, setFixLocation] = useState('');
     const [departureLocation, setDepartureLocation] = useState('');
-    const [preferredLocation, setPreferredLocation] = useState('');
 
     // Changed to array of objects
     const [preferredRestaurant, setPreferredRestaurant] = useState<any[]>([]);
     const [fixedRestaurants, setFixedRestaurants] = useState<any[]>([]);
-    
+
     // Location State
+    const [fixLocationCoords, setFixLocationCoords] = useState<{ lat: number; lng: number } | null>(null);
     const [locationCoords, setLocationCoords] = useState<{ lat: number; lng: number } | null>(null);
+    const [mapPickerTarget, setMapPickerTarget] = useState<'fix' | 'prefer'>('fix');
     const [isLocating, setIsLocating] = useState(false);
 
     const [searchTerm, setSearchTerm] = useState('');
@@ -102,27 +177,59 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
     const [searchTermFixed, setSearchTermFixed] = useState('');
     const [searchResultsFixed, setSearchResultsFixed] = useState<any[]>([]);
     const searchWrapperRefFixed = useRef<HTMLDivElement>(null);
-    
+    const [cuisineSearchTerm, setCuisineSearchTerm] = useState('');
+    const [avoidCuisineSearchTerm, setAvoidCuisineSearchTerm] = useState('');
+    const [cuisineFocused, setCuisineFocused] = useState(false);
+    const [avoidCuisineFocused, setAvoidCuisineFocused] = useState(false);
+    const [priceFocused, setPriceFocused] = useState(false);
+    const cuisineSearchRef = useRef<HTMLDivElement>(null);
+    const avoidCuisineSearchRef = useRef<HTMLDivElement>(null);
+    const priceRef = useRef<HTMLDivElement>(null);
+
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
             if (searchWrapperRefFixed.current && !searchWrapperRefFixed.current.contains(event.target as Node)) {
                 setSearchResultsFixed([]);
+            }
+            if (cuisineSearchRef.current && !cuisineSearchRef.current.contains(event.target as Node)) {
+                setCuisineSearchTerm('');
+                setCuisineFocused(false);
+            }
+            if (avoidCuisineSearchRef.current && !avoidCuisineSearchRef.current.contains(event.target as Node)) {
+                setAvoidCuisineSearchTerm('');
+                setAvoidCuisineFocused(false);
+            }
+            if (priceRef.current && !priceRef.current.contains(event.target as Node)) {
+                setPriceFocused(false);
             }
         }
         document.addEventListener("mousedown", handleClickOutside);
         return () => {
             document.removeEventListener("mousedown", handleClickOutside);
         };
-    }, [searchWrapperRefFixed]);
+    }, [searchWrapperRefFixed, cuisineSearchRef, avoidCuisineSearchRef]);
 
     // Availability
     const [availability, setAvailability] = useState<any>({});
+
+    // Auto-sync fixed mode to availability
+    useEffect(() => {
+        if (timingMode === 'fixed' && fixedDate && fixedStartTime && fixedEndTime) {
+            setStartDate(fixedDate);
+            setEndDate(fixedDate);
+            setAvailability({
+                [fixedDate]: [{ start: fixedStartTime, end: fixedEndTime }]
+            });
+        }
+    }, [timingMode, fixedDate, fixedStartTime, fixedEndTime]);
+
 
     // Date validation
     const [dateError, setDateError] = useState('');
 
     // Map picker state
     const [showMapPicker, setShowMapPicker] = useState(false);
+
 
     const handleSearch = async (keyword: string) => {
         setSearchTerm(keyword);
@@ -269,47 +376,24 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
         return distance <= 50;
     }
 
-    const handleCurrentLocation = () => {
-        if (!navigator.geolocation) {
-            alert("Geolocation is not supported by your browser");
-            return;
+    const handleClearLocation = (target: 'fix' | 'prefer' = 'prefer') => {
+        if (target === 'fix') {
+            setFixLocation("");
+            setFixLocationCoords(null);
+        } else {
+            setDepartureLocation("");
+            setLocationCoords(null);
         }
-        setIsLocating(true);
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                const lat = position.coords.latitude;
-                const lng = position.coords.longitude;
-
-                if (!isLocationValid(lat, lng)) {
-                    alert("Location is outside of available service area (Bangkok & Vicinity)");
-                    setDepartureLocation("");
-                    setLocationCoords(null);
-                    setIsLocating(false);
-                    return;
-                }
-
-                setLocationCoords({
-                    lat: lat,
-                    lng: lng
-                });
-                setDepartureLocation("Current Location");
-                setIsLocating(false);
-            },
-            (error) => {
-                console.error("Error getting location:", error);
-                alert("Unable to retrieve your location");
-                setIsLocating(false);
-            }
-        );
     };
 
-    const handleLocationBlur = async () => {
-        if (departureLocation && departureLocation !== "Current Location") {
+    const handleLocationBlur = async (target: 'fix' | 'prefer' = 'prefer') => {
+        const val = target === 'fix' ? fixLocation : departureLocation;
+        if (val && val !== "Current Location") {
             // Geocoding using Nominatim
             try {
                 const response = await fetch(
                     `https://nominatim.openstreetmap.org/search?` +
-                    `format=json&q=${encodeURIComponent(departureLocation)}` +
+                    `format=json&q=${encodeURIComponent(val)}` +
                     `&countrycodes=th` + // Removed strict bounding box to allow user input, validation happens after
                     `&limit=5`
                 );
@@ -320,15 +404,21 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
 
                     if (!isLocationValid(lat, lng)) {
                         alert("Location is outside of available service area (Bangkok & Vicinity)");
-                        setDepartureLocation("");
-                        setLocationCoords(null);
+                        if (target === 'fix') {
+                            setFixLocation("");
+                            setFixLocationCoords(null);
+                        } else {
+                            setDepartureLocation("");
+                            setLocationCoords(null);
+                        }
                         return;
                     }
 
-                    setLocationCoords({
-                        lat: lat,
-                        lng: lng
-                    });
+                    if (target === 'fix') {
+                        setFixLocationCoords({ lat, lng });
+                    } else {
+                        setLocationCoords({ lat, lng });
+                    }
                     console.log("Geocoded:", lat, lng);
                 }
             } catch (error) {
@@ -341,20 +431,17 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
 
-        // 0. Validation: Date Range
-        if (dateError) {
-            alert(dateError);
-            return;
-        }
-
         // 1. Validation: Mandatory Location (Only if no fixed restaurants)
+        const activeLocation = fixLocation || departureLocation;
+        const activeCoords = fixLocationCoords || locationCoords;
+
         if (fixedRestaurants.length === 0) {
-            if (!departureLocation || departureLocation.trim() === "") {
-                alert("Please provide a Departure Location.");
+            if (!activeLocation || activeLocation.trim() === "") {
+                alert("Please provide a Meeting Location or Prefer Location.");
                 return;
             }
 
-            if (!locationCoords) {
+            if (!activeCoords) {
                 alert("Could not determine coordinates for the location. Please select a valid location from the search or map.");
                 return;
             }
@@ -388,9 +475,11 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
             meal_time: organizerMealTime,
             price: priceRange || "Any", // Default or validation needed
             category: selectedCategories,
+            avoid_categories: avoidCategories,
             good_fors: selectedGoodFors,
-            alcohols: selectedAlcohols ? true : null,
-            parking: selectedParking ? true : null,
+            alcohols: selectedAlcohols,
+            parking: selectedParking
+
         };
 
         const meetingData: MeetingData = {
@@ -405,10 +494,20 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
             groupId: groupId,
             status: 'open',
             organizerPreferences: organizerPreferences as any,
+            fixLocation,
+            fixLocationCoords: fixLocationCoords || undefined,
             departureLocation,
             locationCoordinates: locationCoords || undefined,
             preferredRestaurant,
-            availability
+            availability,
+            // Timing Mode Fields
+            timingMode,
+            fixedDate,
+            fixedStartTime,
+            fixedEndTime,
+            allowSystemSuggest: fixedRestaurants.length === 0 ? true : allowSystemSuggest,
+            requireAllJoin: requireAllJoin,
+            allowOthersSuggest: allowOthersSuggest
         };
 
         if (onDataSubmit) {
@@ -417,6 +516,52 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
     };
 
     // Helper for rendering chip selections
+    const renderDropdown = (
+        label: string,
+        value: string,
+        onChange: (val: string) => void,
+        items: string[],
+        isOpen: boolean,
+        setIsOpen: (val: boolean) => void,
+        wrapperRef: React.RefObject<HTMLDivElement>
+    ) => {
+        return (
+            <div className="space-y-2 relative" ref={wrapperRef}>
+                <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">{label}</label>
+                <button
+                    type="button"
+                    onClick={() => setIsOpen(!isOpen)}
+                    className="glass-input w-full p-3 rounded-xl text-left text-sm font-medium flex justify-between items-center"
+                >
+                    <span className={value && value !== "" ? "text-gray-800 dark:text-white" : "text-muted-foreground"}>
+                        {value || "Select Budget..."}
+                    </span>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                    </svg>
+                </button>
+
+                {isOpen && (
+                    <div className="absolute z-50 w-full mt-2 bg-white dark:bg-[#121212] border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl max-h-48 overflow-y-auto backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                        {items.map((item) => (
+                            <button
+                                key={item}
+                                type="button"
+                                onClick={() => {
+                                    onChange(item);
+                                    setIsOpen(false);
+                                }}
+                                className="w-full text-left px-5 py-4 hover:bg-gray-100 dark:hover:bg-white/5 border-b border-gray-100 dark:border-white/5 last:border-0 transition-colors group"
+                            >
+                                <p className={`font-bold text-sm ${value === item ? 'text-primary' : 'text-gray-800 dark:text-white'} group-hover:text-primary transition-colors`}>{item}</p>
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     const renderChipGroup = (label: string, items: string[], selected: string[], setSelected: (val: string[]) => void) => (
         <div className="space-y-2">
             <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">{label}</label>
@@ -426,9 +571,9 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                         key={item}
                         type="button"
                         onClick={() => toggleSelection(item, selected, setSelected)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all ${selected.includes(item)
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${selected.includes(item)
                             ? 'bg-primary border-primary text-white shadow-lg'
-                            : 'bg-transparent border-white/10 text-muted-foreground hover:bg-white/5'
+                            : 'bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10'
                             }`}
                     >
                         {item}
@@ -438,378 +583,584 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
         </div>
     );
 
+    const renderSearchableChipGroup = (
+        label: string,
+        items: string[],
+        selected: string[],
+        setSelected: (val: string[]) => void,
+        searchTerm: string,
+        setSearchTerm: (val: string) => void,
+        placeholder: string,
+        wrapperRef: React.RefObject<HTMLDivElement>,
+        isFocused: boolean,
+        setIsFocused: (val: boolean) => void,
+        forbiddenItems: string[] = [],
+        variant: 'positive' | 'negative' = 'positive'
+    ) => {
+        const filteredItems = items.filter(item =>
+            item.toLowerCase().includes(searchTerm.toLowerCase()) &&
+            !selected.includes(item) &&
+            !forbiddenItems.includes(item)
+        );
+
+        const chipStyles = variant === 'positive'
+            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+            : "bg-rose-500/10 border-rose-500/20 text-rose-400";
+
+        return (
+            <div className="space-y-2 relative" ref={wrapperRef}>
+                <label className={`block text-sm font-medium uppercase tracking-wider ${variant === 'positive' ? 'text-emerald-500' : 'text-rose-500'}`}>{label}</label>
+
+                {/* Selected Chips */}
+                <div className="flex flex-wrap gap-2 mb-2">
+                    {selected.length > 0 && selected.map((item) => (
+                        <span key={item} className={`px-3 py-1.5 rounded-full text-xs font-bold border flex items-center gap-2 ${chipStyles}`}>
+                            {item}
+                            <button type="button" onClick={() => setSelected(selected.filter(i => i !== item))} className="hover:text-white transition-colors">×</button>
+                        </span>
+                    ))}
+                </div>
+
+                <input
+                    type="text"
+                    placeholder={placeholder}
+                    value={searchTerm}
+                    onFocus={() => setIsFocused(true)}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="glass-input w-full p-4 rounded-xl text-sm font-medium"
+                />
+
+                {/* Search Results Dropdown */}
+                {(searchTerm.length > 0 || isFocused) && filteredItems.length > 0 && (
+                    <div className="absolute z-50 w-full mt-2 bg-white dark:bg-[#121212] border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl max-h-48 overflow-y-auto backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                        {filteredItems.map((item) => (
+                            <button
+                                key={item}
+                                type="button"
+                                onClick={() => {
+                                    setSelected([...selected, item]);
+                                    setSearchTerm('');
+                                }}
+                                className="w-full text-left px-5 py-4 hover:bg-gray-100 dark:hover:bg-white/5 border-b border-gray-100 dark:border-white/5 last:border-0 transition-colors group"
+                            >
+                                <p className="font-bold text-sm text-primary dark:text-white transition-colors">{item}</p>
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     return (
-        <>
-            <form onSubmit={handleSubmit} className="glass-panel p-6 rounded-2xl w-full max-w-lg mx-auto space-y-6 animate-in fade-in zoom-in duration-300">
+        <div className="w-full max-w-lg mx-auto">
+            {/* Progress Header */}
+            <div className="mb-8 px-2">
+                <div className="flex justify-between items-center mb-3">
+                    <span className="text-xs font-bold text-primary uppercase tracking-wider">
+                        {currentStep === 0 && "Step 0: Meeting Details"}
+                        {currentStep === 1 && "Step 1: Availability"}
+                        {currentStep === 2 && "Step 2: Preferences"}
+                    </span>
+                    <span className="text-xs text-muted-foreground font-bold">
+                        {currentStep + 1} / 3
+                    </span>
+                </div>
+                <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden backdrop-blur-sm">
+                    <div
+                        className="bg-primary h-full transition-all duration-500 ease-out shadow-[0_0_10px_rgba(var(--primary-rgb),0.5)]"
+                        style={{ width: `${((currentStep + 1) / 3) * 100}%` }}
+                    ></div>
+                </div>
+            </div>
 
-                {/* General Info Section */}
-                <div className="space-y-4 pb-4 border-b border-white/10">
-                    <h2 className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-300">
-                        1. Meeting Details
-                    </h2>
+            <form onSubmit={handleSubmit} className="glass-panel p-6 rounded-2xl space-y-6 animate-in fade-in zoom-in duration-500">
 
-                    {/* Meeting Name */}
-                    <div className="space-y-2">
-                        <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Topic</label>
-                        <input
-                            type="text"
-                            placeholder="e.g. Friday Night Dinner"
-                            value={meetingName}
-                            onChange={(e) => setMeetingName(e.target.value)}
-                            required
-                            className="glass-input w-full p-3 rounded-xl focus:ring-2 focus:ring-primary transition-all"
-                        />
-                    </div>
+                {/* STEP 0: MEETING DETAILS */}
+                {currentStep === 0 && (
+                    <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-500">
+                        <div className="space-y-2 pb-4 border-b border-white/10">
+                            <h2 className="text-xl font-bold text-foreground tracking-tight">
+                                Meeting Details
+                            </h2>
+                            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Set the foundation for your gathering</p>
+                        </div>
 
-                    {/* Date Range */}
-                    <div className="grid grid-cols-2 gap-4">
+                        {/* Meeting Name */}
                         <div className="space-y-2">
-                            <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Start</label>
+                            <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Topic</label>
                             <input
-                                type="date"
-                                value={startDate}
-                                onChange={(e) => setStartDate(e.target.value)}
-                                min={getTodayString()}
+                                type="text"
+                                placeholder="e.g. Friday Night Dinner"
+                                value={meetingName}
+                                onChange={(e) => setMeetingName(e.target.value)}
                                 required
-                                className="glass-input w-full p-3 rounded-xl focus:ring-2 focus:ring-primary transition-all text-sm"
+                                className="glass-input w-full p-3 rounded-xl focus:ring-2 focus:ring-primary transition-all"
                             />
                         </div>
-                        <div className="space-y-2">
-                            <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">End</label>
-                            <input
-                                type="date"
-                                value={endDate}
-                                onChange={(e) => setEndDate(e.target.value)}
-                                min={startDate || getTodayString()}
-                                max={getMaxEndDate()}
-                                required
-                                className="glass-input w-full p-3 rounded-xl focus:ring-2 focus:ring-primary transition-all text-sm"
-                            />
-                        </div>
-                    </div>
-                    {dateError && (
-                        <div className="text-red-400 text-sm mt-2 p-3 bg-red-500/10 rounded-lg border border-red-500/20">
-                            ⚠️ {dateError}
-                        </div>
-                    )}
 
-                    {/* Meal Time */}
-                    <div className="space-y-2">
-                        <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Meal Time</label>
-                        <div className="flex bg-white/5 rounded-xl p-1 gap-1">
-                            {['Lunch', 'Dinner', 'Any'].map((time) => (
+                        {/* Timing Mode Toggle */}
+                        <div className="space-y-2">
+                            <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Timing Mode</label>
+                            <div className="flex bg-white/5 rounded-xl p-1 gap-1 border border-white/5">
                                 <button
-                                    key={time}
                                     type="button"
-                                    onClick={() => setMealTime(time)}
-                                    className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${mealTime === time
+                                    onClick={() => {
+                                        setTimingMode('period');
+                                        setFixedDate('');
+                                        setFixedStartTime('');
+                                        setFixedEndTime('');
+                                        setAvailability({});
+                                    }}
+                                    className={`flex-1 py-2.5 text-xs font-bold rounded-lg transition-all uppercase tracking-wider ${timingMode === 'period'
                                         ? 'bg-primary text-white shadow-lg'
-                                        : 'text-muted-foreground hover:text-foreground hover:bg-white/10'
+                                        : 'text-muted-foreground hover:bg-white/5'
                                         }`}
                                 >
-                                    {time}
+                                    Voting
                                 </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Attendees */}
-                    <div className="space-y-2">
-                        <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Invite Friends</label>
-                        <div className="flex flex-wrap gap-2">
-                            {attendeeList.map((attendee) => (
                                 <button
-                                    key={attendee.userId}
                                     type="button"
-                                    onClick={() => handleToggleAttendee(attendee.userId)}
-                                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all flex items-center gap-2 ${selectedAttendees.includes(attendee.userId)
-                                        ? 'bg-primary border-primary text-white shadow-md'
-                                        : 'bg-transparent border-white/10 text-muted-foreground hover:border-white/30 hover:bg-white/5'
+                                    onClick={() => {
+                                        setTimingMode('fixed');
+                                        setStartDate('');
+                                        setEndDate('');
+                                        setAvailability({});
+                                    }}
+                                    className={`flex-1 py-2.5 text-xs font-bold rounded-lg transition-all uppercase tracking-wider ${timingMode === 'fixed'
+                                        ? 'bg-primary text-white shadow-lg'
+                                        : 'text-muted-foreground hover:bg-white/5'
                                         }`}
                                 >
-                                    <div className="w-4 h-4 rounded-full bg-gradient-to-tr from-purple-400 to-pink-400"></div>
-                                    {attendee.displayName}
+                                    Fixed Time
                                 </button>
-                            ))}
-                        </div>
-                    </div>
-                    {/* Key Persons */}
-                    <div className="space-y-2">
-                        <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Key Decision Makers</label>
-                        <div className="flex flex-wrap gap-2">
-                            {attendeeList.map((attendee) => (
-                                <button
-                                    key={attendee.userId}
-                                    type="button"
-                                    onClick={() => handleToggleKeyPerson(attendee.userId)}
-                                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all flex items-center gap-2 ${selectedKeyPersons.includes(attendee.userId)
-                                        ? 'bg-amber-500 border-amber-500 text-white shadow-md'
-                                        : 'bg-transparent border-white/10 text-muted-foreground hover:border-white/30 hover:bg-white/5'
-                                        }`}
-                                >
-                                    <div className="w-4 h-4 rounded-full bg-gradient-to-tr from-amber-300 to-orange-400"></div>
-                                    {attendee.displayName}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                    {/* List of Selected Restaurants */}
-                    <div className="space-y-2 relative" ref={searchWrapperRefFixed}>
-                        <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">List of Selected Restaurants (Optional)</label>
-
-                        {/* Selected Restaurants Chips */}
-                        <div className="flex flex-wrap gap-2 mb-2">
-                            {fixedRestaurants.length > 0 && fixedRestaurants.map((rest: any) => (
-                                <span key={rest.name} className="px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-500/20 border border-emerald-500/40 text-emerald-700 dark:text-emerald-200 flex items-center gap-2">
-                                    {rest.name}
-                                    <button type="button" onClick={() => removeFixedRestaurant(rest.name)} className="hover:text-emerald-900 dark:hover:text-white transition-colors">×</button>
-                                </span>
-                            ))}
+                            </div>
                         </div>
 
-                        <input
-                            type="text"
-                            placeholder="Search & Add restaurants..."
-                            value={searchTermFixed}
-                            onChange={(e) => handleSearchFixed(e.target.value)}
-                            className="glass-input w-full p-3 rounded-xl focus:ring-2 focus:ring-primary transition-all text-sm"
-                        />
+                        {timingMode === 'period' ? (
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Start Date</label>
+                                        <input
+                                            type="date"
+                                            value={startDate}
+                                            onChange={(e) => setStartDate(e.target.value)}
+                                            min={getTodayString()}
+                                            required
+                                            className="glass-input w-full p-3 rounded-xl focus:ring-2 focus:ring-primary transition-all text-sm font-medium"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">End Date</label>
+                                        <input
+                                            type="date"
+                                            value={endDate}
+                                            onChange={(e) => setEndDate(e.target.value)}
+                                            min={startDate || getTodayString()}
+                                            max={getMaxEndDate()}
+                                            required
+                                            className="glass-input w-full p-3 rounded-xl focus:ring-2 focus:ring-primary transition-all text-sm font-medium"
+                                        />
+                                    </div>
+                                </div>
 
-                        {/* Search Results Dropdown */}
-                        {searchResultsFixed.length > 0 && (
-                            <div className="absolute z-50 w-full mt-1 bg-white dark:bg-black/90 border border-gray-200 dark:border-white/10 rounded-xl shadow-xl max-h-48 overflow-y-auto backdrop-blur-md">
-                                {searchResultsFixed.map((place, idx) => (
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Meal Time</label>
+                                    <div className="flex bg-white/5 rounded-xl p-1 gap-1 border border-white/5">
+                                        {['Lunch', 'Dinner', 'Any'].map((time) => (
+                                            <button
+                                                key={time}
+                                                type="button"
+                                                onClick={() => setOrganizerMealTime(time)}
+                                                className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${organizerMealTime === time ? 'bg-primary text-white shadow-md' : 'text-muted-foreground hover:bg-white/5'}`}
+                                            >
+                                                {time}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Date</label>
+                                    <input
+                                        type="date"
+                                        value={fixedDate}
+                                        onChange={(e) => setFixedDate(e.target.value)}
+                                        min={getTodayString()}
+                                        required
+                                        className="glass-input w-full p-3 rounded-xl text-sm font-medium"
+                                    />
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">From</label>
+                                        <input
+                                            type="time"
+                                            value={fixedStartTime}
+                                            onChange={(e) => setFixedStartTime(e.target.value)}
+                                            required
+                                            className="glass-input w-full p-3 rounded-xl text-sm font-medium"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">To</label>
+                                        <input
+                                            type="time"
+                                            value={fixedEndTime}
+                                            onChange={(e) => setFixedEndTime(e.target.value)}
+                                            required
+                                            className="glass-input w-full p-3 rounded-xl text-sm font-medium"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {dateError && (
+                            <div className="text-rose-400 text-xs font-bold p-4 bg-rose-500/10 rounded-xl border border-rose-500/20 animate-pulse">
+                                ⚠️ {dateError}
+                            </div>
+                        )}
+
+                        {/* Attendees & Key Persons */}
+                        <div className="space-y-4">
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Invite Friends</label>
+                                <div className="flex flex-wrap gap-2">
+                                    {attendeeList.map((attendee) => (
+                                        <button
+                                            key={attendee.userId}
+                                            type="button"
+                                            onClick={() => handleToggleAttendee(attendee.userId)}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all flex items-center gap-2 ${selectedAttendees.includes(attendee.userId)
+                                                ? 'bg-primary border-primary text-white shadow-md'
+                                                : 'bg-transparent border-white/10 text-muted-foreground hover:border-white/30 hover:bg-white/5'
+                                                }`}
+                                        >
+                                            <div className={`w-2 h-2 rounded-full ${selectedAttendees.includes(attendee.userId) ? 'bg-white' : 'bg-primary/50'}`}></div>
+                                            {attendee.displayName}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Key Decision Makers</label>
+                                <div className="flex flex-wrap gap-2">
+                                    {attendeeList.map((attendee) => (
+                                        <button
+                                            key={attendee.userId}
+                                            type="button"
+                                            onClick={() => handleToggleKeyPerson(attendee.userId)}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-all flex items-center gap-2 ${selectedKeyPersons.includes(attendee.userId)
+                                                ? 'bg-amber-500 border-amber-500 text-white shadow-lg'
+                                                : 'bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10'
+                                                }`}
+                                        >
+                                            <div className={`w-2 h-2 rounded-full ${selectedKeyPersons.includes(attendee.userId) ? 'bg-white' : 'bg-amber-500/50'}`}></div>
+                                            {attendee.displayName}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Meeting Location & Restaurants */}
+                        <div className="space-y-4 pt-4 border-t border-white/10">
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Meeting Location (optional)</label>
+                                <div className="relative flex gap-2">
+                                    <input
+                                        type="text"
+                                        placeholder="e.g. Siam Paragon"
+                                        value={fixLocation}
+                                        onChange={(e) => setFixLocation(e.target.value)}
+                                        onBlur={() => handleLocationBlur('fix')}
+                                        className="glass-input w-full p-3 rounded-xl text-sm font-medium"
+                                    />
                                     <button
-                                        key={idx}
                                         type="button"
-                                        onClick={() => selectFixedRestaurant(place)}
-                                        className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-white/10 border-b border-gray-100 dark:border-white/5 last:border-0 transition-colors"
+                                        onClick={() => { setMapPickerTarget('fix'); setShowMapPicker(true); }}
+                                        className="glass-button px-4 py-3 rounded-xl hover:bg-white/10 transition-all"
                                     >
-                                        <p className="font-bold text-sm text-foreground">{place.name}</p>
-                                        <div className="flex justify-between items-start">
-                                            <p className="text-xs text-muted-foreground truncate">
-                                                {place.category?.[0]} • {place.price}
-                                                {place.rating > 0 && (
-                                                    <span className="text-amber-500"> • ★ {Number(place.rating).toFixed(1)}</span>
-                                                )}
-                                            </p>
-                                        </div>
-                                        {place.breadcrumbs && place.breadcrumbs.length > 0 && (
-                                            <p className="text-[10px] text-muted-foreground/70 truncate mt-0.5">
-                                                📍 {place.breadcrumbs[place.breadcrumbs.length - 1]}
-                                            </p>
+                                        {isLocating ? (
+                                            <div className="w-5 h-5 border-2 border-white/50 border-t-white rounded-full animate-spin" />
+                                        ) : (
+                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
+                                            </svg>
                                         )}
                                     </button>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                {/* Availability Section (New) */}
-                <div className="space-y-4 pb-4 border-b border-white/10">
-                    <h2 className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-300">
-                        2. Availability
-                    </h2>
-                    <p className="text-sm text-muted-foreground">Select the times you are free.</p>
-
-                    {startDate && endDate ? (
-                        <TimeSlotSelector
-                            startDate={startDate}
-                            endDate={endDate}
-                            value={availability}
-                            onChange={setAvailability}
-                        />
-                    ) : (
-                        <div className="text-sm text-yellow-500/80 bg-yellow-500/10 p-3 rounded-xl border border-yellow-500/20">
-                            Please select Start and End dates first.
-                        </div>
-                    )}
-                </div>
-
-                {/* Organizer Preferences Section */}
-                {fixedRestaurants.length === 0 && (
-                <div className="space-y-4">
-                    <h2 className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">
-                        3. Your Preferences
-                    </h2>
-
-                    {/* Preferred Meal Time (If Meeting is Any) */}
-                    {mealTime === 'Any' && (
-                        <div className="space-y-2">
-                            <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Preferred Meal Time</label>
-                            <div className="flex bg-white/5 rounded-xl p-1 gap-1">
-                                {['Lunch', 'Dinner', 'Any'].map((time) => (
-                                    <button
-                                        key={time}
-                                        type="button"
-                                        onClick={() => setOrganizerMealTime(time)}
-                                        className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${organizerMealTime === time
-                                            ? 'bg-primary text-white shadow-lg'
-                                            : 'text-muted-foreground hover:bg-white/5'
-                                            }`}
-                                    >
-                                        {time}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Price Range */}
-                    <div className="space-y-2">
-                        <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Budget / Person</label>
-                        <select
-                            value={priceRange}
-                            onChange={(e) => setPriceRange(e.target.value)}
-                            className="glass-input w-full p-3 rounded-xl"
-                        >
-                            <option value="" disabled>Select Budget...</option>
-                            {props.restaurantConfig?.price?.map((p: string) => (
-                                <option key={p} value={p} className="text-black">{p}</option>
-                            ))}
-                        </select>
-                    </div>
-
-                    {/* Food Types / Categories */}
-                    {renderChipGroup("Cuisine", props.restaurantConfig?.category || [], selectedCategories, setSelectedCategories)}
-
-                    {/* Good Fors / Vibe */}
-                    {renderChipGroup("Vibe / Good For", props.restaurantConfig?.good_fors || [], selectedGoodFors, setSelectedGoodFors)}
-
-
-                    <div className="grid grid-cols-2 gap-4">
-                        {/* Alcohols */}
-                        <div className="flex items-center justify-between glass-panel p-3 rounded-xl">
-                            <span className="text-sm font-medium">Alcohol</span>
-                            <input type="checkbox" checked={selectedAlcohols} onChange={e => setSelectedAlcohols(e.target.checked)} className="toggle" />
-                        </div>
-                        {/* Parking */}
-                        <div className="flex items-center justify-between glass-panel p-3 rounded-xl">
-                            <span className="text-sm font-medium">Parking</span>
-                            <input type="checkbox" checked={selectedParking} onChange={e => setSelectedParking(e.target.checked)} className="toggle" />
-                        </div>
-                    </div>
-
-                    {/* Departure Location */}
-                    <div className="space-y-2">
-                        <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Departure Location</label>
-                        <div className="relative flex gap-2">
-                            <input
-                                type="text"
-                                placeholder="e.g. Siam Paragon (or click icon)"
-                                value={departureLocation}
-                                onChange={(e) => setDepartureLocation(e.target.value)}
-                                onBlur={handleLocationBlur} // Trigger geocoding when user leaves field
-                                className="glass-input w-full p-3 rounded-xl focus:ring-2 focus:ring-primary transition-all text-sm"
-                            />
-                            <button
-                                type="button"
-                                onClick={handleCurrentLocation}
-                                className="glass-button p-3 rounded-xl flex items-center justify-center hover:bg-white/10"
-                                title="Use Current Location"
-                            >
-                                {isLocating ? (
-                                    <div className="w-5 h-5 border-2 border-white/50 border-t-white rounded-full animate-spin" />
-                                ) : (
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
-                                    </svg>
-                                )}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setShowMapPicker(true)}
-                                className="glass-button px-4 py-3 rounded-xl flex items-center gap-2 hover:bg-white/10 whitespace-nowrap"
-                                title="Use Map"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498 4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 0 0-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0Z" />
-                                </svg>
-                                <span className="text-sm">Map</span>
-                            </button>
-                        </div>
-                        {locationCoords && (
-                            <p className="text-xs text-emerald-400 font-medium">
-                                ✓ Coordinates set ({locationCoords.lat.toFixed(4)}, {locationCoords.lng.toFixed(4)})
-                            </p>
-                        )}
-                    </div>
-
-
-                    {/* Preferred Restaurant with Search */}
-                    <div className="space-y-2 relative" ref={searchWrapperRef}>
-                        <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Preferred Restaurants (Optional)</label>
-
-                            {/* Selected Restaurants Chips */}
-                            <div className="flex flex-wrap gap-2 mb-2">
-                                {preferredRestaurant.length > 0 && preferredRestaurant.map((rest: any) => (
-                                    <span key={rest.name} className="px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-500/20 border border-emerald-500/40 text-emerald-700 dark:text-emerald-200 flex items-center gap-2">
-                                        {rest.name}
-                                        <button type="button" onClick={() => removeRestaurant(rest.name)} className="hover:text-emerald-900 dark:hover:text-white transition-colors">×</button>
-                                    </span>
-                                ))}
-                            </div>
-
-                            <input
-                                type="text"
-                                placeholder="Search & Add restaurants..."
-                                value={searchTerm}
-                                onChange={(e) => handleSearch(e.target.value)}
-                                className="glass-input w-full p-3 rounded-xl focus:ring-2 focus:ring-primary transition-all text-sm"
-                            />
-
-                            {/* Search Results Dropdown */}
-                            {searchResults.length > 0 && (
-                                <div className="absolute z-50 w-full mt-1 bg-white dark:bg-black/90 border border-gray-200 dark:border-white/10 rounded-xl shadow-xl max-h-48 overflow-y-auto backdrop-blur-md">
-                                    {searchResults.map((place, idx) => (
+                                    {(fixLocation || fixLocationCoords) && (
                                         <button
-                                            key={idx}
                                             type="button"
-                                            onClick={() => selectRestaurant(place)}
-                                            className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-white/10 border-b border-gray-100 dark:border-white/5 last:border-0 transition-colors"
+                                            onClick={() => {
+                                                setFixLocation("");
+                                                setFixLocationCoords(null);
+                                            }}
+                                            className="glass-button px-4 py-3 rounded-xl flex items-center justify-center hover:bg-rose-500/20 text-rose-400 border-rose-500/20"
+                                            title="Clear Location"
                                         >
-                                            <p className="font-bold text-sm text-foreground">{place.name}</p>
-                                            <div className="flex justify-between items-start">
-                                                <p className="text-xs text-muted-foreground truncate">
-                                                    {place.category?.[0]} • {place.price}
-                                                    {place.rating > 0 && (
-                                                        <span className="text-amber-500"> • ★ {Number(place.rating).toFixed(1)}</span>
-                                                    )}
-                                                </p>
-                                            </div>
-                                            {place.breadcrumbs && place.breadcrumbs.length > 0 && (
-                                                <p className="text-[10px] text-muted-foreground/70 truncate mt-0.5">
-                                                    📍 {place.breadcrumbs[place.breadcrumbs.length - 1]}
-                                                </p>
-                                            )}
+                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
                                         </button>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="space-y-3 relative" ref={searchWrapperRefFixed}>
+                                <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Fixed Restaurants (Optional)</label>
+                                <div className="flex flex-wrap gap-2 mb-2">
+                                    {fixedRestaurants.map((rest: any) => (
+                                        <span key={rest.name} className="px-3 py-1 rounded-full text-[10px] font-bold bg-primary/10 border border-primary/20 text-primary flex items-center gap-2">
+                                            {rest.name}
+                                            <button type="button" onClick={() => removeFixedRestaurant(rest.name)} className="hover:text-white transition-colors">×</button>
+                                        </span>
+                                    ))}
+                                </div>
+                                <input
+                                    type="text"
+                                    placeholder="Add required restaurants..."
+                                    value={searchTermFixed}
+                                    onChange={(e) => handleSearchFixed(e.target.value)}
+                                    className="glass-input w-full p-3 rounded-xl text-sm font-medium"
+                                />
+                                {searchResultsFixed.length > 0 && (
+                                    <div className="absolute z-50 w-full mt-2 bg-white dark:bg-[#121212] border border-gray-200 dark:border-black/10 rounded-xl shadow-2xl max-h-48 overflow-y-auto backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                                        {searchResultsFixed.map((place, idx) => (
+                                            <button
+                                                key={idx}
+                                                type="button"
+                                                onClick={() => selectFixedRestaurant(place)}
+                                                className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-white/5 border-b border-gray-100 dark:border-white/5 last:border-0 transition-colors"
+                                            >
+                                                <p className="font-bold text-sm text-primary dark:text-white">{place.name}</p>
+                                                <p className="text-[10px] text-gray-500 dark:text-black/80">{place.category?.[0]} • {place.price}</p>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Advanced Settings */}
+                        <div className="pt-2">
+                            <button
+                                type="button"
+                                onClick={() => setShowAdvanced(!showAdvanced)}
+                                className="flex items-center justify-between w-full p-3 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 transition-all duration-300"
+                            >
+                                <span className="text-xs font-bold uppercase tracking-wider text-foreground/70">Advanced Settings</span>
+                                <span className={`text-xs transition-transform duration-300 ${showAdvanced ? 'rotate-180' : ''}`}>▼</span>
+                            </button>
+
+                            {showAdvanced && (
+                                <div className="space-y-3 mt-4 animate-in fade-in slide-in-from-top-4 duration-500">
+                                    {[
+                                        { label: "System Suggestions", value: allowSystemSuggest, setter: setAllowSystemSuggest },
+                                        { label: "Require All Attendees", value: requireAllJoin, setter: setRequireAllJoin },
+                                        { label: "Friends Can Suggest", value: allowOthersSuggest, setter: setAllowOthersSuggest }
+                                    ].map((opt, i) => (
+                                        <div key={i} className="flex items-center justify-between glass-panel p-3 rounded-xl border border-white/5">
+                                            <span className="text-xs font-medium text-foreground/80 uppercase tracking-wider">{opt.label}</span>
+                                            <input
+                                                type="checkbox"
+                                                checked={opt.value}
+                                                onChange={(e) => opt.setter(e.target.checked)}
+                                                className="toggle"
+                                            />
+                                        </div>
                                     ))}
                                 </div>
                             )}
                         </div>
-                </div>
+
+                        <button
+                            type="button"
+                            onClick={handleNext}
+                            className="glass-button w-full py-4 rounded-xl font-bold text-lg tracking-wide uppercase shadow-lg shadow-primary/10 mt-4 active:scale-[0.98] transition-all"
+                        >
+                            Next
+                        </button>
+                    </div>
                 )}
 
-                <button type="submit" className="glass-button w-full py-4 rounded-xl font-bold text-lg tracking-wide uppercase mt-8">
-                    Create & Vote
-                </button>
-            </form>
+                {/* STEP 1: AVAILABILITY */}
+                {currentStep === 1 && (
+                    <div className="space-y-6 animate-in slide-in-from-right duration-500">
+                        <button onClick={handleBack} className="text-xs font-bold text-muted-foreground hover:text-primary flex items-center gap-1 uppercase tracking-wider transition-colors mb-2">
+                            ← Back
+                        </button>
+
+                        <div className="space-y-2 pb-4 border-b border-white/10">
+                            <h2 className="text-xl font-bold text-foreground tracking-tight">Availability</h2>
+                            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Select the times you're free</p>
+                        </div>
+
+                        {startDate && endDate ? (
+                            <TimeSlotSelector
+                                startDate={startDate}
+                                endDate={endDate}
+                                value={availability}
+                                onChange={setAvailability}
+                            />
+                        ) : (
+                            <div className="text-sm font-bold text-amber-400 bg-amber-400/10 p-5 rounded-xl border border-amber-400/20 text-center">
+                                Please select dates in Step 0 first!
+                            </div>
+                        )}
+
+                        <button
+                            type="button"
+                            onClick={handleNext}
+                            className="glass-button w-full py-4 rounded-xl font-bold text-lg tracking-wide uppercase shadow-lg shadow-primary/10 mt-4 active:scale-[0.98] transition-all"
+                        >
+                            Next
+                        </button>
+                    </div>
+                )}
+
+                {/* STEP 2: PREFERENCE */}
+                {currentStep === 2 && (
+                    <div className="space-y-6 animate-in slide-in-from-right duration-500">
+                        <button onClick={handleBack} className="text-xs font-bold text-muted-foreground hover:text-primary flex items-center gap-1 uppercase tracking-wider transition-colors mb-2">
+                            ← Back
+                        </button>
+
+                        <div className="space-y-2 pb-4 border-b border-white/10">
+                            <h2 className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 tracking-tight">
+                                Your Preferences
+                            </h2>
+                            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Set your personal filter for this meeting</p>
+                        </div>
+
+                        {fixedRestaurants.length === 0 && (
+                            <div className="space-y-6">
+                                {timingMode !== 'fixed' && organizerMealTime === 'Any' && (
+                                    <div className="space-y-2">
+                                        <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Preferred Meal Time</label>
+                                        <div className="flex bg-white/5 rounded-xl p-1 gap-1 border border-white/5">
+                                            {['Lunch', 'Dinner', 'Any'].map((time) => (
+                                                <button
+                                                    key={time}
+                                                    type="button"
+                                                    onClick={() => setMealTime(time)}
+                                                    className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${mealTime === time ? 'bg-primary text-white shadow-md' : 'text-muted-foreground hover:bg-white/5'}`}
+                                                >
+                                                    {time}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {renderDropdown(
+                                    "Budget / Person",
+                                    priceRange,
+                                    setPriceRange,
+                                    props.restaurantConfig?.price ? [...props.restaurantConfig.price, 'Any'] : ['< 500', '500-1000', '1000-2000', '> 2000', 'Any'],
+                                    priceFocused,
+                                    setPriceFocused,
+                                    priceRef
+                                )}
+
+                                <div className="space-y-5">
+                                    {renderSearchableChipGroup("Prefer Cuisine", props.restaurantConfig?.category || [], selectedCategories, setSelectedCategories, cuisineSearchTerm, setCuisineSearchTerm, "Search cuisines...", cuisineSearchRef, cuisineFocused, setCuisineFocused, avoidCategories)}
+                                    {renderSearchableChipGroup("Avoid Cuisine", props.restaurantConfig?.category || [], avoidCategories, setAvoidCategories, avoidCuisineSearchTerm, setAvoidCuisineSearchTerm, "Avoid cuisines...", avoidCuisineSearchRef, avoidCuisineFocused, setAvoidCuisineFocused, selectedCategories, 'negative')}
+                                </div>
+
+                                {renderChipGroup("Vibe / Good For", props.restaurantConfig?.good_fors || [], selectedGoodFors, setSelectedGoodFors)}
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="flex items-center justify-between glass-panel p-3 rounded-xl border border-white/5">
+                                        <span className="text-sm font-medium uppercase tracking-wider">Alcohol</span>
+                                        <input type="checkbox" checked={selectedAlcohols} onChange={e => setSelectedAlcohols(e.target.checked)} className="toggle" />
+                                    </div>
+                                    <div className="flex items-center justify-between glass-panel p-3 rounded-xl border border-white/5">
+                                        <span className="text-sm font-medium uppercase tracking-wider">Parking</span>
+                                        <input type="checkbox" checked={selectedParking} onChange={e => setSelectedParking(e.target.checked)} className="toggle" />
+                                    </div>
+                                </div>
+
+                                {!fixLocation && (
+                                    <div className="space-y-2">
+                                        <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Prefer Location</label>
+                                        <div className="relative flex gap-2">
+                                            <input type="text" placeholder="e.g. Siam Paragon" value={departureLocation} onChange={(e) => setDepartureLocation(e.target.value)} onBlur={() => handleLocationBlur('prefer')} className="glass-input w-full p-3 rounded-xl text-sm font-medium" />
+                                            <button type="button" onClick={() => { setMapPickerTarget('prefer'); setShowMapPicker(true); }} className="glass-button px-4 py-3 rounded-xl hover:bg-white/10 transition-all">
+                                                {isLocating ? (
+                                                    <div className="w-5 h-5 border-2 border-white/50 border-t-white rounded-full animate-spin" />
+                                                ) : (
+                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
+                                                    </svg>
+                                                )}
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {allowOthersSuggest && (
+                            <div className="space-y-4 pt-6 border-t border-white/10">
+                                <div className="space-y-3 relative" ref={searchWrapperRef}>
+                                    <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Add Suggested Restaurants (Optional)</label>
+                                    <div className="flex flex-wrap gap-2 mb-2">
+                                        {preferredRestaurant.map((rest: any) => (
+                                            <span key={rest.name} className="px-3 py-1.5 rounded-full text-[10px] font-bold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center gap-2">
+                                                {rest.name}
+                                                <button type="button" onClick={() => removeRestaurant(rest.name)} className="text-xs hover:text-white transition-colors">×</button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                    <input type="text" placeholder="Search venues..." value={searchTerm} onChange={(e) => handleSearch(e.target.value)} className="glass-input w-full p-3 rounded-xl text-sm font-medium" />
+                                    {searchResults.length > 0 && (
+                                        <div className="absolute z-50 w-full mt-2 bg-white dark:bg-[#121212] border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl max-h-48 overflow-y-auto backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                                            {searchResults.map((place, idx) => (
+                                                <button key={idx} type="button" onClick={() => selectRestaurant(place)} className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-white/5 border-b border-gray-100 dark:border-white/5 last:border-0 transition-colors">
+                                                    <p className="font-bold text-sm text-primary dark:text-white">{place.name}</p>
+                                                    <p className="text-[10px] text-gray-500 dark:text-muted-foreground">{place.category?.[0]} • {place.price}</p>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        <button type="submit" className="glass-button w-full py-4 rounded-xl font-bold text-lg tracking-wide uppercase shadow-lg shadow-primary/10 mt-6 active:scale-[0.98] transition-all">
+                            Create & Vote
+                        </button>
+                    </div>
+                )}
+            </form >
 
             {/* Map Picker Modal */}
             {
                 showMapPicker && (
                     <MapPicker
-                        initialPosition={locationCoords || undefined}
+                        initialPosition={(mapPickerTarget === 'fix' ? fixLocationCoords : locationCoords) || undefined}
                         onConfirm={(coords, address) => {
-                            setLocationCoords(coords);
-                            setDepartureLocation(address);
+                            if (mapPickerTarget === 'fix') {
+                                setFixLocationCoords(coords);
+                                setFixLocation(address);
+                            } else {
+                                setLocationCoords(coords);
+                                setDepartureLocation(address);
+                            }
                         }}
                         onClose={() => setShowMapPicker(false)}
                     />
-                )}
-        </>
+                )
+            }
+        </div>
     )
 }
 

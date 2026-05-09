@@ -128,11 +128,21 @@ const CreateMeetingPage = () => {
           start_date: data.startDate,
           end_date: data.endDate,
           meal_time: data.mealTime,
-          // organizer_id: data.organizerId, // Removed as per request example (optional?)
           attendees: data.attendees.map((a: any) => a.userId),
           key_person: data.keyPersons.map((k: any) => k.userId),
           fixed_restaurants: data.fixedRestaurants || [],
-          // prefered_restaurants: data.preferredRestaurant || [] // Removed as per request
+          // Location Data
+          fix_location: data.fixLocation || null,
+          fix_location_coords: data.fixLocationCoords || null,
+          // Advanced Settings
+          allow_system_suggest: data.allowSystemSuggest,
+          require_all_join: data.requireAllJoin,
+          allow_others_suggest: data.allowOthersSuggest,
+          // Timing Mode & Fixed Time
+          timing_mode: data.timingMode,
+          fixed_date: data.fixedDate || null,
+          fixed_start_time: data.fixedStartTime || null,
+          fixed_end_time: data.fixedEndTime || null,
         }
       };
 
@@ -168,8 +178,9 @@ const CreateMeetingPage = () => {
 
       const prefs = {
         ...data.organizerPreferences,
-        lat: data.locationCoordinates?.lat || null,
-        lng: data.locationCoordinates?.lng || null,
+        lat: data.locationCoordinates?.lat || data.fixLocationCoords?.lat || null,
+        lng: data.locationCoordinates?.lng || data.fixLocationCoords?.lng || null,
+        departure_location: data.departureLocation || data.fixLocation || null,
         preferred_restaurant: data.preferredRestaurant || []
       };
 

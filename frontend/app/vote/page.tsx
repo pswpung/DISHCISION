@@ -5,6 +5,7 @@ import { useLiff } from '@/app/context/LiffContext';
 import { apiService } from '@/app/services/api';
 import VotingForm from '@/app/components/voting-form/voting-form';
 import { TimeSlotSelector } from '@/app/components/time-slot-selector/time-slot-selector';
+import { parseAvailabilityText } from '@/app/utils/availability-parser';
 
 const InviteeVotePage = () => {
     const { isLoggedIn, profile, liffObject } = useLiff();
@@ -53,7 +54,16 @@ const InviteeVotePage = () => {
                     endDate: data.initial_data?.end_date,
                     mealTime: data.initial_data?.meal_time,
                     organizerId: data.initial_data?.organizer_id,
-                    fixedRestaurants: data.initial_data?.fixed_restaurants || []
+                    fixedRestaurants: data.initial_data?.fixed_restaurants || [],
+                    timingMode: data.initial_data?.timing_mode,
+                    fixedDate: data.initial_data?.fixed_date,
+                    fixedStartTime: data.initial_data?.fixed_start_time,
+                    fixedEndTime: data.initial_data?.fixed_end_time,
+                    fixLocation: data.initial_data?.fix_location,
+                    fixLocationCoords: data.initial_data?.fix_location_coords,
+                    allowSystemSuggest: data.initial_data?.allow_system_suggest,
+                    requireAllJoin: data.initial_data?.require_all_join,
+                    allowOthersSuggest: data.initial_data?.allow_others_suggest
                 };
                 setMeetingData(uiData);
 
@@ -107,7 +117,16 @@ const InviteeVotePage = () => {
                         endDate: data.initial_data?.end_date,
                         mealTime: data.initial_data?.meal_time,
                         organizerId: data.initial_data?.organizer_id,
-                        fixedRestaurants: data.initial_data?.fixed_restaurants || []
+                        fixedRestaurants: data.initial_data?.fixed_restaurants || [],
+                        timingMode: data.initial_data?.timing_mode,
+                        fixedDate: data.initial_data?.fixed_date,
+                        fixedStartTime: data.initial_data?.fixed_start_time,
+                        fixedEndTime: data.initial_data?.fixed_end_time,
+                        fixLocation: data.initial_data?.fix_location,
+                        fixLocationCoords: data.initial_data?.fix_location_coords,
+                        allowSystemSuggest: data.initial_data?.allow_system_suggest,
+                        requireAllJoin: data.initial_data?.require_all_join,
+                        allowOthersSuggest: data.initial_data?.allow_others_suggest
                     });
                 } catch (e) {
                     console.error("Failed to load public meeting data", e);
@@ -161,8 +180,8 @@ const InviteeVotePage = () => {
                 </p>
             </div>
 
-            <div className="bg-white/5 rounded-xl p-4 w-full max-w-xs border border-white/10">
-                <p className="text-xs text-white/50">
+            <div className="glass-panel p-4 w-full max-w-xs rounded-xl text-center">
+                <p className="text-xs text-muted-foreground">
                     Sit tight! We will verify the results soon.
                 </p>
             </div>
@@ -186,7 +205,23 @@ const InviteeVotePage = () => {
     const handleRSVP = (status: 'yes' | 'no') => {
         setRsvp(status);
         if (status === 'yes') {
-            setCurrentStep(2);
+            if (meetingData?.timingMode === 'fixed') {
+                // Auto-fill availability for fixed time
+                const fixedAvail = {
+                    [meetingData.fixedDate]: [
+                        { start: meetingData.fixedStartTime, end: meetingData.fixedEndTime }
+                    ]
+                };
+                setAvailability(fixedAvail);
+                if (meetingData?.allowOthersSuggest || meetingData?.allowSystemSuggest) {
+                    setCurrentStep(3);
+                } else {
+                    // Submit immediately since no more preferences step
+                    handleSubmitVote('yes', fixedAvail, {});
+                }
+            } else {
+                setCurrentStep(2);
+            }
         } else {
             // If No, submit immediately as declined
             handleSubmitVote(status, {}, {});
@@ -256,7 +291,8 @@ const InviteeVotePage = () => {
         const preference = isJoined ? {
             price: prefs.price,
             category: prefs.category,
-            good_fors: prefs.good_fors,
+            avoid_categories: prefs.avoidCategories,
+            good_fors: prefs.goodFors,
             alcohols: prefs.alcohols,
             parking: prefs.parking,
             departure_location: prefs.departureLocation,
@@ -308,13 +344,13 @@ const InviteeVotePage = () => {
                         <h1 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 tracking-tight px-10">
                             {meetingData?.name}
                         </h1>
-                        <p className="text-muted-foreground text-xs">Step {currentStep} of {meetingData?.fixedRestaurants && meetingData.fixedRestaurants.length > 0 ? 2 : 3}</p>
+                        <p className="text-muted-foreground text-xs">Step {currentStep} of 3</p>
                     </div>
 
                     <div className="w-full bg-white/10 h-1 mt-4 rounded-full overflow-hidden">
                         <div
                             className="bg-primary h-full transition-all duration-300"
-                            style={{ width: `${(currentStep / (meetingData?.fixedRestaurants && meetingData.fixedRestaurants.length > 0 ? 2 : 3)) * 100}%` }}
+                            style={{ width: `${(currentStep / 3) * 100}%` }}
                         ></div>
                     </div>
                 </header>
@@ -324,8 +360,17 @@ const InviteeVotePage = () => {
                     <div className="glass-panel p-6 rounded-2xl text-center space-y-6 animate-in zoom-in">
                         <h2 className="text-xl font-bold text-foreground">Will you join us?</h2>
                         <p className="text-muted-foreground">
-                            {meetingData?.startDate} - {meetingData?.endDate}<br />
-                            {meetingData?.mealTime}
+                            {meetingData?.timingMode === 'fixed' ? (
+                                <>
+                                    <span className="font-medium text-foreground">{meetingData.fixedDate}</span><br />
+                                    <span className="text-sm">{meetingData.fixedStartTime} - {meetingData.fixedEndTime}</span>
+                                </>
+                            ) : (
+                                <>
+                                    {meetingData?.startDate} - {meetingData?.endDate}<br />
+                                    {meetingData?.mealTime}
+                                </>
+                            )}
                         </p>
                         <div className="flex gap-4 justify-center">
                             <button
@@ -346,11 +391,11 @@ const InviteeVotePage = () => {
 
                 {/* STEP 2: AVAILABILITY (Detailed Time Slots) */}
                 {currentStep === 2 && (
-                    <div className="glass-panel p-6 rounded-2xl space-y-6 animate-in slide-in-from-right">
-                        <div className="mb-2">
+                    <div className="animate-in slide-in-from-right duration-300">
+                        <div className="mb-4">
                             <button
                                 onClick={() => setCurrentStep(1)}
-                                className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+                                className="text-xs font-bold text-muted-foreground hover:text-primary flex items-center gap-1 uppercase tracking-wider transition-colors"
                             >
                                 ← Back
                             </button>
@@ -368,8 +413,8 @@ const InviteeVotePage = () => {
                             onClick={() => handleAvailabilitySubmit(availability)}
                             className="glass-button w-full py-4 rounded-xl font-bold mt-4"
                         >
-                            {meetingData?.fixedRestaurants && meetingData.fixedRestaurants.length > 0 
-                                ? "Submit Vote" 
+                            {meetingData?.fixedRestaurants && meetingData.fixedRestaurants.length > 0
+                                ? "Submit Vote"
                                 : "Next: Preferences"}
                         </button>
                     </div>
@@ -380,8 +425,8 @@ const InviteeVotePage = () => {
                     <div className="glass-panel p-6 rounded-2xl space-y-6 animate-in slide-in-from-right">
                         <div className="mb-2">
                             <button
-                                onClick={() => setCurrentStep(2)}
-                                className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+                                onClick={() => setCurrentStep(meetingData?.timingMode === 'fixed' ? 1 : 2)}
+                                className="text-xs font-bold text-muted-foreground hover:text-primary flex items-center gap-1 uppercase tracking-wider transition-colors"
                             >
                                 ← Back
                             </button>

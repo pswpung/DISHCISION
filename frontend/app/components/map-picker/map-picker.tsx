@@ -63,6 +63,31 @@ export default function MapPicker({ initialPosition, onConfirm, onClose }: MapPi
         setIsClient(true);
     }, []);
 
+    // Smart Default: If no initialPosition is provided, attempt to use the user's current location
+    useEffect(() => {
+        if (!initialPosition && navigator.geolocation && isClient) {
+            navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                    const newPos = {
+                        lat: pos.coords.latitude,
+                        lng: pos.coords.longitude
+                    };
+                    setPosition(newPos);
+                    // Update map view if instance is ready
+                    if (mapInstance) {
+                        mapInstance.setView([newPos.lat, newPos.lng], 15);
+                    }
+                },
+                (error) => {
+                    // Gracefully fail and fallback to default Bangkok location
+                    // Using warn instead of error to prevent dev overlay interruption
+                    console.warn("Location detection failed (User denied or timeout). Using default center.");
+                },
+                { enableHighAccuracy: false, timeout: 10000 }
+            );
+        }
+    }, [initialPosition, isClient, mapInstance]);
+
     // Reverse geocode to get address when position changes
     useEffect(() => {
         const reverseGeocode = async () => {
@@ -192,6 +217,27 @@ export default function MapPicker({ initialPosition, onConfirm, onClose }: MapPi
                         />
                         <DraggableMarker position={position} setPosition={setPosition} setMapInstance={setMapInstance} />
                     </MapContainer>
+
+                    {/* Current Location Button Overlay */}
+                    <button
+                        type="button"
+                        onClick={() => {
+                            if (navigator.geolocation) {
+                                navigator.geolocation.getCurrentPosition((pos) => {
+                                    const newPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                                    setPosition(newPos);
+                                    if (mapInstance) mapInstance.setView([newPos.lat, newPos.lng], 15);
+                                });
+                            }
+                        }}
+                        className="absolute bottom-4 right-4 z-[1000] bg-background border border-white/10 p-3 rounded-full shadow-2xl hover:bg-white/10 text-primary transition-all active:scale-95"
+                        title="Go to My Location"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
+                        </svg>
+                    </button>
                 </div>
 
                 {/* Address Display */}
