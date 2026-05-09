@@ -7,7 +7,7 @@ from collections import defaultdict
 import pytz
 import ast
 import numpy as np
-from typing import Optional
+from typing import Optional, Dict
 
 class Appointment_Manager(object):
     def __init__(self, key_person, attendees, start_date, end_date, meal_time, meeting_duration_hours: int = 2, step_minutes: int = 30):
@@ -270,8 +270,8 @@ class Appointment_Manager(object):
         # print(f"ATTENDEE AVAILABILITY : {attendee_availiability}")
         # print("- " * 100)
         attendees_availiability: dict = self.__get_similarity_availability(attendees=self.attendees, key_persons=self.key_person, attendee_availability=attendee_availiability)
-        # print(f"ATTENDEES AVAILABILITY : {attendees_availiability}")
-        # print("- " * 100)
+        print(f"ATTENDEES AVAILABILITY : {attendees_availiability}")
+        print("- " * 100)
         
         for date, avail_times in attendees_availiability.items():
             for avail_time in avail_times:
@@ -610,7 +610,7 @@ class Appointment_Manager(object):
             
         return round(final_score, 1), reason
 
-    def get_suggesested_restaurants(self, attendee_datas: list, attendees_availiability: dict, fixed_restaurants: Optional[list] = None):
+    def get_suggesested_restaurants(self, attendee_datas: list, attendees_availiability: dict, suggestion_config: dict, fixed_restaurants: Optional[list] = None, fixed_location: Optional[Dict[str, float]] = None):
         # FAST PATH: Organizer Fixed Restaurants
         if fixed_restaurants and len(fixed_restaurants) > 0:
             logger.info("Fixed restaurants provided. Bypassing suggestion algorithm.")
@@ -620,6 +620,29 @@ class Appointment_Manager(object):
                 r_dict['score'] = 100.0
                 r_dict['reason'] = ["[Key] Organizer Fixed"]
                 formatted_fixed.append(r_dict)
+            
+            # Append other 
+            print(f"allow_others_suggest : {suggestion_config.get("allow_others_suggest", None)}")
+            if suggestion_config.get("allow_others_suggest", None):
+                for attendee_data in attendee_datas:
+                    attendee_preference = attendee_data.get("preference", {})
+                    print(f"attendee_data : {attendee_preference.keys()}")
+                    print('-' * 50)
+                    print(f"    > preferred_restaurant : {attendee_preference.get("preferred_restaurants")}")
+                    print('-' * 50)
+                    
+                    for r in attendee_preference.get("preferred_restaurant", []):
+                        print(f"    > r : {r}")
+                        print('-' * 50)
+                        r_dict = dict(r)
+                        r_dict['score'] = 100.0
+                        r_dict['reason'] = ["[Attendee] Attendee Suggested"]
+                        formatted_fixed.append(r_dict)
+            
+            unique_fixed = []
+            for r in formatted_fixed:
+                if r['id'] not in [fr['id'] for fr in unique_fixed]:
+                    unique_fixed.append(r)
 
             suggestions_map = {}
             for date_key, slots in attendees_availiability.items():
@@ -631,9 +654,9 @@ class Appointment_Manager(object):
                     time_key = f"""{slot_start.strftime("%H:%M")}-{slot_end.strftime("%H:%M")}"""
                     
                     suggestions_map[date_str][time_key] = {
-                        "restaurants": formatted_fixed,
+                        "restaurants": unique_fixed,
                         "scores": slot.get("scores", {}),
-                        "final_score": slot.get("final_score", 0),
+                        "final_score": slot.get("final_score", 10),
                         "attendees": slot.get("attendees", [])
                     }
             return suggestions_map
@@ -664,13 +687,13 @@ class Appointment_Manager(object):
         # For simplicity, let's keep using the 'overall' mean from ALL attendees for distance filtering.
         overall_summary = get_summary(attendee_datas)
         
-        print("- " * 100)
-        print(f"KEY SUMMARY : {key_summary}")
-        print("- " * 100)
-        print(f"GENERAL SUMMARY : {general_summary}")
-        print("- " * 100)
-        print(f"OVERALL SUMMARY : {overall_summary}")
-        print("- " * 100)
+        # print("- " * 100)
+        # print(f"KEY SUMMARY : {key_summary}")
+        # print("- " * 100)
+        # print(f"GENERAL SUMMARY : {general_summary}")
+        # print("- " * 100)
+        # print(f"OVERALL SUMMARY : {overall_summary}")
+        # print("- " * 100)
 
         # 2. Load and Prep Data
         data_path = "./statics/restaurants_lists.csv"
@@ -684,12 +707,16 @@ class Appointment_Manager(object):
         restaurants_lists = restaurants_lists.dropna(subset=['lat', 'lng'])
 
         # 3. Calculate distance from Center (Using Overall Center)
-        mean_lat = overall_summary.get("lat")
-        mean_lng = overall_summary.get("lng")
-        # Ensure we have valid coordinates
-        if mean_lat == 0 and mean_lng == 0 and key_summary['count'] > 0:
-             mean_lat = key_summary.get("lat")
-             mean_lng = key_summary.get("lng")
+        if fixed_location is None:
+            mean_lat = overall_summary.get("lat")
+            mean_lng = overall_summary.get("lng")
+            # Ensure we have valid coordinates
+            if mean_lat == 0 and mean_lng == 0 and key_summary['count'] > 0:
+                mean_lat = key_summary.get("lat")
+                mean_lng = key_summary.get("lng")
+        else:
+            mean_lat = fixed_location.get("lat")
+            mean_lng = fixed_location.get("lng")
              
         logger.info(f"MEAN LOCATIONS : {mean_lat}, {mean_lng}")
         restaurants_lists['distance_km'] = restaurants_lists.apply(
