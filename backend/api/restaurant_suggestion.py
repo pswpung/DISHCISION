@@ -177,14 +177,34 @@ def generate_and_send_suggestion(meeting_id: UUID, db: Session):
         sorted_slots = sorted(all_slots, key=lambda x: x['final_score'], reverse=True)
         top_slots = sorted_slots[:10] # Top 10 for Carousel
         
+        # Global Discovery Ranking
+        all_scored_restaurants = result.get("all_scored_restaurants", [])
+
         if meeting_detail.group_id:
-            # Push System Result Flex (Top Slots + Group Favorites)
+            # Extract info from initial_data based on timing mode
+            initial_data = meeting_detail.initial_data or {}
+            timing_mode = initial_data.get("timing_mode", "period")
+            
+            if timing_mode == "fixed":
+                meal_time = f"{initial_data.get('fixed_start_time', '')} - {initial_data.get('fixed_end_time', '')}"
+                start_date = initial_data.get("fixed_date", "")
+                end_date = "" # Only one date for fixed mode
+            else:
+                meal_time = initial_data.get("meal_time", "Not specified")
+                start_date = initial_data.get("start_date", "")
+                end_date = initial_data.get("end_date", "")
+
+            # Push System Result Flex (Top Slots + Group Favorites + Global Discovery)
             push_message_result_flex(
                 group_id=meeting_detail.group_id,
                 meeting_id=str(meeting_detail.meeting_id),
                 meeting_name=meeting_detail.meeting_name,
                 top_slots=top_slots,
-                preferred_restaurants=preferred_restaurants
+                preferred_restaurants=preferred_restaurants,
+                all_scored_restaurants=all_scored_restaurants,
+                meal_time=meal_time,
+                start_date=start_date,
+                end_date=end_date
             )
     except Exception as e:
         print(f"Failed to send Result notification: {e}")

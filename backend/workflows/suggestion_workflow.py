@@ -12,7 +12,12 @@ class SuggestionWorkflows:
         if initial_data:
             print(f"INITIAL DATA : {initial_data}")
         attendee_datas = [attendance_detail.to_dict() for attendance_detail in attendance_details]
-
+        suggestion_config = {
+            "allow_system_suggest": initial_data.get("allow_system_suggest", True),
+            "require_all_join": initial_data.get("require_all_join", True),
+            "allow_others_suggest": initial_data.get("allow_others_suggest", True)
+        }
+        
         appointments_manager = Appointment_Manager(
             key_person = [attendee.get("user_id") for attendee in attendee_datas if attendee.get("is_key_person", False)],
             attendees = [attendee.get("user_id") for attendee in attendee_datas],
@@ -87,16 +92,10 @@ class SuggestionWorkflows:
                     "preferred_meal_time": effective_meal_time
                 }
 
-            attendees_availiability = appointments_manager.get_suggested_slots(attendee_availability)
+            attendees_availiability = appointments_manager.get_suggested_slots(attendee_availability, suggestion_config)
 
         # SECTION: SUGGEST RESTAURANTS
-        suggestion_config = {
-            "allow_system_suggest": initial_data.get("allow_system_suggest", True),
-            "require_all_join": initial_data.get("require_all_join", True),
-            "allow_others_suggest": initial_data.get("allow_others_suggest", True)
-        }
-        print(f"SUGGESSTION CONFIG : {suggestion_config}")
-        preferred_restaurants, suggested_restaurants = appointments_manager.get_suggesested_restaurants(
+        preferred_restaurants, suggested_restaurants, all_scored_restaurants = appointments_manager.get_suggesested_restaurants(
             attendee_datas=attendee_datas,
             attendees_availiability=attendees_availiability,
             suggestion_config = suggestion_config,
@@ -106,7 +105,8 @@ class SuggestionWorkflows:
         
         result = {
             "preferred_restaurants": preferred_restaurants,
-            "suggested_restaurants": suggested_restaurants
+            "suggested_restaurants": suggested_restaurants,
+            "all_scored_restaurants": all_scored_restaurants
         }
 
         import json

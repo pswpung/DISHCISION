@@ -255,43 +255,43 @@ class Appointment_Manager(object):
                 similarity_availability[date] = availability_time
         return similarity_availability
 
-    def get_suggested_slots(self, attendee_availiability: dict):
+    def get_suggested_slots(self, attendee_availiability: dict, suggestion_config: dict = None):
         """
         Get the suggested slots for the meeting
         """
+        require_all_join = suggestion_config.get("require_all_join", False) if suggestion_config else False
+        
         preferred_meal_time: dict = {"Lunch": 0, "Dinner": 0, "Any": 0}
         for attendee in attendee_availiability:
             preferred_meal_time[attendee_availiability.get(attendee, {}).get("preferred_meal_time")] += 1
-        # print(f"PREFEREED MEAL TIME : {preferred_meal_time}")
-        # print("- " * 100)
         
         total_attendees = sum(preferred_meal_time.values())
-        
-        # print(f"ATTENDEE AVAILABILITY : {attendee_availiability}")
-        # print("- " * 100)
         attendees_availiability: dict = self.__get_similarity_availability(attendees=self.attendees, key_persons=self.key_person, attendee_availability=attendee_availiability)
-        print(f"ATTENDEES AVAILABILITY : {attendees_availiability}")
-        print("- " * 100)
         
+        filtered_availability = {}
         for date, avail_times in attendees_availiability.items():
+            valid_times = []
             for avail_time in avail_times:
+                # 0. Check mandatory join constraint if enabled
+                kp_ratio = avail_time.get("key_persons_ratio", 0)
+                at_ratio = avail_time.get("attendee_ratio", 0)
+                
+                if require_all_join:
+                    # Filter out slots that don't have 100% participation
+                    if kp_ratio < 1.0 or at_ratio < 1.0:
+                        continue
+
                 # 1. Get Base Scores
                 points, meal_time_scores = self.__get_time_scoring(avail_time["start"], avail_time["end"], preferred_meal_time)
                 avail_time["points"] = points
                 avail_time["meal_time_scores"] = meal_time_scores
                 
                 # 2. Calculate Final Score Components (0-10 Scale)
-                
-                # A. Normalized Availability (Weight: 50%)
-                # Formula: (KeyPerson% * 0.7 + Attendee% * 0.3) / 10 -> 0-10 Scale
-                kp_ratio = avail_time.get("key_persons_ratio", 0)
-                at_ratio = avail_time.get("attendee_ratio", 0)
+                # Normalized Availability (Weight: 50%)
                 raw_avail = ((kp_ratio * 0.7) + (at_ratio * 0.3)) / 10.0
-                # Map 0-10 to 1-10
                 norm_avail = 1 + (raw_avail / 10.0) * 9.0
                 
-                # B. Meal Preference Alignment (Weight: 30%)
-                # Max Possible Meal Score = (Duration / 30min) * Total_Attendees
+                # Meal Preference Alignment (Weight: 30%)
                 duration_minutes = (avail_time["end"] - avail_time["start"]).total_seconds() / 60
                 steps = duration_minutes / 30
                 max_meal_score = steps * total_attendees if total_attendees > 0 else 1
@@ -299,34 +299,30 @@ class Appointment_Manager(object):
                 raw_meal = 0
                 if max_meal_score > 0:
                     raw_meal = (meal_time_scores / max_meal_score) * 10.0
-                # Map 0-10 to 1-10
                 norm_meal = 1 + (raw_meal / 10.0) * 9.0
                 
-                # C. Time Quality / Standard Hours (Weight: 20%)
-                # Max Points = Steps * 2 (Since max points per 30min step is 2)
+                # Time Quality / Standard Hours (Weight: 20%)
                 max_points = steps * 2
-                
                 raw_quality = 0
                 if max_points > 0:
                     raw_quality = (points / max_points) * 10.0
-                # Map 0-10 to 1-10
                 norm_quality = 1 + (raw_quality / 10.0) * 9.0
                 
                 # 3. Final Weighted Score
-                # Weights: Avail=0.5, Meal=0.3, Quality=0.2
-                # Since components are 1-10, final score is naturally 1-10
                 final_score = (0.7 * norm_avail) + (0.2 * norm_meal) + (0.1 * norm_quality)
                 
                 # Store Step Scores
                 avail_time["scores"] = {
                     "availability": round(norm_avail, 1),
-                    # "meal_preference": round(norm_meal, 1),
                     "time_quality": round(norm_quality, 1)
                 }
-                
                 avail_time["final_score"] = round(final_score, 1)
+                valid_times.append(avail_time)
+            
+            if valid_times:
+                filtered_availability[date] = valid_times
                 
-        return attendees_availiability
+        return filtered_availability
 
     def __extract_preference(self, attendee_preferences_df: pd.DataFrame):
         # Extract preferred_restaurants IDs if available
@@ -651,7 +647,7 @@ class Appointment_Manager(object):
                         "final_score": slot.get("final_score", 10),
                         "attendees": slot.get("attendees", [])
                     }
-            return unique_fixed, suggestions_map
+            return unique_fixed, suggestions_map, []
 
         # 1. Split Attendees & Summarize Preferences
         key_persons_data = [d for d in attendee_datas if d.get('is_key_person', False)]
@@ -771,8 +767,41 @@ class Appointment_Manager(object):
             nearby_restaurants = pd.concat([nearby_restaurants, suggestion_restaurants_df]).drop_duplicates(subset='id')
             logger.info(f"RESTAURANT AFTER PREFERRED RESTAURANTS FILTER : {nearby_restaurants.shape[0]}")
         
-        # if nearby_restaurants.empty:
-        #     return {}
+        # 4.4 Global Scoring (Score all candidates once)
+        if not nearby_restaurants.empty:
+            def calculate_weighted_score(row):
+                # Key Person Score
+                score_key, reason_key = 0, []
+                if key_summary['count'] > 0:
+                    score_key, reason_key = self.calculate_restaurant_score(key_summary, row)
+                
+                # General Score
+                score_gen, reason_gen = 0, []
+                if general_summary['count'] > 0:
+                    score_gen, reason_gen = self.calculate_restaurant_score(general_summary, row)
+                
+                # Weights
+                final_score = 0
+                if key_summary['count'] > 0 and general_summary['count'] > 0:
+                    final_score = (score_key * 0.7) + (score_gen * 0.3)
+                elif key_summary['count'] > 0:
+                    final_score = score_key
+                else:
+                    final_score = score_gen
+                
+                # Combine reasons (Prefixing for clarity)
+                combined_reasons = []
+                if reason_key: combined_reasons.extend([f"[Key] {r}" for r in reason_key])
+                if reason_gen: combined_reasons.extend([f"[All] {r}" for r in reason_gen])
+                
+                return round(final_score, 1), combined_reasons
+
+            nearby_restaurants[["score", "reason"]] = nearby_restaurants.apply(
+                lambda row: calculate_weighted_score(row), 
+                axis=1,
+                result_type='expand'
+            )
+            nearby_restaurants = nearby_restaurants.sort_values(by="score", ascending=False)
 
         # 5. Process Suggestions per Slot
         suggestions_map = {}
@@ -785,9 +814,8 @@ class Appointment_Manager(object):
                 slot_start = slot['start']
                 slot_end = slot['end']
                 time_key = f"""{slot_start.strftime("%H:%M")}-{slot_end.strftime("%H:%M")}"""
-                # print(f"RESTAURANT LIST : {nearby_restaurants.empty}")
+                
                 if nearby_restaurants.empty:
-                    # print(f"EMPTY RESTAURANT LIST - {date_str} {time_key}")
                     suggestions_map[date_str][time_key] = {
                         "restaurants": [],
                         "scores": slot.get("scores", {}),
@@ -810,47 +838,12 @@ class Appointment_Manager(object):
                         }
                         continue
 
-                    # Score Valid Restaurants
-                    # Function to calculate weighted score
-                    def calculate_weighted_score(row):
-                        # Key Person Score
-                        score_key, reason_key = 0, []
-                        if key_summary['count'] > 0:
-                            score_key, reason_key = self.calculate_restaurant_score(key_summary, row)
-                        
-                        # General Score
-                        score_gen, reason_gen = 0, []
-                        if general_summary['count'] > 0:
-                            score_gen, reason_gen = self.calculate_restaurant_score(general_summary, row)
-                        
-                        # Weights
-                        final_score = 0
-                        if key_summary['count'] > 0 and general_summary['count'] > 0:
-                            final_score = (score_key * 0.7) + (score_gen * 0.3)
-                        elif key_summary['count'] > 0:
-                            final_score = score_key
-                        else:
-                            final_score = score_gen
-                        
-                        # Combine reasons (Prefixing for clarity)
-                        combined_reasons = []
-                        if reason_key: combined_reasons.extend([f"[Key] {r}" for r in reason_key])
-                        if reason_gen: combined_reasons.extend([f"[All] {r}" for r in reason_gen])
-                        
-                        return round(final_score, 1), combined_reasons
-
-                    valid_restaurants[["score", "reason"]] = valid_restaurants.apply(
-                        lambda row: calculate_weighted_score(row), 
-                        axis=1,
-                        result_type='expand'
-                    )
-                    # valid_restaurants.to_csv("valid_restaurants.csv", index=False)
-                    # Top 5
-                    top_5 = valid_restaurants.sort_values(by="score", ascending=False).head(5)
+                    # Top 5 (Already scored)
+                    top_5 = valid_restaurants.head(5)
                     
                     # Convert to dict
                     suggestions_map[date_str][time_key] = {
-                        "restaurants": top_5.to_dict(orient="records"),
+                        "restaurants": top_5.replace({np.nan: None}).to_dict(orient="records"),
                         "scores": slot.get("scores", {}),
                         "final_score": slot.get("final_score", 0),
                         "attendees": slot.get("attendees", [])
@@ -880,4 +873,7 @@ class Appointment_Manager(object):
                 all_preferred_restaurants.append(r)
                 seen_ids.add(r['id'])
 
-        return all_preferred_restaurants, suggestions_map
+        # Final list of all scored restaurants (sorted by score)
+        all_scored_restaurants = nearby_restaurants.replace({np.nan: None}).to_dict(orient="records") if not nearby_restaurants.empty else []
+
+        return all_preferred_restaurants, suggestions_map, all_scored_restaurants

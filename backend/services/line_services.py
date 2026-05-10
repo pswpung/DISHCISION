@@ -222,7 +222,7 @@ def push_message_creation_flex(group_id: str, meeting_id: str, meeting_name: str
     except Exception as e:
         print(f"Error pushing creation message: {e}")
 
-def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, top_slots: list, preferred_restaurants: list = None):
+def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, top_slots: list, preferred_restaurants: list = None, all_scored_restaurants: list = None, meal_time: str = "", start_date: str = "", end_date: str = ""):
     # if not group_id or not top_slots:
     if not group_id:
         return
@@ -258,6 +258,78 @@ def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, 
     base_query_string = "?" + "&".join(base_params) if base_params else ""
     base_result_url = f"https://liff.line.me/{LIFF_ID}/result{base_query_string}"
 
+    # 0. Meeting Summary Bubble (Hero)
+    period_str = "Not specified"
+    if start_date and end_date:
+        period_str = f"{start_date} - {end_date}"
+    elif start_date:
+        period_str = start_date
+
+    meeting_summary_bubble = {
+        "type": "bubble",
+        "size": "kilo",
+        "header": {
+            "type": "box",
+            "layout": "vertical",
+            "backgroundColor": "#FFF5EB", # Light Orange Tint
+            "paddingAll": "lg",
+            "contents": [
+                {"type": "text", "text": "🏁 Voting Results", "weight": "bold", "color": "#F58357", "size": "sm"},
+                {"type": "text", "text": meeting_name, "weight": "bold", "size": "xl", "color": "#2B303B", "wrap": True, "margin": "md"}
+            ]
+        },
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {
+                    "type": "box",
+                    "layout": "vertical",
+                    "margin": "md",
+                    "spacing": "sm",
+                    "contents": [
+                        {
+                            "type": "box",
+                            "layout": "baseline",
+                            "spacing": "sm",
+                            "contents": [
+                                {"type": "text", "text": "Period", "color": "#aaaaaa", "size": "sm", "flex": 2},
+                                {"type": "text", "text": period_str, "wrap": True, "color": "#2B303B", "size": "sm", "flex": 4}
+                            ]
+                        },
+                         {
+                            "type": "box",
+                            "layout": "baseline",
+                            "spacing": "sm",
+                            "contents": [
+                                {"type": "text", "text": "Time", "color": "#aaaaaa", "size": "sm", "flex": 2},
+                                {"type": "text", "text": meal_time, "wrap": True, "color": "#2B303B", "size": "sm", "flex": 4}
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        "footer": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {
+                    "type": "button",
+                    "style": "primary",
+                    "height": "sm",
+                    "color": "#F58357",
+                    "action": {
+                        "type": "uri",
+                        "label": "Open Results Page",
+                        "uri": base_result_url
+                    }
+                }
+            ]
+        }
+    }
+
+    # 1. Top Results Summary Bubble
     summary_bubble = {
         "type": "bubble",
         "size": "kilo",
@@ -267,8 +339,7 @@ def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, 
             "backgroundColor": "#F58357", # Primary Color
             "paddingAll": "lg",
             "contents": [
-                {"type": "text", "text": "🏆 Top Results", "weight": "bold", "size": "sm", "color": "#FFFFFF"},
-                {"type": "text", "text": meeting_name, "weight": "bold", "size": "xl", "color": "#FFFFFF", "wrap": True, "margin": "md"}
+                {"type": "text", "text": "🏆 Top Time Slots", "weight": "bold", "size": "lg", "color": "#FFFFFF"},
             ]
         },
         "body": {
@@ -301,7 +372,7 @@ def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, 
         }
     }
 
-    bubbles = [summary_bubble]
+    bubbles = [meeting_summary_bubble, summary_bubble]
 
     # Add Preferred Restaurants Bubble if available
     if preferred_restaurants:
@@ -326,8 +397,7 @@ def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, 
                 "backgroundColor": "#F58357", # Orange/Coral
                 "paddingAll": "lg",
                 "contents": [
-                    {"type": "text", "text": "🙋 Group Favorites", "weight": "bold", "size": "sm", "color": "#FFFFFF"},
-                    {"type": "text", "text": meeting_name, "weight": "bold", "size": "xl", "color": "#FFFFFF", "wrap": True, "margin": "md"}
+                    {"type": "text", "text": "🙋 Group Favorites", "weight": "bold", "size": "lg", "color": "#FFFFFF"},
                 ]
             },
             "body": {
@@ -360,6 +430,62 @@ def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, 
         }
         bubbles.append(preferred_bubble)
     
+    # Bubble for Global Discovery Ranking
+    if all_scored_restaurants:
+        discovery_items = []
+        for i, r in enumerate(all_scored_restaurants[:10]):
+            discovery_items.append({
+                "type": "box",
+                "layout": "baseline",
+                "contents": [
+                    {"type": "text", "text": f"{i+1}.", "size": "sm", "color": "#2B303B", "flex": 1, "weight": "bold"},
+                    {"type": "text", "text": r.get('name', 'N/A'), "size": "sm", "color": "#555555", "flex": 6, "wrap": True},
+                    {"type": "text", "text": f"{r.get('score', 0):.1f}", "size": "sm", "color": "#F58357", "flex": 2, "align": "end", "weight": "bold"}
+                ],
+                "margin": "sm"
+            })
+        
+        discovery_bubble = {
+            "type": "bubble",
+            "size": "kilo",
+            "header": {
+                "type": "box",
+                "layout": "vertical",
+                "backgroundColor": "#2D3748", # Dark Navy
+                "paddingAll": "lg",
+                "contents": [
+                    {"type": "text", "text": "🔍 Discovery Ranking", "weight": "bold", "size": "lg", "color": "#FFFFFF"},
+                ]
+            },
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "paddingAll": "md",
+                "contents": [
+                    {"type": "text", "text": "Top recommendations for your group:", "size": "xs", "color": "#aaaaaa"},
+                    {"type": "separator", "margin": "md"},
+                    *discovery_items
+                ]
+            },
+            "footer": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {
+                        "type": "button",
+                        "style": "secondary",
+                        "height": "sm",
+                        "color": "#2D3748",
+                        "action": {
+                            "type": "uri",
+                            "label": "Explore All",
+                            "uri": base_result_url
+                        }
+                    }
+                ]
+            }
+        }
+        bubbles.append(discovery_bubble)
     for slot in top_slots[:5]:
         date_str = slot['date']
         time_str = slot['time']
