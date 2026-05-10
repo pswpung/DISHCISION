@@ -96,17 +96,21 @@ class SuggestionWorkflows:
             "allow_others_suggest": initial_data.get("allow_others_suggest", True)
         }
         print(f"SUGGESSTION CONFIG : {suggestion_config}")
-        suggesested_restaurants = appointments_manager.get_suggesested_restaurants(
+        preferred_restaurants, suggested_restaurants = appointments_manager.get_suggesested_restaurants(
             attendee_datas=attendee_datas,
             attendees_availiability=attendees_availiability,
             suggestion_config = suggestion_config,
             fixed_restaurants=initial_data.get("fixed_restaurants", None),
             fixed_location=initial_data.get("fix_location_coords", None)
         )
-        import json
-
-        with open("./suggested_restaurants.json", "w") as f:
-            json.dump(suggesested_restaurants, f, indent=4)
-        return suggesested_restaurants
-
         
+        result = {
+            "preferred_restaurants": preferred_restaurants,
+            "suggested_restaurants": suggested_restaurants
+        }
+
+        import json
+        with open("./suggested_restaurants.json", "w") as f:
+            json.dump(result, f, ensure_ascii=False, indent=4)
+
+        return result

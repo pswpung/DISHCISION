@@ -139,9 +139,14 @@ def generate_and_send_suggestion(meeting_id: UUID, db: Session):
         users = db.query(UserDetail).filter(UserDetail.user_id.in_(attendee_ids)).all()
         user_map = {u.user_id: u.pictureurl for u in users}
 
+        # Preferred Restaurants
+        preferred_restaurants = result.get("preferred_restaurants", [])
+        
         # Flatten slots for sorting
         all_slots = []
-        for date, times in result.items():
+        # Access the slot-based suggestions from the 'suggested_restaurants' key
+        suggestions = result.get("suggested_restaurants", {})
+        for date, times in suggestions.items():
             for time_slot, slot_data in times.items():
                 if isinstance(slot_data, dict):
                     final_score = slot_data.get("final_score", 0)
@@ -160,8 +165,6 @@ def generate_and_send_suggestion(meeting_id: UUID, db: Session):
                         attendee_images.append(user_map[uid])
 
                 if final_score > 0:
-                # if restaurants or final_score > 0:
-                #    if restaurants:
                     all_slots.append({
                         "date": date,
                         "time": time_slot,
@@ -174,13 +177,14 @@ def generate_and_send_suggestion(meeting_id: UUID, db: Session):
         sorted_slots = sorted(all_slots, key=lambda x: x['final_score'], reverse=True)
         top_slots = sorted_slots[:10] # Top 10 for Carousel
         
-        # if meeting_detail.group_id and top_slots:
         if meeting_detail.group_id:
+            # Push System Result Flex (Top Slots + Group Favorites)
             push_message_result_flex(
                 group_id=meeting_detail.group_id,
                 meeting_id=str(meeting_detail.meeting_id),
                 meeting_name=meeting_detail.meeting_name,
-                top_slots=top_slots
+                top_slots=top_slots,
+                preferred_restaurants=preferred_restaurants
             )
     except Exception as e:
         print(f"Failed to send Result notification: {e}")

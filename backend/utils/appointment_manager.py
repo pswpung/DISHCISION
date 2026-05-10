@@ -582,21 +582,21 @@ class Appointment_Manager(object):
         score += rating
         reason.append(f"Rating: {rating:.1f}/5")
 
-        # --- 3. User Suggestion (Weight: ~20% -> 15 pts) ---
-        # If any suggestions exist in the group, include this component
-        preferred_counts = summary_preference.get('preferred_restaurants', {})
-        if preferred_counts:
-             max_score += 15.0
-             res_id = str(restaurant_row.get('id', ''))
-             count = preferred_counts.get(res_id, 0)
+        # # --- 3. User Suggestion (Weight: ~20% -> 15 pts) ---
+        # # If any suggestions exist in the group, include this component
+        # preferred_counts = summary_preference.get('preferred_restaurants', {})
+        # if preferred_counts:
+        #      max_score += 15.0
+        #      res_id = str(restaurant_row.get('id', ''))
+        #      count = preferred_counts.get(res_id, 0)
              
-             # Differential points: Key=10, General=5 (default)
-             points_per_vote = summary_preference.get('points_per_vote', 5.0)
-             suggestion_pts = min(count * points_per_vote, 15.0)
-             score += suggestion_pts
+        #      # Differential points: Key=10, General=5 (default)
+        #      points_per_vote = summary_preference.get('points_per_vote', 5.0)
+        #      suggestion_pts = min(count * points_per_vote, 15.0)
+        #      score += suggestion_pts
              
-             if suggestion_pts > 0:
-                  reason.append(f"Suggestion: {suggestion_pts:.1f}/15")
+        #      if suggestion_pts > 0:
+        #           reason.append(f"Suggestion: {suggestion_pts:.1f}/15")
 
         # Normalize to 100
         if max_score > 0:
@@ -611,8 +611,9 @@ class Appointment_Manager(object):
         return round(final_score, 1), reason
 
     def get_suggesested_restaurants(self, attendee_datas: list, attendees_availiability: dict, suggestion_config: dict, fixed_restaurants: Optional[list] = None, fixed_location: Optional[Dict[str, float]] = None):
+        print(f"""      >> ALLOW OTHER SUGGESTION : {suggestion_config.get("allow_others_suggest", None)}""")
         # FAST PATH: Organizer Fixed Restaurants
-        if fixed_restaurants and len(fixed_restaurants) > 0:
+        if suggestion_config.get("allow_system_suggest", None) == False and len(fixed_restaurants) > 0:
             logger.info("Fixed restaurants provided. Bypassing suggestion algorithm.")
             formatted_fixed = []
             for r in fixed_restaurants:
@@ -621,23 +622,14 @@ class Appointment_Manager(object):
                 r_dict['reason'] = ["[Key] Organizer Fixed"]
                 formatted_fixed.append(r_dict)
             
-            # Append other 
-            print(f"allow_others_suggest : {suggestion_config.get("allow_others_suggest", None)}")
-            if suggestion_config.get("allow_others_suggest", None):
-                for attendee_data in attendee_datas:
-                    attendee_preference = attendee_data.get("preference", {})
-                    print(f"attendee_data : {attendee_preference.keys()}")
-                    print('-' * 50)
-                    print(f"    > preferred_restaurant : {attendee_preference.get("preferred_restaurants")}")
-                    print('-' * 50)
-                    
-                    for r in attendee_preference.get("preferred_restaurant", []):
-                        print(f"    > r : {r}")
-                        print('-' * 50)
-                        r_dict = dict(r)
-                        r_dict['score'] = 100.0
-                        r_dict['reason'] = ["[Attendee] Attendee Suggested"]
-                        formatted_fixed.append(r_dict)
+            # Append other
+            for attendee_data in attendee_datas:
+                attendee_preference = attendee_data.get("preference", {})
+                for r in attendee_preference.get("preferred_restaurant", []):
+                    r_dict = dict(r)
+                    r_dict['score'] = 100.0
+                    r_dict['reason'] = ["[Attendee] Attendee Suggested"]
+                    formatted_fixed.append(r_dict)
             
             unique_fixed = []
             for r in formatted_fixed:
@@ -654,12 +646,12 @@ class Appointment_Manager(object):
                     time_key = f"""{slot_start.strftime("%H:%M")}-{slot_end.strftime("%H:%M")}"""
                     
                     suggestions_map[date_str][time_key] = {
-                        "restaurants": unique_fixed,
+                        "restaurants": [],
                         "scores": slot.get("scores", {}),
                         "final_score": slot.get("final_score", 10),
                         "attendees": slot.get("attendees", [])
                     }
-            return suggestions_map
+            return unique_fixed, suggestions_map
 
         # 1. Split Attendees & Summarize Preferences
         key_persons_data = [d for d in attendee_datas if d.get('is_key_person', False)]
@@ -740,6 +732,18 @@ class Appointment_Manager(object):
                 return not row_items.isdisjoint(target_set)
             except:
                 return False
+        
+        # Filter By Avoid Category
+        avoid_categories = set()
+        for attendee_data in attendee_datas:
+            attendee_preference = attendee_data.get("preference", {})
+            avoid_categories.update(attendee_preference.get('avoid_categories', []))
+        if avoid_categories:
+            logger.info("Filtering by avoid categories...")
+            nearby_restaurants = nearby_restaurants[
+                ~nearby_restaurants['category'].apply(lambda x: has_overlap(x, avoid_categories))
+            ].copy()
+            logger.info(f"RESTAURANT AFTER AVOID CATEGORIES FILTER : {nearby_restaurants.shape[0]}") 
 
         # 4.1 Filter by Category if > 1000 (standard logic)
         if nearby_restaurants.shape[0] > 1000:
@@ -852,5 +856,28 @@ class Appointment_Manager(object):
                         "attendees": slot.get("attendees", [])
                     }
         # logger.info(f"SUGGESTIONS MAP : {suggestions_map}")
+        
+        # Get all preferred restaurants from the summary
+        attendee_preferred = overall_summary.get("preferred_restaurants_list", [])
+        
+        # Combine with Organizer Fixed Restaurants
+        all_preferred_restaurants = []
+        seen_ids = set()
+        
+        # Add Organizer Fixed first
+        if fixed_restaurants:
+            for r in fixed_restaurants:
+                r_dict = dict(r)
+                r_dict['score'] = r_dict.get('score', 100.0)
+                r_dict['reason'] = r_dict.get('reason', ["[Key] Organizer Fixed"])
+                if r_dict['id'] not in seen_ids:
+                    all_preferred_restaurants.append(r_dict)
+                    seen_ids.add(r_dict['id'])
+        
+        # Add Attendee Preferred
+        for r in attendee_preferred:
+            if r['id'] not in seen_ids:
+                all_preferred_restaurants.append(r)
+                seen_ids.add(r['id'])
 
-        return suggestions_map
+        return all_preferred_restaurants, suggestions_map

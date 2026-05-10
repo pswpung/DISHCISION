@@ -222,7 +222,7 @@ def push_message_creation_flex(group_id: str, meeting_id: str, meeting_name: str
     except Exception as e:
         print(f"Error pushing creation message: {e}")
 
-def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, top_slots: list):
+def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, top_slots: list, preferred_restaurants: list = None):
     # if not group_id or not top_slots:
     if not group_id:
         return
@@ -302,6 +302,63 @@ def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, 
     }
 
     bubbles = [summary_bubble]
+
+    # Add Preferred Restaurants Bubble if available
+    if preferred_restaurants:
+        pref_items = []
+        for i, r in enumerate(preferred_restaurants[:10]):
+            pref_items.append({
+                "type": "box",
+                "layout": "baseline",
+                "contents": [
+                    {"type": "text", "text": f"{i+1}.", "size": "sm", "color": "#2B303B", "flex": 1, "weight": "bold"},
+                    {"type": "text", "text": r.get('name', 'N/A'), "size": "sm", "color": "#555555", "flex": 8, "wrap": True},
+                ],
+                "margin": "sm"
+            })
+        
+        preferred_bubble = {
+            "type": "bubble",
+            "size": "kilo",
+            "header": {
+                "type": "box",
+                "layout": "vertical",
+                "backgroundColor": "#F58357", # Orange/Coral
+                "paddingAll": "lg",
+                "contents": [
+                    {"type": "text", "text": "🙋 Group Favorites", "weight": "bold", "size": "sm", "color": "#FFFFFF"},
+                    {"type": "text", "text": meeting_name, "weight": "bold", "size": "xl", "color": "#FFFFFF", "wrap": True, "margin": "md"}
+                ]
+            },
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "paddingAll": "md",
+                "contents": [
+                    {"type": "text", "text": "Explicitly suggested by attendees:", "size": "xs", "color": "#aaaaaa"},
+                    {"type": "separator", "margin": "md"},
+                    *pref_items
+                ]
+            },
+            "footer": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {
+                        "type": "button",
+                        "style": "secondary",
+                        "height": "sm",
+                        "color": "#F58357",
+                        "action": {
+                            "type": "uri",
+                            "label": "View Details",
+                            "uri": base_result_url
+                        }
+                    }
+                ]
+            }
+        }
+        bubbles.append(preferred_bubble)
     
     for slot in top_slots[:5]:
         date_str = slot['date']
@@ -416,11 +473,8 @@ def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, 
                 ]
             }
         }
-        # if len(restaurants) == 0:
-        #     bubble["footer"] = None
-        bubbles.append(bubble)
-    # if len(bubbles) == 1:
-    #     bubbles[0]["footer"] = None
+        if len(restaurants) > 0:
+            bubbles.append(bubble)
     
     carousel = {
         "type": "carousel",
