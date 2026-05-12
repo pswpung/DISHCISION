@@ -238,7 +238,8 @@ const InviteeVotePage = () => {
             departure_location: prefs.departureLocation,
             lat: prefs.lat,
             lng: prefs.lng,
-            preferred_restaurant: prefs.preferredRestaurant
+            preferred_restaurant: prefs.preferredRestaurant,
+            priorities: prefs.priorities
         } : {};
 
         try {

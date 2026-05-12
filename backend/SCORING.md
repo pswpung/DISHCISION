@@ -71,7 +71,7 @@ For *each group* (Key or General), a restaurant's base score is calculated by su
 | Attribute | Points (Max) | Logic |
 | :--- | :--- | :--- |
 | **Price** | **10** | `(Votes_for_Price_Range / Total_Group_Size) * 10` |
-| **Category** | **15** | `(Votes_for_Category / Total_Group_Category_Votes) * 15` |
+| **Category** | **10** | `(Votes_for_Category / Total_Group_Category_Votes) * 10` |
 | **Good For** | **10** | `(Votes_for_Tag / Total_Group_Tag_Votes) * 10` |
 | **Parking** | **5** | `(Votes_for_Parking / Total_Group_Size) * 5` (if venue has parking) |
 | **Alcohol** | **5** | `(Votes_for_Alcohol / Total_Group_Size) * 5` (if venue has alcohol) |
@@ -79,7 +79,7 @@ For *each group* (Key or General), a restaurant's base score is calculated by su
 | **Rating** | **5** | `Rating (0-5)` directly added. |
 | **Suggestion** | **15** | `min(votes * points, 15)`. Key: 10pts, General: 5pts. (~21% Weight) |
 
-**Total Max Points:** 55 + 15 = **70 Points**
+**Total Max Points:** 50 + 15 = **65 Points**
 
 **Normalization Formula:**
 ```

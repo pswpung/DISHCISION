@@ -182,7 +182,8 @@ const CreateMeetingPage = () => {
         lat: data.locationCoordinates?.lat || data.fixLocationCoords?.lat || null,
         lng: data.locationCoordinates?.lng || data.fixLocationCoords?.lng || null,
         departure_location: data.departureLocation || data.fixLocation || null,
-        preferred_restaurant: data.preferredRestaurant || []
+        preferred_restaurant: data.preferredRestaurant || [],
+        priorities: data.organizerPreferences?.priorities || []
       };
 
       const payload = {

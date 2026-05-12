@@ -47,6 +47,8 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
     const [priceFocused, setPriceFocused] = useState(false);
     const [cuisineFocused, setCuisineFocused] = useState(false);
     const [avoidCuisineFocused, setAvoidCuisineFocused] = useState(false);
+    const [selectedPriorities, setSelectedPriorities] = useState<string[]>([]);
+    const priorityFactors = ['Price', 'Category', 'Vibe/Good For', 'Distance from BTS', 'Rating'];
 
     const priceRef = useRef<HTMLDivElement>(null);
     const cuisineSearchRef = useRef<HTMLDivElement>(null);
@@ -271,7 +273,8 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
             departureLocation,
             lat: locationCoords?.lat || null,
             lng: locationCoords?.lng || null,
-            preferredRestaurant
+            preferredRestaurant,
+            priorities: selectedPriorities
         };
 
         onVoteSubmit({
@@ -416,6 +419,59 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
                     </button>
                 ))}
             </div>
+        </div>
+    );
+
+    const togglePriority = (factor: string) => {
+        if (selectedPriorities.includes(factor)) {
+            setSelectedPriorities(selectedPriorities.filter(p => p !== factor));
+        } else {
+            if (selectedPriorities.length < 3) {
+                setSelectedPriorities([...selectedPriorities, factor]);
+            }
+        }
+    };
+
+    const renderPrioritySelector = () => (
+        <div className="space-y-3 py-4">
+            <div className="space-y-1">
+                <label className="block text-sm font-bold text-primary uppercase tracking-wider">Top 3 Focus Factors</label>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium">Rank your top priorities for better suggestions</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+                {priorityFactors.map((factor) => {
+                    const index = selectedPriorities.indexOf(factor);
+                    const isSelected = index !== -1;
+                    return (
+                        <button
+                            key={factor}
+                            type="button"
+                            onClick={() => togglePriority(factor)}
+                            className={`relative px-4 py-2.5 rounded-xl text-xs font-bold border transition-all duration-300 flex items-center gap-2 ${isSelected
+                                ? 'bg-primary border-primary text-white shadow-lg scale-105'
+                                : 'bg-black/5 dark:bg-white/5 border-black/10 dark:border-white/10 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10 hover:border-black/20 dark:hover:border-white/20'
+                                }`}
+                        >
+                            {isSelected && (
+                                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-white text-primary text-[10px] font-black shadow-inner">
+                                    {index + 1}
+                                </span>
+                            )}
+                            {factor}
+                        </button>
+                    );
+                })}
+            </div>
+            {selectedPriorities.length > 0 && (
+                <div className="pt-2 flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+                    {selectedPriorities.map((p, i) => (
+                        <div key={p} className="flex items-center gap-1 shrink-0">
+                            <span className="text-[10px] font-bold text-primary/80">{i + 1}. {p}</span>
+                            {i < selectedPriorities.length - 1 && <span className="text-[10px] text-black/20 dark:text-white/20">→</span>}
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 
@@ -723,6 +779,7 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
                                 </div>
                             </div>
                         )}
+                        {renderPrioritySelector()}
 
                         <button type="submit" className="glass-button w-full py-4 rounded-xl font-bold text-lg tracking-wide uppercase shadow-lg shadow-primary/10 mt-6 active:scale-[0.98] transition-all">
                             Submit Vote

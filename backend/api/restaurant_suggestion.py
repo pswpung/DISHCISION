@@ -118,6 +118,14 @@ def generate_and_send_suggestion(meeting_id: UUID, db: Session):
     if not attendee_details:
         raise HTTPException(status_code=404, detail="Attendees not found")
 
+    # Check if all attendees have provided availability and preferences
+    for attendee in attendee_details:
+        if not attendee.avaliable_at and not attendee.preference:
+            return {
+                "status": "waiting",
+                "message": "Please wait for others to add their preference"
+            }
+
     suggestion_workflow = SuggestionWorkflows()
     result = suggestion_workflow.get_suggestion(
         meeting_detail = meeting_detail,

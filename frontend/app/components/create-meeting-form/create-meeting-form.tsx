@@ -30,6 +30,7 @@ interface MeetingData {
         priceRange: number;
         prioritizePrice: boolean; // Just in case we need it
         meal_time?: string;
+        priorities?: string[];
     }
     // Location Data
     fixLocation?: string;
@@ -153,10 +154,12 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
     const [selectedAlcohols, setSelectedAlcohols] = useState<boolean>(false);
     const [selectedParking, setSelectedParking] = useState<boolean>(false);
     const [allowSystemSuggest, setAllowSystemSuggest] = useState<boolean>(true);
-    const [requireAllJoin, setRequireAllJoin] = useState<boolean>(false);
+    const [requireAllJoin, setRequireAllJoin] = useState<boolean>(true);
     const [allowOthersSuggest, setAllowOthersSuggest] = useState<boolean>(true);
     const [suggest_per_time, setSuggestPerTime] = useState<boolean>(false);
     const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
+    const [selectedPriorities, setSelectedPriorities] = useState<string[]>([]);
+    const priorityFactors = ['Price', 'Category', 'Vibe/Good For', 'Distance from BTS', 'Rating'];
 
     // Unused for now or could be text input
     const [fixLocation, setFixLocation] = useState('');
@@ -225,6 +228,13 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
         }
     }, [timingMode, fixedDate, fixedStartTime, fixedEndTime]);
 
+
+    // Reset suggest_per_time when switching to fixed mode
+    useEffect(() => {
+        if (timingMode === 'fixed') {
+            setSuggestPerTime(false);
+        }
+    }, [timingMode]);
 
     // Date validation
     const [dateError, setDateError] = useState('');
@@ -480,8 +490,8 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
             avoid_categories: avoidCategories,
             good_fors: selectedGoodFors,
             alcohols: selectedAlcohols,
-            parking: selectedParking
-
+            parking: selectedParking,
+            priorities: selectedPriorities
         };
 
         const meetingData: MeetingData = {
@@ -654,6 +664,59 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
             </div>
         );
     };
+
+    const togglePriority = (factor: string) => {
+        if (selectedPriorities.includes(factor)) {
+            setSelectedPriorities(selectedPriorities.filter(p => p !== factor));
+        } else {
+            if (selectedPriorities.length < 3) {
+                setSelectedPriorities([...selectedPriorities, factor]);
+            }
+        }
+    };
+
+    const renderPrioritySelector = () => (
+        <div className="space-y-3 py-4">
+            <div className="space-y-1">
+                <label className="block text-sm font-bold text-primary uppercase tracking-wider">Top 3 Focus Factors</label>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium">Rank your top priorities for better suggestions</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+                {priorityFactors.map((factor) => {
+                    const index = selectedPriorities.indexOf(factor);
+                    const isSelected = index !== -1;
+                    return (
+                        <button
+                            key={factor}
+                            type="button"
+                            onClick={() => togglePriority(factor)}
+                            className={`relative px-4 py-2.5 rounded-xl text-xs font-bold border transition-all duration-300 flex items-center gap-2 ${isSelected
+                                ? 'bg-primary border-primary text-white shadow-lg scale-105'
+                                : 'bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10 hover:border-white/20'
+                                }`}
+                        >
+                            {isSelected && (
+                                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-white text-primary text-[10px] font-black shadow-inner">
+                                    {index + 1}
+                                </span>
+                            )}
+                            {factor}
+                        </button>
+                    );
+                })}
+            </div>
+            {selectedPriorities.length > 0 && (
+                <div className="pt-2 flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+                    {selectedPriorities.map((p, i) => (
+                        <div key={p} className="flex items-center gap-1 shrink-0">
+                            <span className="text-[10px] font-bold text-primary/80">{i + 1}. {p}</span>
+                            {i < selectedPriorities.length - 1 && <span className="text-[10px] text-black /20 dark:text-white/20">→</span>}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
 
     return (
         <div className="w-full max-w-lg mx-auto">
@@ -965,11 +1028,12 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                             {showAdvanced && (
                                 <div className="space-y-3 mt-4 animate-in fade-in slide-in-from-top-4 duration-500">
                                     {[
-                                        { label: "System Suggestions", value: allowSystemSuggest, setter: setAllowSystemSuggest },
-                                        { label: "Suggestions per Time Slot", value: suggest_per_time, setter: setSuggestPerTime },
-                                        { label: "Require All Attendees", value: requireAllJoin, setter: setRequireAllJoin },
-                                        { label: "Friends Can Suggest", value: allowOthersSuggest, setter: setAllowOthersSuggest }
-                                    ].map((opt, i) => (
+                                        { label: "Suggest by group preferences", value: allowSystemSuggest, setter: setAllowSystemSuggest },
+                                        { label: "Custom list per time slot", value: suggest_per_time, setter: setSuggestPerTime },
+                                        { label: "Everyone must be available", value: requireAllJoin, setter: setRequireAllJoin },
+                                        { label: "Let friends add restaurants", value: allowOthersSuggest, setter: setAllowOthersSuggest }
+                                    ].filter(opt => !(opt.label === "Custom list per time slot" && timingMode === 'fixed'))
+                                    .map((opt, i) => (
                                         <div key={i} className="flex items-center justify-between glass-panel p-3 rounded-xl border border-white/5">
                                             <span className="text-xs font-medium text-foreground/80 uppercase tracking-wider">{opt.label}</span>
                                             <input
@@ -1031,7 +1095,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
 
                 {/* STEP 2: PREFERENCE */}
                 {currentStep === 2 && (
-                    <div className="space-y-6 animate-in slide-in-from-right duration-500">
+                    <div className="animate-in slide-in-from-right duration-500">
                         <button onClick={handleBack} className="text-xs font-bold text-muted-foreground hover:text-primary flex items-center gap-1 uppercase tracking-wider transition-colors mb-2">
                             ← Back
                         </button>
@@ -1044,7 +1108,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                         </div>
 
                         {fixedRestaurants.length === 0 && (
-                            <div className="space-y-6">
+                            <div className="space-y-5">
                                 {timingMode !== 'fixed' && organizerMealTime === 'Any' && (
                                     <div className="space-y-2">
                                         <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Preferred Meal Time</label>
@@ -1138,6 +1202,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                                 </div>
                             </div>
                         )}
+                        {renderPrioritySelector()}
 
                         <button type="submit" className="glass-button w-full py-4 rounded-xl font-bold text-lg tracking-wide uppercase shadow-lg shadow-primary/10 mt-6 active:scale-[0.98] transition-all">
                             Create & Vote
