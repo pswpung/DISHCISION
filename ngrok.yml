@@ -3,7 +3,7 @@ authtoken: "351Op9lipK7ESUhDhUwbDToOdVz_2Jh6bxL2XkEQXw1LnmPfc" # Get this from h
 
 tunnels:
   dishcision-frontend:
-    addr: 3000
+    addr: 3001
     proto: http
     # If you claim a free static domain in the ngrok dashboard, uncomment the line below and replace the URL:
     # domain: your-custom-name.ngrok-free.app

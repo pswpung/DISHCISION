@@ -15,7 +15,9 @@ class SuggestionWorkflows:
         suggestion_config = {
             "allow_system_suggest": initial_data.get("allow_system_suggest", True),
             "require_all_join": initial_data.get("require_all_join", True),
-            "allow_others_suggest": initial_data.get("allow_others_suggest", True)
+            "allow_others_suggest": initial_data.get("allow_others_suggest", True),
+            "suggest_per_time": initial_data.get("suggest_per_time", False),
+            "min_attendees": 2
         }
         
         appointments_manager = Appointment_Manager(

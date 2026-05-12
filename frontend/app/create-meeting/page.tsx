@@ -138,6 +138,7 @@ const CreateMeetingPage = () => {
           allow_system_suggest: data.allowSystemSuggest,
           require_all_join: data.requireAllJoin,
           allow_others_suggest: data.allowOthersSuggest,
+          suggest_per_time: data.suggest_per_time,
           // Timing Mode & Fixed Time
           timing_mode: data.timingMode,
           fixed_date: data.fixedDate || null,

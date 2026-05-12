@@ -210,7 +210,7 @@ class Appointment_Manager(object):
 
         return sessions
 
-    def __get_similarity_availability(self, attendees: list, key_persons: list, attendee_availability: dict):
+    def __get_similarity_availability(self, attendees: list, key_persons: list, attendee_availability: dict, min_attendees: int = 1):
         """
         Get the similarity availability
         """
@@ -233,7 +233,7 @@ class Appointment_Manager(object):
                         if time in availability.get(date, {}):
                             availiable_lists.append(attendee)
                 availiable_key_persons = list(set(key_persons).intersection(set(availiable_lists)))
-                if availiable_lists != [] and availiable_key_persons != []:
+                if len(availiable_lists) >= min_attendees and len(availiable_key_persons) == len(key_persons):
                     # if len(availiable_lists) == 1:
                     #     pass
                     # else:
@@ -266,7 +266,13 @@ class Appointment_Manager(object):
             preferred_meal_time[attendee_availiability.get(attendee, {}).get("preferred_meal_time")] += 1
         
         total_attendees = sum(preferred_meal_time.values())
-        attendees_availiability: dict = self.__get_similarity_availability(attendees=self.attendees, key_persons=self.key_person, attendee_availability=attendee_availiability)
+        min_attendees = suggestion_config.get("min_attendees", 1) if suggestion_config else 1
+        attendees_availiability: dict = self.__get_similarity_availability(
+            attendees=self.attendees, 
+            key_persons=self.key_person, 
+            attendee_availability=attendee_availiability,
+            min_attendees=min_attendees
+        )
         
         filtered_availability = {}
         for date, avail_times in attendees_availiability.items():
@@ -463,7 +469,7 @@ class Appointment_Manager(object):
         """
         score = 0.0
         max_score = 0.0
-        reason = []
+        reason = {}
         
         total_people = summary_preference.get('count', 1)
         if total_people <= 0: total_people = 1
@@ -475,17 +481,24 @@ class Appointment_Manager(object):
         max_score += 10.0
         res_price = restaurant_row.get('price')
         price_votes = summary_preference['price'].get(res_price, 0)
+        p_score = 0.0
         if price_votes > 0:
             p_score = (price_votes / total_people) * 10.0
             pref_score += p_score
-            reason.append(f"Price: {p_score:.1f}/10")
+        reason["Price"] = {"score": round(p_score, 1), "max": 10.0}
 
         # B. Category (Weight: 15 pts)
         max_score += 15.0
         try:
-            res_cats = set(ast.literal_eval(restaurant_row['category']))
-            pref_cat_counts = summary_preference['category']
+            res_cats = restaurant_row.get('category', [])
+            if isinstance(res_cats, str):
+                res_cats = set(ast.literal_eval(res_cats))
+            else:
+                res_cats = set(res_cats)
+                
+            pref_cat_counts = summary_preference.get('category', {})
             total_cat_votes = sum(pref_cat_counts.values())
+            c_score = 0.0
             
             if total_cat_votes > 0:
                 matched_votes = sum(pref_cat_counts.get(c, 0) for c in res_cats)
@@ -493,16 +506,22 @@ class Appointment_Manager(object):
                     c_score = (matched_votes / total_cat_votes) * 15.0
                     c_score = min(c_score, 15.0) 
                     pref_score += c_score
-                    reason.append(f"Category: {c_score:.1f}/15")
-        except:
-            pass
+            reason["Category"] = {"score": round(c_score, 1), "max": 15.0}
+        except Exception as e:
+            reason["Category"] = {"score": 0.0, "max": 15.0}
 
         # C. Good Fors (Weight: 10 pts)
         max_score += 10.0
         try:
-            res_gf = set(ast.literal_eval(restaurant_row['good_fors']))
-            pref_gf_counts = summary_preference['unique_good_fors']
+            res_gf = restaurant_row.get('good_fors', [])
+            if isinstance(res_gf, str):
+                res_gf = set(ast.literal_eval(res_gf))
+            else:
+                res_gf = set(res_gf)
+                
+            pref_gf_counts = summary_preference.get('unique_good_fors', {})
             total_gf_votes = sum(pref_gf_counts.values())
+            gf_score = 0.0
             
             if total_gf_votes > 0:
                 matched_gf_votes = sum(pref_gf_counts.get(g, 0) for g in res_gf)
@@ -510,9 +529,9 @@ class Appointment_Manager(object):
                     gf_score = (matched_gf_votes / total_gf_votes) * 10.0
                     gf_score = min(gf_score, 10.0)
                     pref_score += gf_score
-                    reason.append(f"Vibe: {gf_score:.1f}/10")
-        except:
-            pass
+            reason["Vibe"] = {"score": round(gf_score, 1), "max": 10.0}
+        except Exception as e:
+            reason["Vibe"] = {"score": 0.0, "max": 10.0}
 
         # D. Amenities - Parking (Weight: 5 pts)
         max_score += 5.0
@@ -520,18 +539,15 @@ class Appointment_Manager(object):
         parking_votes = summary_preference['parking'].get(True, 0)
         
         if res_parking and parking_votes > 0:
-            # pk_score = (parking_votes / total_people) * 5.0
             pk_score = 5.0
             pref_score += pk_score
-            reason.append(f"Parking: {pk_score:.1f}/5")
         elif not res_parking and parking_votes > 0:
             pk_score = 0.0
             pref_score += pk_score
-            reason.append(f"Parking: {pk_score:.1f}/5")
         else:
             pk_score = 5.0
             pref_score += pk_score
-            reason.append(f"Parking (No Require Parking): {pk_score:.1f}/5")
+        reason["Parking"] = {"score": round(pk_score, 1), "max": 5.0}
             
         # E. Amenities - Alcohols (Weight: 5 pts)
         # Score = (Votes for Alcohol / Total People) * 5 (If restaurant has alcohol)
@@ -545,18 +561,15 @@ class Appointment_Manager(object):
         alcohol_votes = summary_preference['alcohols'].get(True, 0)
         
         if has_alcohol and alcohol_votes > 0:
-            # alc_score = (alcohol_votes / total_people) * 5.0
             alc_score = 5.0
             pref_score += alc_score
-            reason.append(f"Alcohol: {alc_score:.1f}/5")
         elif not has_alcohol and alcohol_votes > 0:
             alc_score = 0.0
             pref_score += alc_score
-            reason.append(f"Alcohol: {alc_score:.1f}/5")
         else:
             alc_score = 5.0
             pref_score += alc_score
-            reason.append(f"Alcohol (No Require Alcohol): {alc_score:.1f}/5")
+        reason["Alcohol"] = {"score": round(alc_score, 1), "max": 5.0}
            
         score += pref_score
 
@@ -569,14 +582,13 @@ class Appointment_Manager(object):
              station_pts = (1 - (station_dist / 2.0)) * 5.0
         
         score += station_pts
-        if station_pts > 0:
-            reason.append(f"Station: {station_pts:.1f}/5")
+        reason["Station"] = {"score": round(station_pts, 1), "max": 5.0}
 
         # --- 2. Rating (Max 5 points) ---
         max_score += 5.0   
         rating = restaurant_row.get('rating', 0) or 0
         score += rating
-        reason.append(f"Rating: {rating:.1f}/5")
+        reason["Rating"] = {"score": round(rating, 1), "max": 5.0}
 
         # # --- 3. User Suggestion (Weight: ~20% -> 15 pts) ---
         # # If any suggestions exist in the group, include this component
@@ -605,6 +617,62 @@ class Appointment_Manager(object):
             final_score = 100.0
             
         return round(final_score, 1), reason
+    
+    def _get_summary(self, datas, points_per_vote=5.0):
+        if not datas:
+            return {"count": 0, "price": {}, "category": {}, "unique_good_fors": {}, "parking": {}, "alcohols": {}, "lat": 0, "lng": 0, "preferred_restaurants": {}, "points_per_vote": points_per_vote }
+        
+        df = pd.DataFrame(datas)
+        expanded_cols = pd.json_normalize(df['preference'])
+        df = df.drop(columns=['preference']).join(expanded_cols)
+        summary = self.__extract_preference(df)
+        summary['points_per_vote'] = points_per_vote
+        return summary
+
+    def _calculate_weighted_score(self, row, key_summary, general_summary):
+        # Key Person Score
+        score_key, reason_key = 0, {}
+        if key_summary['count'] > 0:
+            score_key, reason_key = self.calculate_restaurant_score(key_summary, row)
+        
+        # General Score
+        score_gen, reason_gen = 0, {}
+        if general_summary['count'] > 0:
+            score_gen, reason_gen = self.calculate_restaurant_score(general_summary, row)
+        
+        # Weights
+        final_score = 0
+        if key_summary['count'] > 0 and general_summary['count'] > 0:
+            final_score = (score_key * 0.7) + (score_gen * 0.3)
+        elif key_summary['count'] > 0:
+            final_score = score_key
+        else:
+            final_score = score_gen
+        
+        # Combine reasons into structured format
+        combined_reason = {}
+        all_criteria = set(reason_key.keys()) | set(reason_gen.keys())
+        
+        for criterion in all_criteria:
+            k_score = reason_key.get(criterion, {}).get("score", 0)
+            g_score = reason_gen.get(criterion, {}).get("score", 0)
+            
+            # Calculate weighted score for this specific criterion
+            if key_summary['count'] > 0 and general_summary['count'] > 0:
+                w_score = (k_score * 0.7) + (g_score * 0.3)
+            elif key_summary['count'] > 0:
+                w_score = k_score
+            else:
+                w_score = g_score
+
+            combined_reason[criterion] = {
+                "key_ratio": k_score,
+                "attendee_ratio": g_score,
+                "weighted_score": round(w_score, 1),
+                "max_score": reason_key.get(criterion, {}).get("max") or reason_gen.get(criterion, {}).get("max") or 0
+            }
+        
+        return round(final_score, 1), combined_reason
 
     def get_suggesested_restaurants(self, attendee_datas: list, attendees_availiability: dict, suggestion_config: dict, fixed_restaurants: Optional[list] = None, fixed_location: Optional[Dict[str, float]] = None):
         print(f"""      >> ALLOW OTHER SUGGESTION : {suggestion_config.get("allow_others_suggest", None)}""")
@@ -615,7 +683,7 @@ class Appointment_Manager(object):
             for r in fixed_restaurants:
                 r_dict = dict(r)
                 r_dict['score'] = 100.0
-                r_dict['reason'] = ["[Key] Organizer Fixed"]
+                r_dict['reason'] = {"Fixed": {"key_ratio": 100, "attendee_ratio": 100, "max_score": 100}}
                 formatted_fixed.append(r_dict)
             
             # Append other
@@ -624,7 +692,7 @@ class Appointment_Manager(object):
                 for r in attendee_preference.get("preferred_restaurant", []):
                     r_dict = dict(r)
                     r_dict['score'] = 100.0
-                    r_dict['reason'] = ["[Attendee] Attendee Suggested"]
+                    r_dict['reason'] = {"Suggested": {"key_ratio": 0, "attendee_ratio": 100, "max_score": 100}}
                     formatted_fixed.append(r_dict)
             
             unique_fixed = []
@@ -656,24 +724,13 @@ class Appointment_Manager(object):
         # If no key persons declared, treat everyone as key (or general with 100% weight) -> Effectively equal weight
         # But logic: Final = 0.7 Key + 0.3 General. If Key is empty, usage general as 100%.
         
-        def get_summary(datas, points_per_vote=5.0):
-            if not datas:
-                return {"count": 0, "price": {}, "category": {}, "unique_good_fors": {}, "parking": {}, "alcohols": {}, "lat": 0, "lng": 0, "preferred_restaurants": {}, "points_per_vote": points_per_vote }
-            
-            df = pd.DataFrame(datas)
-            expanded_cols = pd.json_normalize(df['preference'])
-            df = df.drop(columns=['preference']).join(expanded_cols)
-            summary = self.__extract_preference(df)
-            summary['points_per_vote'] = points_per_vote
-            return summary
-
-        key_summary = get_summary(key_persons_data, points_per_vote=10.0)
-        general_summary = get_summary(general_persons_data, points_per_vote=5.0)
+        key_summary = self._get_summary(key_persons_data, points_per_vote=10.0)
+        general_summary = self._get_summary(general_persons_data, points_per_vote=5.0)
+        overall_summary = self._get_summary(attendee_datas)
         
         # Merge lat/lng for center calculation (Subjective: use ALL attendees for center?)
         # Yes, location convenience should probably consider everyone equally or weighted. 
         # For simplicity, let's keep using the 'overall' mean from ALL attendees for distance filtering.
-        overall_summary = get_summary(attendee_datas)
         
         # print("- " * 100)
         # print(f"KEY SUMMARY : {key_summary}")
@@ -769,35 +826,8 @@ class Appointment_Manager(object):
         
         # 4.4 Global Scoring (Score all candidates once)
         if not nearby_restaurants.empty:
-            def calculate_weighted_score(row):
-                # Key Person Score
-                score_key, reason_key = 0, []
-                if key_summary['count'] > 0:
-                    score_key, reason_key = self.calculate_restaurant_score(key_summary, row)
-                
-                # General Score
-                score_gen, reason_gen = 0, []
-                if general_summary['count'] > 0:
-                    score_gen, reason_gen = self.calculate_restaurant_score(general_summary, row)
-                
-                # Weights
-                final_score = 0
-                if key_summary['count'] > 0 and general_summary['count'] > 0:
-                    final_score = (score_key * 0.7) + (score_gen * 0.3)
-                elif key_summary['count'] > 0:
-                    final_score = score_key
-                else:
-                    final_score = score_gen
-                
-                # Combine reasons (Prefixing for clarity)
-                combined_reasons = []
-                if reason_key: combined_reasons.extend([f"[Key] {r}" for r in reason_key])
-                if reason_gen: combined_reasons.extend([f"[All] {r}" for r in reason_gen])
-                
-                return round(final_score, 1), combined_reasons
-
             nearby_restaurants[["score", "reason"]] = nearby_restaurants.apply(
-                lambda row: calculate_weighted_score(row), 
+                lambda row: self._calculate_weighted_score(row, key_summary, general_summary), 
                 axis=1,
                 result_type='expand'
             )
@@ -838,9 +868,27 @@ class Appointment_Manager(object):
                         }
                         continue
 
-                    # Top 5 (Already scored)
-                    top_5 = valid_restaurants.head(5)
-                    
+                    # Top 5 (Already scored globally if not suggest_per_time)
+                    if suggestion_config.get("suggest_per_time"):
+                        slot_attendee_ids = slot.get("attendees", [])
+                        slot_attendee_datas = [d for d in attendee_datas if d.get('user_id') in slot_attendee_ids]
+                        
+                        slot_key_persons_data = [d for d in slot_attendee_datas if d.get('is_key_person', False)]
+                        slot_general_persons_data = [d for d in slot_attendee_datas if not d.get('is_key_person', False)]
+                        
+                        slot_key_summary = self._get_summary(slot_key_persons_data, points_per_vote=10.0)
+                        slot_general_summary = self._get_summary(slot_general_persons_data, points_per_vote=5.0)
+                        
+                        valid_restaurants[["score", "reason"]] = valid_restaurants.apply(
+                            lambda row: self._calculate_weighted_score(row, slot_key_summary, slot_general_summary),
+                            axis=1,
+                            result_type='expand'
+                        )
+                        valid_restaurants = valid_restaurants.sort_values(by="score", ascending=False)
+                        top_5 = valid_restaurants.head(5)
+                    else:
+                        top_5 = pd.DataFrame()
+
                     # Convert to dict
                     suggestions_map[date_str][time_key] = {
                         "restaurants": top_5.replace({np.nan: None}).to_dict(orient="records"),
@@ -862,7 +910,7 @@ class Appointment_Manager(object):
             for r in fixed_restaurants:
                 r_dict = dict(r)
                 r_dict['score'] = r_dict.get('score', 100.0)
-                r_dict['reason'] = r_dict.get('reason', ["[Key] Organizer Fixed"])
+                r_dict['reason'] = r_dict.get('reason', {"Fixed": {"key_ratio": 100, "attendee_ratio": 100, "max_score": 100}})
                 if r_dict['id'] not in seen_ids:
                     all_preferred_restaurants.append(r_dict)
                     seen_ids.add(r_dict['id'])

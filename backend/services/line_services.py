@@ -451,7 +451,7 @@ def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, 
             "header": {
                 "type": "box",
                 "layout": "vertical",
-                "backgroundColor": "#2D3748", # Dark Navy
+                "backgroundColor": "#F58357", # Orange/Coral
                 "paddingAll": "lg",
                 "contents": [
                     {"type": "text", "text": "🔍 Discovery Ranking", "weight": "bold", "size": "lg", "color": "#FFFFFF"},
@@ -475,7 +475,7 @@ def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, 
                         "type": "button",
                         "style": "secondary",
                         "height": "sm",
-                        "color": "#2D3748",
+                        "color": "#F58357",
                         "action": {
                             "type": "uri",
                             "label": "Explore All",

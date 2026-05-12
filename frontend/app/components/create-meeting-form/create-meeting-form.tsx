@@ -47,6 +47,7 @@ interface MeetingData {
     allowSystemSuggest?: boolean;
     requireAllJoin?: boolean;
     allowOthersSuggest?: boolean;
+    suggest_per_time?: boolean;
 }
 
 interface CreateMeetingFormProps {
@@ -154,6 +155,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
     const [allowSystemSuggest, setAllowSystemSuggest] = useState<boolean>(true);
     const [requireAllJoin, setRequireAllJoin] = useState<boolean>(false);
     const [allowOthersSuggest, setAllowOthersSuggest] = useState<boolean>(true);
+    const [suggest_per_time, setSuggestPerTime] = useState<boolean>(false);
     const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
 
     // Unused for now or could be text input
@@ -507,7 +509,8 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
             fixedEndTime,
             allowSystemSuggest: fixedRestaurants.length === 0 ? true : allowSystemSuggest,
             requireAllJoin: requireAllJoin,
-            allowOthersSuggest: allowOthersSuggest
+            allowOthersSuggest: allowOthersSuggest,
+            suggest_per_time: suggest_per_time
         };
 
         if (onDataSubmit) {
@@ -963,6 +966,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                                 <div className="space-y-3 mt-4 animate-in fade-in slide-in-from-top-4 duration-500">
                                     {[
                                         { label: "System Suggestions", value: allowSystemSuggest, setter: setAllowSystemSuggest },
+                                        { label: "Suggestions per Time Slot", value: suggest_per_time, setter: setSuggestPerTime },
                                         { label: "Require All Attendees", value: requireAllJoin, setter: setRequireAllJoin },
                                         { label: "Friends Can Suggest", value: allowOthersSuggest, setter: setAllowOthersSuggest }
                                     ].map((opt, i) => (
