@@ -397,7 +397,7 @@ def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, 
                 "backgroundColor": "#F58357", # Orange/Coral
                 "paddingAll": "lg",
                 "contents": [
-                    {"type": "text", "text": "🙋 Group Favorites", "weight": "bold", "size": "lg", "color": "#FFFFFF"},
+                    {"type": "text", "text": "🙋 Friend Recommends", "weight": "bold", "size": "lg", "color": "#FFFFFF"},
                 ]
             },
             "body": {

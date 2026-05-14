@@ -202,7 +202,7 @@ def generate_and_send_suggestion(meeting_id: UUID, db: Session):
                 start_date = initial_data.get("start_date", "")
                 end_date = initial_data.get("end_date", "")
 
-            # Push System Result Flex (Top Slots + Group Favorites + Global Discovery)
+            # Push System Result Flex (Top Slots + Friend Recommends + Global Discovery)
             push_message_result_flex(
                 group_id=meeting_detail.group_id,
                 meeting_id=str(meeting_detail.meeting_id),
