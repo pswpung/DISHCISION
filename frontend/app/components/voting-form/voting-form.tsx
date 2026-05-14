@@ -32,7 +32,7 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
     const [selectedParking, setSelectedParking] = useState(false);
 
     // Location State
-    const [departureLocation, setDepartureLocation] = useState(meetingData?.fixLocation || '');
+    const [departureLocation, setDepartureLocation] = useState(meetingData?.fixLocation || 'Current Location');
     const [locationCoords, setLocationCoords] = useState<{ lat: number; lng: number } | null>(
         meetingData?.lat && meetingData?.lng ? { lat: meetingData.lat, lng: meetingData.lng } : null
     );
@@ -107,6 +107,31 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
             geocodeFixed();
         }
     }, [meetingData?.fixLocation]);
+    
+    // Auto-fetch Current Location
+    useEffect(() => {
+        if (departureLocation === 'Current Location' && !locationCoords) {
+            setIsLocating(true);
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                        setLocationCoords({
+                            lat: pos.coords.latitude,
+                            lng: pos.coords.longitude
+                        });
+                        setIsLocating(false);
+                    },
+                    (err) => {
+                        console.error("Default location fetch failed:", err);
+                        setIsLocating(false);
+                    },
+                    { timeout: 10000 }
+                );
+            } else {
+                setIsLocating(false);
+            }
+        }
+    }, [departureLocation, locationCoords]);
 
     // Map picker state
     const [showMapPicker, setShowMapPicker] = useState(false);

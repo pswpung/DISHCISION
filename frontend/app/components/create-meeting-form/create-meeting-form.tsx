@@ -163,7 +163,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
 
     // Unused for now or could be text input
     const [fixLocation, setFixLocation] = useState('');
-    const [departureLocation, setDepartureLocation] = useState('');
+    const [departureLocation, setDepartureLocation] = useState('Current Location');
 
     // Changed to array of objects
     const [preferredRestaurant, setPreferredRestaurant] = useState<any[]>([]);
@@ -217,7 +217,30 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
     // Availability
     const [availability, setAvailability] = useState<any>({});
 
-    // Auto-sync fixed mode to availability
+    // Auto-fetch Current Location
+    useEffect(() => {
+        if (departureLocation === 'Current Location' && !locationCoords) {
+            setIsLocating(true);
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                        setLocationCoords({
+                            lat: pos.coords.latitude,
+                            lng: pos.coords.longitude
+                        });
+                        setIsLocating(false);
+                    },
+                    (err) => {
+                        console.error("Default location fetch failed:", err);
+                        setIsLocating(false);
+                    },
+                    { timeout: 10000 }
+                );
+            } else {
+                setIsLocating(false);
+            }
+        }
+    }, [departureLocation, locationCoords]);
     useEffect(() => {
         if (timingMode === 'fixed' && fixedDate && fixedStartTime && fixedEndTime) {
             setStartDate(fixedDate);
