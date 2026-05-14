@@ -779,7 +779,20 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
                                 </div>
                             </div>
                         )}
-                        {renderPrioritySelector()}
+                        {meetingData?.allowOthersSuggest || meetingData?.fixedRestaurants?.length === 0 ? (
+                            renderPrioritySelector()
+                        ) : (
+                            <div className="py-8 text-center animate-in fade-in zoom-in duration-500">
+                                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-primary/10 mb-4">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-primary">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                </div>
+                                <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-1">Restaurant Fixed</h3>
+                                <p className="text-xs text-muted-foreground uppercase tracking-widest font-medium">The restaurant is fixed by the organizer. Personal preferences are disabled.</p>
+                            </div>
+                        )}
+
 
                         <button type="submit" className="glass-button w-full py-4 rounded-xl font-bold text-lg tracking-wide uppercase shadow-lg shadow-primary/10 mt-6 active:scale-[0.98] transition-all">
                             Submit Vote

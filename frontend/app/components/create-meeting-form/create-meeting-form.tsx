@@ -291,15 +291,17 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
     };
 
     const selectFixedRestaurant = (place: any) => {
-        if (!fixedRestaurants.some(r => r.name === place.name)) {
-            setFixedRestaurants([...fixedRestaurants, place]);
-        }
+        setFixedRestaurants([place]);
         setSearchTermFixed('');
         setSearchResultsFixed([]);
+        setAllowOthersSuggest(false);
+        setAllowSystemSuggest(false);
     };
 
     const removeFixedRestaurant = (name: string) => {
         setFixedRestaurants(fixedRestaurants.filter(r => r.name !== name));
+        setAllowOthersSuggest(true);
+        setAllowSystemSuggest(true);
     };
 
     // Date validation helpers
@@ -980,7 +982,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                             </div>
 
                             <div className="space-y-3 relative" ref={searchWrapperRefFixed}>
-                                <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Fixed Restaurants (Optional)</label>
+                                <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Fixed Restaurant (Optional)</label>
                                 <div className="flex flex-wrap gap-2 mb-2">
                                     {fixedRestaurants.map((rest: any) => (
                                         <span key={rest.name} className="px-3 py-1 rounded-full text-[10px] font-bold bg-primary/10 border border-primary/20 text-primary flex items-center gap-2">
@@ -989,27 +991,31 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                                         </span>
                                     ))}
                                 </div>
-                                <input
-                                    type="text"
-                                    placeholder="Add required restaurants..."
-                                    value={searchTermFixed}
-                                    onChange={(e) => handleSearchFixed(e.target.value)}
-                                    className="glass-input w-full p-3 rounded-xl text-sm font-medium"
-                                />
-                                {searchResultsFixed.length > 0 && (
-                                    <div className="absolute z-50 w-full mt-2 bg-dropdown-bg border border-dropdown-border rounded-xl shadow-2xl max-h-48 overflow-y-auto backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200">
-                                        {searchResultsFixed.map((place, idx) => (
-                                            <button
-                                                key={idx}
-                                                type="button"
-                                                onClick={() => selectFixedRestaurant(place)}
-                                                className="w-full text-left px-4 py-3 hover:bg-dropdown-hover border-b border-dropdown-border last:border-0 transition-colors"
-                                            >
-                                                <p className="font-bold text-sm text-primary dark:text-white">{place.name}</p>
-                                                <p className="text-[10px] text-gray-500 dark:text-black/80">{place.category?.[0]} • {place.price}</p>
-                                            </button>
-                                        ))}
-                                    </div>
+                                {fixedRestaurants.length === 0 && (
+                                    <>
+                                        <input
+                                            type="text"
+                                            placeholder="Select required restaurant..."
+                                            value={searchTermFixed}
+                                            onChange={(e) => handleSearchFixed(e.target.value)}
+                                            className="glass-input w-full p-3 rounded-xl text-sm font-medium"
+                                        />
+                                        {searchResultsFixed.length > 0 && (
+                                            <div className="absolute z-50 w-full mt-2 bg-dropdown-bg border border-dropdown-border rounded-xl shadow-2xl max-h-48 overflow-y-auto backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                                                {searchResultsFixed.map((place, idx) => (
+                                                    <button
+                                                        key={idx}
+                                                        type="button"
+                                                        onClick={() => selectFixedRestaurant(place)}
+                                                        className="w-full text-left px-4 py-3 hover:bg-dropdown-hover border-b border-dropdown-border last:border-0 transition-colors"
+                                                    >
+                                                        <p className="font-bold text-sm text-primary dark:text-white">{place.name}</p>
+                                                        <p className="text-[10px] text-gray-500 dark:text-black/80">{place.category?.[0]} • {place.price}</p>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </>
                                 )}
                             </div>
                         </div>
@@ -1032,18 +1038,23 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                                         { label: "Custom list per time slot", value: suggest_per_time, setter: setSuggestPerTime },
                                         { label: "Everyone must be available", value: requireAllJoin, setter: setRequireAllJoin },
                                         { label: "Let friends add restaurants", value: allowOthersSuggest, setter: setAllowOthersSuggest }
-                                    ].filter(opt => !(opt.label === "Custom list per time slot" && timingMode === 'fixed'))
-                                    .map((opt, i) => (
-                                        <div key={i} className="flex items-center justify-between glass-panel p-3 rounded-xl border border-white/5">
-                                            <span className="text-xs font-medium text-foreground/80 uppercase tracking-wider">{opt.label}</span>
-                                            <input
-                                                type="checkbox"
-                                                checked={opt.value}
-                                                onChange={(e) => opt.setter(e.target.checked)}
-                                                className="toggle"
-                                            />
-                                        </div>
-                                    ))}
+                                    ].filter(opt => {
+                                        if (opt.label === "Custom list per time slot" && timingMode === 'fixed') return false;
+                                        if (opt.label === "Let friends add restaurants" && fixedRestaurants.length > 0) return false;
+                                        if (opt.label === "Suggest by group preferences" && fixedRestaurants.length > 0) return false;
+                                        return true;
+                                    })
+                                        .map((opt, i) => (
+                                            <div key={i} className="flex items-center justify-between glass-panel p-3 rounded-xl border border-white/5">
+                                                <span className="text-xs font-medium text-foreground/80 uppercase tracking-wider">{opt.label}</span>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={opt.value}
+                                                    onChange={(e) => opt.setter(e.target.checked)}
+                                                    className="toggle"
+                                                />
+                                            </div>
+                                        ))}
                                 </div>
                             )}
                         </div>
@@ -1176,7 +1187,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                             </div>
                         )}
 
-                        {allowOthersSuggest && (
+                        {allowOthersSuggest && fixedRestaurants.length === 0 && (
                             <div className="space-y-4 pt-6 border-t border-white/10">
                                 <div className="space-y-3 relative" ref={searchWrapperRef}>
                                     <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Add Suggested Restaurants (Optional)</label>
@@ -1202,7 +1213,19 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                                 </div>
                             </div>
                         )}
-                        {renderPrioritySelector()}
+                        {allowOthersSuggest || fixedRestaurants.length === 0 ? (
+                            renderPrioritySelector()
+                        ) : (
+                            <div className="py-8 text-center animate-in fade-in zoom-in duration-500">
+                                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-primary/10 mb-4">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-primary">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                </div>
+                                <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-1">Restaurant Fixed</h3>
+                                <p className="text-xs text-muted-foreground uppercase tracking-widest font-medium">The restaurant is fixed by the organizer. Personal preferences are disabled.</p>
+                            </div>
+                        )}
 
                         <button type="submit" className="glass-button w-full py-4 rounded-xl font-bold text-lg tracking-wide uppercase shadow-lg shadow-primary/10 mt-6 active:scale-[0.98] transition-all">
                             Create & Vote

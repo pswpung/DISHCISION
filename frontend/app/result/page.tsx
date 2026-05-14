@@ -842,7 +842,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                 {viewMode === 'slots'
                                     ? 'No Suggestions Found'
                                     : viewMode === 'favorites'
-                                        ? 'No Group Favorites'
+                                        ? 'No Friend Recommends'
                                         : 'No Discovery Results'}
                             </h3>
                             <p className="text-sm text-muted-foreground leading-relaxed">
