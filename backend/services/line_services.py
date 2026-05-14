@@ -1,3 +1,8 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from linebot.v3 import (
     WebhookHandler
 )
@@ -21,9 +26,13 @@ from linebot.v3.webhooks import (
     MemberJoinedEvent
 )
 
-configuration = Configuration(
-    access_token='ZkP46YTSSZ2rivE8ED0b8wqo8atyoXsvYv9/IpYg0I2BwvTxS8YGm47YbsVcgar6gie0qM6Phklzve6T87ie4d35GdiwPCJxbRZGV9O2H9yj/MIgrxXjXm8unqwcm0U1TFlL+UaFQ48l+RmrVP+zaQdB04t89/1O/w1cDnyilFU=')
-handler = WebhookHandler('34398b9931904aeed744e4e39c3d626f')
+# Load from environment
+LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
+LINE_CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET')
+LIFF_ID = os.getenv('LIFF_ID')
+
+configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
+handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 flex_contents = {
     "type": "bubble",
@@ -37,7 +46,7 @@ flex_contents = {
                 "action": {
                     "type": "uri",
                     "label": "Create Meeting",
-                    "uri": "https://liff.line.me/2008419367-SeVLxzHP"
+                    "uri": f"https://liff.line.me/{LIFF_ID}"
                 }
             }
         ]
@@ -121,7 +130,7 @@ def create_flex_message(user_id=None, group_id=None):
 # --- PUSH MESSAGES ---
 from linebot.v3.messaging import PushMessageRequest
 
-def push_message_creation_flex(group_id: str, meeting_id: str, meeting_name: str, meal_time: str, start_date: str = "", end_date: str = ""):
+def push_message_creation_flex(group_id: str, meeting_id: str, meeting_name: str, meal_time: str, start_date: str = "", end_date: str = "", fixed_restaurant: str = "", fixed_location: str = "", fixed_restaurant_url: str = ""):
     if not group_id:
         return
 
@@ -135,14 +144,84 @@ def push_message_creation_flex(group_id: str, meeting_id: str, meeting_name: str
 
     query_string = "?" + "&".join(params) if params else ""
     vote_url = f"https://liff.line.me/{LIFF_ID}/vote{query_string}"
-    print(f"Vote URL: {vote_url}")
     
-    # Format Period String
-    period_str = "Not specified"
-    if start_date and end_date:
-        period_str = f"{start_date} - {end_date}"
-    elif start_date:
-        period_str = start_date
+    # Format Period/Date String
+    is_fixed_time = not end_date or end_date == "N/A" or end_date == ""
+    date_label = "Date" if is_fixed_time else "Period"
+    date_val = start_date if is_fixed_time else (f"{start_date} - {end_date}" if start_date and end_date != "N/A" else start_date)
+
+    # Build Info Rows
+    info_rows = [
+        {
+            "type": "box",
+            "layout": "baseline",
+            "spacing": "sm",
+            "contents": [
+                {"type": "text", "text": date_label, "color": "#aaaaaa", "size": "sm", "flex": 2},
+                {"type": "text", "text": date_val, "wrap": True, "color": "#2B303B", "size": "sm", "flex": 4}
+            ]
+        },
+        {
+            "type": "box",
+            "layout": "baseline",
+            "spacing": "sm",
+            "contents": [
+                {"type": "text", "text": "Time", "color": "#aaaaaa", "size": "sm", "flex": 2},
+                {"type": "text", "text": meal_time, "wrap": True, "color": "#2B303B", "size": "sm", "flex": 4}
+            ]
+        }
+    ]
+
+    if fixed_restaurant:
+        info_rows.append({
+            "type": "box",
+            "layout": "baseline",
+            "spacing": "sm",
+            "contents": [
+                {"type": "text", "text": "Restaurant", "color": "#aaaaaa", "size": "sm", "flex": 2},
+                {"type": "text", "text": fixed_restaurant, "wrap": True, "color": "#F58357", "size": "sm", "flex": 4, "weight": "bold"}
+            ]
+        })
+
+    if fixed_location:
+        info_rows.append({
+            "type": "box",
+            "layout": "baseline",
+            "spacing": "sm",
+            "contents": [
+                {"type": "text", "text": "Location", "color": "#aaaaaa", "size": "sm", "flex": 2},
+                {"type": "text", "text": fixed_location, "wrap": True, "color": "#2B303B", "size": "sm", "flex": 4}
+            ]
+        })
+
+    # Build Footer Buttons
+    footer_contents = [
+        {
+            "type": "button",
+            "style": "primary",
+            "height": "sm",
+            "color": "#F58357",
+            "action": {
+                "type": "uri",
+                "label": "Join & Vote",
+                "uri": vote_url
+            }
+        }
+    ]
+
+    # Add Wongnai button if URL is provided
+    if fixed_restaurant_url and str(fixed_restaurant_url).startswith('http'):
+        footer_contents.append({
+            "type": "button",
+            "style": "secondary",
+            "height": "sm",
+            "color": "#F58357",
+            "action": {
+                "type": "uri",
+                "label": "View on Wongnai",
+                "uri": fixed_restaurant_url
+            }
+        })
 
     flex = {
         "type": "bubble",
@@ -165,26 +244,7 @@ def push_message_creation_flex(group_id: str, meeting_id: str, meeting_name: str
                     "layout": "vertical",
                     "margin": "lg",
                     "spacing": "sm",
-                    "contents": [
-                        {
-                            "type": "box",
-                            "layout": "baseline",
-                            "spacing": "sm",
-                            "contents": [
-                                {"type": "text", "text": "Period", "color": "#aaaaaa", "size": "sm", "flex": 2},
-                                {"type": "text", "text": period_str, "wrap": True, "color": "#2B303B", "size": "sm", "flex": 4}
-                            ]
-                        },
-                         {
-                            "type": "box",
-                            "layout": "baseline",
-                            "spacing": "sm",
-                            "contents": [
-                                {"type": "text", "text": "Time", "color": "#aaaaaa", "size": "sm", "flex": 2},
-                                {"type": "text", "text": meal_time, "wrap": True, "color": "#2B303B", "size": "sm", "flex": 4}
-                            ]
-                        }
-                    ]
+                    "contents": info_rows
                 }
             ]
         },
@@ -192,19 +252,7 @@ def push_message_creation_flex(group_id: str, meeting_id: str, meeting_name: str
             "type": "box",
             "layout": "vertical",
             "spacing": "sm",
-            "contents": [
-                {
-                    "type": "button",
-                    "style": "primary",
-                    "height": "sm",
-                    "color": "#F58357", # Coral
-                    "action": {
-                        "type": "uri",
-                        "label": "Vote Now",
-                        "uri": vote_url
-                    }
-                }
-            ],
+            "contents": footer_contents,
             "flex": 0
         }
     }
@@ -220,15 +268,20 @@ def push_message_creation_flex(group_id: str, meeting_id: str, meeting_name: str
             )
             print(f"Pushed Creation Flex to {group_id}")
     except Exception as e:
-        print(f"Error pushing creation message: {e}")
+        error_msg = str(e)
+        if "monthly limit" in error_msg.lower() or "429" in error_msg:
+            print("🛑 CRITICAL: LINE Messaging API monthly quota reached!")
+            print("Please check your LINE Official Account Manager (https://manager.line.biz/).")
+        else:
+            print(f"Error pushing creation message: {e}")
 
-def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, top_slots: list, preferred_restaurants: list = None, all_scored_restaurants: list = None, meal_time: str = "", start_date: str = "", end_date: str = ""):
+def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, top_slots: list, preferred_restaurants: list = None, all_scored_restaurants: list = None, meal_time: str = "", start_date: str = "", end_date: str = "", fixed_restaurant: dict = None):
     # if not group_id or not top_slots:
     if not group_id:
         return
 
     # Link: /result?group_id=...&meeting_id=...
-    LIFF_ID = "2008419367-SeVLxzHP"
+    # base_result_url uses global LIFF_ID
     # Base Params
     base_params = []
     if group_id:
@@ -239,6 +292,9 @@ def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, 
     # Create Summary Bubble
     summary_items = []
     for i, slot in enumerate(top_slots): # Show top 5 in summary
+        if i > 0:
+            summary_items.append({"type": "separator", "margin": "md", "color": "#eeeeee"})
+            
         date_str = slot['date']
         time_str = slot['time']
         score = slot['final_score']
@@ -246,24 +302,130 @@ def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, 
         
         summary_items.append({
             "type": "box",
-            "layout": "baseline",
+            "layout": "vertical",
             "contents": [
-                {"type": "text", "text": f"{i+1}.", "size": "sm", "color": "#2B303B", "flex": 1, "weight": "bold"},
-                {"type": "text", "text": f"{date_str} {time_str}", "size": "sm", "color": "#555555", "flex": 6, "wrap": True},
-                {"type": "text", "text": f"{score:.1f}", "size": "sm", "color": score_color, "flex": 2, "align": "end", "weight": "bold"}
+                {
+                    "type": "box",
+                    "layout": "baseline",
+                    "contents": [
+                        {"type": "text", "text": f"{i+1}.", "size": "sm", "color": "#2B303B", "flex": 1, "weight": "bold"},
+                        {"type": "text", "text": f"{date_str} {time_str} ({len(slot.get('attendees', []))} 🙋)", "size": "sm", "color": "#555555", "flex": 6, "wrap": True},
+                        {"type": "text", "text": f"{score:.1f}", "size": "sm", "color": score_color, "flex": 2, "align": "end", "weight": "bold"}
+                    ]
+                },
+                {"type": "text", "text": ", ".join(slot.get('attendee_names', [])), "size": "xxs", "color": "#aaaaaa", "wrap": True, "margin": "xs", "flex": 0}
             ],
             "margin": "sm"
         })
 
+    # Determine meeting status
+    is_fixed_time = not end_date or end_date == "N/A" or end_date == ""
+    is_fixed_restaurant = fixed_restaurant is not None
+    
     base_query_string = "?" + "&".join(base_params) if base_params else ""
     base_result_url = f"https://liff.line.me/{LIFF_ID}/result{base_query_string}"
 
-    # 0. Meeting Summary Bubble (Hero)
-    period_str = "Not specified"
-    if start_date and end_date:
-        period_str = f"{start_date} - {end_date}"
-    elif start_date:
-        period_str = start_date
+    # 0. Meeting Summary Bubble (Hero) - Styled like push_message_fixed_result_flex
+    date_label = "Date" if is_fixed_time else "Period"
+    date_val = start_date if is_fixed_time else (f"{start_date} - {end_date}" if start_date and end_date != "N/A" else start_date)
+    
+    # Header title logic
+    if is_fixed_time and is_fixed_restaurant:
+        hero_header_title = "📍 Finalized Meeting"
+    elif is_fixed_time:
+        hero_header_title = "📍 Time Finalized"
+    elif is_fixed_restaurant:
+        hero_header_title = "📍 Restaurant Fixed"
+    else:
+        hero_header_title = "🏁 Voting Results"
+    
+    # Build Hero Body Contents
+    hero_body_contents = [
+        {
+            "type": "box",
+            "layout": "vertical",
+            "margin": "md",
+            "spacing": "sm",
+            "contents": [
+                {
+                    "type": "box",
+                    "layout": "baseline",
+                    "spacing": "sm",
+                    "contents": [
+                        {"type": "text", "text": date_label, "color": "#aaaaaa", "size": "sm", "flex": 2},
+                        {"type": "text", "text": date_val, "wrap": True, "color": "#2B303B", "size": "sm", "flex": 4}
+                    ]
+                },
+                {
+                    "type": "box",
+                    "layout": "baseline",
+                    "spacing": "sm",
+                    "contents": [
+                        {"type": "text", "text": "Time", "color": "#aaaaaa", "size": "sm", "flex": 2},
+                        {"type": "text", "text": meal_time, "wrap": True, "color": "#2B303B", "size": "sm", "flex": 4}
+                    ]
+                }
+            ]
+        }
+    ]
+
+    # Add Fixed Restaurant info to Hero if applicable
+    if is_fixed_restaurant:
+        restaurant_name = fixed_restaurant.get('name', 'N/A')
+        hero_body_contents.append({"type": "separator", "margin": "lg"})
+        hero_body_contents.append({
+            "type": "box",
+            "layout": "vertical",
+            "margin": "lg",
+            "spacing": "xs",
+            "contents": [
+                {"type": "text", "text": "Confirmed Restaurant", "weight": "bold", "size": "xs", "color": "#aaaaaa"},
+                {"type": "text", "text": restaurant_name, "weight": "bold", "size": "lg", "color": "#F58357", "margin": "xs", "wrap": True},
+                {"type": "text", "text": f"✨ Recommended by {fixed_restaurant.get('suggestion_count', 0)} friends" if fixed_restaurant.get('suggestion_count', 0) > 0 else "📍 Organizer's Choice", "size": "xs", "color": "#aaaaaa"}
+            ]
+        })
+
+    # Add Attendees if Fixed Time
+    if is_fixed_time and top_slots:
+        attendees = top_slots[0].get('attendees', [])
+        hero_body_contents.append({"type": "separator", "margin": "lg"})
+        hero_body_contents.append({
+            "type": "box",
+            "layout": "vertical",
+            "margin": "lg",
+            "spacing": "sm",
+            "contents": [
+                {"type": "text", "text": "Confirmed Attendees", "weight": "bold", "size": "xs", "color": "#aaaaaa"},
+                {
+                    "type": "box",
+                    "layout": "horizontal",
+                    "spacing": "xs",
+                    "contents": [
+                        {"type": "image", "url": url, "size": "xxs", "aspectRatio": "1:1", "aspectMode": "cover", "cornerRadius": "full"} for url in attendees[:10]
+                    ] + ([{"type": "text", "text": f"+{len(attendees)-10}", "size": "xxs", "color": "#aaaaaa", "gravity": "center", "flex": 0}] if len(attendees) > 10 else [])
+                } if attendees else {"type": "text", "text": "None", "size": "sm", "color": "#555555"}
+            ]
+        })
+    elif not top_slots and not is_fixed_time:
+        # Show warning if no slots found for period voting
+        hero_body_contents.append({"type": "separator", "margin": "lg"})
+        hero_body_contents.append({
+            "type": "box",
+            "layout": "vertical",
+            "margin": "lg",
+            "spacing": "xs",
+            "contents": [
+                {"type": "text", "text": "⚠️ No Common Time Found", "weight": "bold", "size": "sm", "color": "#F58357"},
+                {"type": "text", "text": "No time slots where all required attendees are available. Try adjusting the period or flexible requirements.", "size": "xs", "color": "#aaaaaa", "wrap": True}
+            ]
+        })
+
+    # Extract Wongnai URL from fixed restaurant if applicable
+    wongnai_url = None
+    if is_fixed_restaurant:
+        wongnai_url = fixed_restaurant.get('url') or fixed_restaurant.get('wongnai_url') or fixed_restaurant.get('wongnai_link')
+        if wongnai_url and not str(wongnai_url).startswith('http'):
+            wongnai_url = f"https://{wongnai_url}"
 
     meeting_summary_bubble = {
         "type": "bubble",
@@ -271,44 +433,17 @@ def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, 
         "header": {
             "type": "box",
             "layout": "vertical",
-            "backgroundColor": "#FFF5EB", # Light Orange Tint
+            "backgroundColor": "#F58357", # Primary Color
             "paddingAll": "lg",
             "contents": [
-                {"type": "text", "text": "🏁 Voting Results", "weight": "bold", "color": "#F58357", "size": "sm"},
-                {"type": "text", "text": meeting_name, "weight": "bold", "size": "xl", "color": "#2B303B", "wrap": True, "margin": "md"}
+                {"type": "text", "text": hero_header_title, "weight": "bold", "color": "#FFFFFF", "size": "sm"},
+                {"type": "text", "text": meeting_name, "weight": "bold", "size": "xl", "color": "#FFFFFF", "wrap": True, "margin": "md"}
             ]
         },
         "body": {
             "type": "box",
             "layout": "vertical",
-            "contents": [
-                {
-                    "type": "box",
-                    "layout": "vertical",
-                    "margin": "md",
-                    "spacing": "sm",
-                    "contents": [
-                        {
-                            "type": "box",
-                            "layout": "baseline",
-                            "spacing": "sm",
-                            "contents": [
-                                {"type": "text", "text": "Period", "color": "#aaaaaa", "size": "sm", "flex": 2},
-                                {"type": "text", "text": period_str, "wrap": True, "color": "#2B303B", "size": "sm", "flex": 4}
-                            ]
-                        },
-                         {
-                            "type": "box",
-                            "layout": "baseline",
-                            "spacing": "sm",
-                            "contents": [
-                                {"type": "text", "text": "Time", "color": "#aaaaaa", "size": "sm", "flex": 2},
-                                {"type": "text", "text": meal_time, "wrap": True, "color": "#2B303B", "size": "sm", "flex": 4}
-                            ]
-                        }
-                    ]
-                }
-            ]
+            "contents": hero_body_contents
         },
         "footer": {
             "type": "box",
@@ -321,8 +456,8 @@ def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, 
                     "color": "#F58357",
                     "action": {
                         "type": "uri",
-                        "label": "Open Results Page",
-                        "uri": base_result_url
+                        "label": "View on Wongnai" if is_fixed_restaurant and wongnai_url else "Open Results Page",
+                        "uri": wongnai_url if is_fixed_restaurant and wongnai_url else base_result_url
                     }
                 }
             ]
@@ -372,10 +507,12 @@ def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, 
         }
     }
 
-    bubbles = [meeting_summary_bubble, summary_bubble]
+    bubbles = [meeting_summary_bubble]
+    if not is_fixed_time:
+        bubbles.append(summary_bubble)
 
-    # Add Preferred Restaurants Bubble if available
-    if preferred_restaurants:
+    # Add Preferred Restaurants Bubble if available (SKIP if restaurant is already fixed)
+    if preferred_restaurants and not is_fixed_restaurant:
         pref_items = []
         for i, r in enumerate(preferred_restaurants[:10]):
             pref_items.append({
@@ -383,7 +520,8 @@ def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, 
                 "layout": "baseline",
                 "contents": [
                     {"type": "text", "text": f"{i+1}.", "size": "sm", "color": "#2B303B", "flex": 1, "weight": "bold"},
-                    {"type": "text", "text": r.get('name', 'N/A'), "size": "sm", "color": "#555555", "flex": 8, "wrap": True},
+                    {"type": "text", "text": r.get('name', 'N/A'), "size": "sm", "color": "#555555", "flex": 6, "wrap": True},
+                    {"type": "text", "text": f"({r.get('suggestion_count', 0)} 🙋)", "size": "xs", "color": "#F58357", "flex": 3, "align": "end", "weight": "bold"}
                 ],
                 "margin": "sm"
             })
@@ -430,8 +568,8 @@ def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, 
         }
         bubbles.append(preferred_bubble)
     
-    # Bubble for Global Discovery Ranking
-    if all_scored_restaurants:
+    # Bubble for Global Discovery Ranking (SKIP if restaurant is already fixed)
+    if all_scored_restaurants and not is_fixed_restaurant:
         discovery_items = []
         for i, r in enumerate(all_scored_restaurants[:10]):
             discovery_items.append({
@@ -486,121 +624,123 @@ def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, 
             }
         }
         bubbles.append(discovery_bubble)
-    for slot in top_slots[:5]:
-        date_str = slot['date']
-        time_str = slot['time']
-        score = slot['final_score']
-        
-        # Link: /result?group_id=...&meeting_id=...&date=...&time=...
-        # We need to construct URL for THIS specific slot
-        slot_params = base_params.copy()
-        slot_params.append(f"date={date_str}")
-        slot_params.append(f"time={time_str}")
-        
-        query_string = "?" + "&".join(slot_params)
-        result_url = f"https://liff.line.me/{LIFF_ID}/result{query_string}"
-        print(f"Result URL for {date_str} {time_str}: {result_url}")
+    if len(top_slots) > 0:
+        for slot in top_slots[:5]:
+            date_str = slot['date']
+            time_str = slot['time']
+            score = slot['final_score']
+            
+            # Link: /result?group_id=...&meeting_id=...&date=...&time=...
+            # We need to construct URL for THIS specific slot
+            slot_params = base_params.copy()
+            slot_params.append(f"date={date_str}")
+            slot_params.append(f"time={time_str}")
+            
+            query_string = "?" + "&".join(slot_params)
+            result_url = f"https://liff.line.me/{LIFF_ID}/result{query_string}"
+            print(f"Result URL for {date_str} {time_str}: {result_url}")
 
-        attendees = slot.get('attendees', [])
-        restaurants = slot.get('restaurants', [])
-        top_restaurant_name = restaurants[0].get('name') if restaurants else "No Suggestion"
+            attendees = slot.get('attendees', [])
+            restaurants = slot.get('restaurants', [])
+            top_restaurant_name = restaurants[0].get('name') if restaurants else "No Suggestion"
 
-        # Format Attendees List
-        # Maybe show first 3 and "+ X more" to save space, or just comma separated
-        attendees_str = ", ".join(attendees)
-        if not attendees_str:
-            attendees_str = "None"
-        
-        # Color coding for score
-        score_color = "#FFD700" if score >= 8 else "#F58357" if score >= 5 else "#666666"
+            # Format Attendees List
+            # Maybe show first 3 and "+ X more" to save space, or just comma separated
+            attendees_str = ", ".join(attendees)
+            if not attendees_str:
+                attendees_str = "None"
+            
+            # Color coding for score
+            score_color = "#FFD700" if score >= 8 else "#F58357" if score >= 5 else "#666666"
 
-        bubble = {
-            "type": "bubble",
-            "size": "kilo", # slightly larger
-            "header": {
-                "type": "box",
-                "layout": "vertical",
-                "backgroundColor": "#FFF5EB", # Light Orange Tint
-                "paddingAll": "md",
-                "contents": [
-                    {
-                        "type": "box",
-                        "layout": "baseline",
-                        "contents": [
-                             {"type": "text", "text": date_str, "weight": "bold", "color": "#2B303B", "size": "sm", "flex": 1},
-                             {"type": "text", "text": f"{score}/10", "weight": "bold", "color": score_color, "size": "sm", "flex": 0, "align": "end"}
-                        ]
-                    },
-                    {"type": "text", "text": time_str, "weight": "bold", "color": "#2B303B", "size": "xl", "wrap": True, "margin": "xs"}
-                ]
-            },
-            "body": {
-                "type": "box",
-                "layout": "vertical",
-                "paddingAll": "md",
-                "spacing": "md",
-                "contents": [
-                    # Attendees Section
-                    {
-                        "type": "box",
-                        "layout": "vertical",
-                        "spacing": "xs",
-                        "contents": [
-                            {"type": "text", "text": "Available Users", "weight": "bold", "size": "xs", "color": "#aaaaaa"},
-                            {
-                                "type": "box",
-                                "layout": "horizontal",
-                                "spacing": "xs",
-                                "contents": [
-                                    {"type": "image", "url": url, "size": "xxs", "aspectRatio": "1:1", "aspectMode": "cover", "cornerRadius": "full"} for url in attendees[:7] # Show max 7 icons to fit
-                                ] + ([{"type": "text", "text": f"+{len(attendees)-7}", "size": "xxs", "color": "#aaaaaa", "gravity": "center", "flex": 0}] if len(attendees) > 7 else [])
-                            } if attendees else {"type": "text", "text": "None", "size": "sm", "color": "#555555"}
-                        ]
-                    },
-                    # Separator
-                    {"type": "separator", "margin": "md", "color": "#dddddd"},
-                    # Top Restaurant Teaser
-                    {
-                        "type": "box",
-                        "layout": "vertical",
-                        "margin": "md",
-                        "spacing": "xs",
-                        "contents": [
-                            {"type": "text", "text": "Top 5 Recommendations", "weight": "bold", "size": "xs", "color": "#aaaaaa"},
-                            * [
+            bubble = {
+                "type": "bubble",
+                "size": "kilo", # slightly larger
+                "header": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "backgroundColor": "#FFF5EB", # Light Orange Tint
+                    "paddingAll": "md",
+                    "contents": [
+                        {
+                            "type": "box",
+                            "layout": "baseline",
+                            "contents": [
+                                {"type": "text", "text": date_str, "weight": "bold", "color": "#2B303B", "size": "sm", "flex": 1},
+                                {"type": "text", "text": f"{score}/10", "weight": "bold", "color": score_color, "size": "sm", "flex": 0, "align": "end"}
+                            ]
+                        },
+                        {"type": "text", "text": time_str, "weight": "bold", "color": "#2B303B", "size": "xl", "wrap": True, "margin": "xs"}
+                    ]
+                },
+                "body": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "paddingAll": "md",
+                    "spacing": "md",
+                    "contents": [
+                        # Attendees Section
+                        {
+                            "type": "box",
+                            "layout": "vertical",
+                            "spacing": "xs",
+                            "contents": [
+                                {"type": "text", "text": f"Available Users ({len(attendees)})", "weight": "bold", "size": "xs", "color": "#aaaaaa"},
                                 {
                                     "type": "box",
-                                    "layout": "baseline",
+                                    "layout": "horizontal",
+                                    "spacing": "xs",
                                     "contents": [
-                                        {"type": "text", "text": f"{i+1}. {r.get('name', 'N/A')}", "size": "xs", "color": "#333333", "flex": 4, "wrap": True},
-                                        {"type": "text", "text": f"{r.get('score', 0):.1f}", "size": "xs", "color": "#F58357", "flex": 0, "align": "end", "weight": "bold"}
-                                    ]
-                                } for i, r in enumerate(restaurants[:5])
+                                        {"type": "image", "url": url, "size": "xxs", "aspectRatio": "1:1", "aspectMode": "cover", "cornerRadius": "full"} for url in attendees[:7] # Show max 7 icons to fit
+                                    ] + ([{"type": "text", "text": f"+{len(attendees)-7}", "size": "xxs", "color": "#aaaaaa", "gravity": "center", "flex": 0}] if len(attendees) > 7 else [])
+                                } if attendees else {"type": "text", "text": "None", "size": "sm", "color": "#555555"},
+                                {"type": "text", "text": ", ".join(slot.get('attendee_names', [])), "size": "xxs", "color": "#aaaaaa", "wrap": True, "margin": "xs"}
                             ]
-                        ]
-                    }
-                ]
-            },
-            "footer": {
-                "type": "box",
-                "layout": "vertical",
-                "contents": [
-                    {
-                        "type": "button",
-                        "style": "primary",
-                        "height": "sm",
-                        "color": "#F58357",
-                        "action": {
-                            "type": "uri",
-                            "label": "View Details",
-                            "uri": result_url
+                        },
+                        # Separator
+                        {"type": "separator", "margin": "md", "color": "#dddddd"},
+                        # Top Restaurant Teaser
+                        {
+                            "type": "box",
+                            "layout": "vertical",
+                            "margin": "md",
+                            "spacing": "xs",
+                            "contents": [
+                                {"type": "text", "text": "Top 5 Recommendations", "weight": "bold", "size": "xs", "color": "#aaaaaa"},
+                                * [
+                                    {
+                                        "type": "box",
+                                        "layout": "baseline",
+                                        "contents": [
+                                            {"type": "text", "text": f"{i+1}. {r.get('name', 'N/A')}", "size": "xs", "color": "#333333", "flex": 4, "wrap": True},
+                                            {"type": "text", "text": f"{r.get('score', 0):.1f}", "size": "xs", "color": "#F58357", "flex": 0, "align": "end", "weight": "bold"}
+                                        ]
+                                    } for i, r in enumerate(restaurants[:5])
+                                ]
+                            ]
                         }
-                    }
-                ]
+                    ]
+                },
+                "footer": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": [
+                        {
+                            "type": "button",
+                            "style": "primary",
+                            "height": "sm",
+                            "color": "#F58357",
+                            "action": {
+                                "type": "uri",
+                                "label": "View Details",
+                                "uri": result_url
+                            }
+                        }
+                    ]
+                }
             }
-        }
-        if len(restaurants) > 0:
-            bubbles.append(bubble)
+            if len(restaurants) > 0:
+                bubbles.append(bubble)
     
     carousel = {
         "type": "carousel",
@@ -626,8 +766,141 @@ def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, 
             )
             print(f"✅ Successfully pushed Result Carousel to {group_id}")
     except Exception as e:
-        print(f"❌ Error pushing result message: {e}")
-        print(f"Group ID was: '{group_id}'")
+        error_msg = str(e)
+        if "monthly limit" in error_msg.lower() or "429" in error_msg:
+            print("🛑 CRITICAL: LINE Messaging API monthly quota reached!")
+            print("The bot cannot send any more push messages this month on your current plan.")
+            print("Please check your LINE Official Account Manager (https://manager.line.biz/) to upgrade or wait until next month.")
+        else:
+            print(f"❌ Error pushing result message: {e}")
+            print(f"Group ID was: '{group_id}'")
+
+def push_message_fixed_result_flex(group_id: str, meeting_id: str, meeting_name: str, slot: dict, fixed_restaurant: dict, meal_time: str = "", start_date: str = ""):
+    if not group_id:
+        return
+    
+    # base_params uses global LIFF_ID
+    base_params = [f"group_id={group_id}", f"meeting_id={meeting_id}"]
+    base_query_string = "?" + "&".join(base_params)
+    result_url = f"https://liff.line.me/{LIFF_ID}/result{base_query_string}"
+
+    attendees = slot.get('attendees', [])
+    restaurant_name = fixed_restaurant.get('name', 'N/A')
+    
+    wongnai_url = fixed_restaurant.get('url') or fixed_restaurant.get('wongnai_url')
+    final_link = wongnai_url if (wongnai_url and str(wongnai_url).startswith('http')) else result_url
+    button_label = "View on Wongnai" if (wongnai_url and str(wongnai_url).startswith('http')) else "Open Results Page"
+
+    # Design Fixed Bubble
+    fixed_bubble = {
+        "type": "bubble",
+        "header": {
+            "type": "box",
+            "layout": "vertical",
+            "backgroundColor": "#F58357", # Primary Color
+            "paddingAll": "lg",
+            "contents": [
+                {"type": "text", "text": "📍 Finalized Meeting", "weight": "bold", "color": "#FFFFFF", "size": "sm"},
+                {"type": "text", "text": meeting_name, "weight": "bold", "size": "xl", "color": "#FFFFFF", "wrap": True, "margin": "md"}
+            ]
+        },
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {
+                    "type": "box",
+                    "layout": "vertical",
+                    "margin": "md",
+                    "spacing": "sm",
+                    "contents": [
+                        {
+                            "type": "box",
+                            "layout": "baseline",
+                            "spacing": "sm",
+                            "contents": [
+                                {"type": "text", "text": "Date", "color": "#aaaaaa", "size": "sm", "flex": 2},
+                                {"type": "text", "text": start_date, "wrap": True, "color": "#2B303B", "size": "sm", "flex": 4}
+                            ]
+                        },
+                        {
+                            "type": "box",
+                            "layout": "baseline",
+                            "spacing": "sm",
+                            "contents": [
+                                {"type": "text", "text": "Time", "color": "#aaaaaa", "size": "sm", "flex": 2},
+                                {"type": "text", "text": meal_time, "wrap": True, "color": "#2B303B", "size": "sm", "flex": 4}
+                            ]
+                        }
+                    ]
+                },
+                {"type": "separator", "margin": "lg"},
+                {
+                    "type": "box",
+                    "layout": "vertical",
+                    "margin": "lg",
+                    "spacing": "xs",
+                    "contents": [
+                        {"type": "text", "text": "Confirmed Restaurant", "weight": "bold", "size": "xs", "color": "#aaaaaa"},
+                        {"type": "text", "text": restaurant_name, "weight": "bold", "size": "lg", "color": "#F58357", "margin": "xs", "wrap": True},
+                        {"type": "text", "text": f"✨ Recommended by {fixed_restaurant.get('suggestion_count', 0)} friends" if fixed_restaurant.get('suggestion_count', 0) > 0 else "📍 Organizer's Choice", "size": "xs", "color": "#aaaaaa"}
+                    ]
+                },
+                {
+                    "type": "box",
+                    "layout": "vertical",
+                    "margin": "lg",
+                    "spacing": "sm",
+                    "contents": [
+                        {"type": "text", "text": "Confirmed Attendees", "weight": "bold", "size": "xs", "color": "#aaaaaa"},
+                        {
+                            "type": "box",
+                            "layout": "horizontal",
+                            "spacing": "xs",
+                            "contents": [
+                                {"type": "image", "url": url, "size": "xxs", "aspectRatio": "1:1", "aspectMode": "cover", "cornerRadius": "full"} for url in attendees[:10]
+                            ] + ([{"type": "text", "text": f"+{len(attendees)-10}", "size": "xxs", "color": "#aaaaaa", "gravity": "center", "flex": 0}] if len(attendees) > 10 else [])
+                        } if attendees else {"type": "text", "text": "None", "size": "sm", "color": "#555555"}
+                    ]
+                }
+            ]
+        },
+        "footer": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {
+                    "type": "button",
+                    "style": "primary",
+                    "color": "#F58357",
+                    "action": {
+                        "type": "uri",
+                        "label": button_label,
+                        "uri": final_link
+                    }
+                }
+            ]
+        }
+    }
+
+    try:
+        with ApiClient(configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
+            line_bot_api.push_message(
+                PushMessageRequest(
+                    to=group_id,
+                    messages=[FlexMessage(alt_text=f"Final Result: {meeting_name}", contents=FlexContainer.from_dict(fixed_bubble))]
+                )
+            )
+            print(f"✅ Successfully pushed Fixed Result Flex to {group_id}")
+    except Exception as e:
+        error_msg = str(e)
+        if "monthly limit" in error_msg.lower() or "429" in error_msg:
+            print("🛑 CRITICAL: LINE Messaging API monthly quota reached!")
+            print("Please check your LINE Official Account Manager (https://manager.line.biz/).")
+        else:
+            print(f"❌ Error pushing fixed result message: {e}")
+
 
 from models import UserDetail
 from services.postgres_services import SessionLocal
