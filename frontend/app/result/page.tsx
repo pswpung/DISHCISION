@@ -556,7 +556,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                 <div className="flex p-1 bg-white/5 rounded-2xl border border-white/5">
                     {[
                         { id: 'slots', label: 'Slots', icon: '⏰' },
-                        { id: 'favorites', label: 'Group Picks', icon: '🙋' },
+                        { id: 'favorites', label: 'Friend Recommends', icon: '🙋' },
                         { id: 'discovery', label: 'Discovery', icon: '🔍' }
                     ].filter(tab => {
                         const mode = meetingData?.initial_data?.timing_mode?.toLowerCase() || 'period';

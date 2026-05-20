@@ -145,7 +145,7 @@ def generate_and_send_suggestion(meeting_id: UUID, db: Session):
         # Fetch all user profiles for these attendees
         attendee_ids = [a.user_id for a in attendee_details]
         users = db.query(UserDetail).filter(UserDetail.user_id.in_(attendee_ids)).all()
-        user_map = {u.user_id: u.pictureurl for u in users}
+        user_map = {u.user_id: {"picture": u.pictureurl, "name": u.display_name} for u in users}
 
         # Preferred Restaurants
         preferred_restaurants = result.get("preferred_restaurants", [])
@@ -166,11 +166,15 @@ def generate_and_send_suggestion(meeting_id: UUID, db: Session):
                     restaurants = slot_data if isinstance(slot_data, list) else []
                     attendees_ids_list = []
                 
-                # Map IDs to Picture URLs
+                # Map IDs to Picture URLs and Names
                 attendee_images = []
+                attendee_names = []
                 for uid in attendees_ids_list:
-                    if uid in user_map and user_map[uid]: # Ensure URL is not empty
-                        attendee_images.append(user_map[uid])
+                    if uid in user_map:
+                        if user_map[uid]["picture"]:
+                            attendee_images.append(user_map[uid]["picture"])
+                        if user_map[uid]["name"]:
+                            attendee_names.append(user_map[uid]["name"])
 
                 if final_score > 0:
                     all_slots.append({
@@ -178,7 +182,8 @@ def generate_and_send_suggestion(meeting_id: UUID, db: Session):
                         "time": time_slot,
                         "final_score": final_score,
                         "restaurants": restaurants,
-                        "attendees": attendee_images # Pass Images instead of IDs
+                        "attendees": attendee_images,
+                        "attendee_names": attendee_names
                     })
 
         # Sort by final score descending
@@ -202,18 +207,37 @@ def generate_and_send_suggestion(meeting_id: UUID, db: Session):
                 start_date = initial_data.get("start_date", "")
                 end_date = initial_data.get("end_date", "")
 
-            # Push System Result Flex (Top Slots + Friend Recommends + Global Discovery)
-            push_message_result_flex(
-                group_id=meeting_detail.group_id,
-                meeting_id=str(meeting_detail.meeting_id),
-                meeting_name=meeting_detail.meeting_name,
-                top_slots=top_slots,
-                preferred_restaurants=preferred_restaurants,
-                all_scored_restaurants=all_scored_restaurants,
-                meal_time=meal_time,
-                start_date=start_date,
-                end_date=end_date
-            )
+            is_fixed_meeting = (timing_mode == "fixed" and len(initial_data.get("fixed_restaurants", [])) > 0)
+
+            if is_fixed_meeting:
+                from services.line_services import push_message_fixed_result_flex
+                fixed_restaurant = initial_data.get("fixed_restaurants", [])[0]
+                # In fixed mode, top_slots[0] contains the confirmed slot with attendees
+                push_message_fixed_result_flex(
+                    group_id=meeting_detail.group_id,
+                    meeting_id=str(meeting_detail.meeting_id),
+                    meeting_name=meeting_detail.meeting_name,
+                    slot=top_slots[0] if top_slots else {},
+                    fixed_restaurant=fixed_restaurant,
+                    meal_time=meal_time,
+                    start_date=start_date
+                )
+            else:
+                # Push System Result Flex (Top Slots + Friend Recommends + Global Discovery)
+                fixed_restaurant = initial_data.get("fixed_restaurants", [])[0] if initial_data.get("fixed_restaurants") else None
+                push_message_result_flex(
+                    group_id=meeting_detail.group_id,
+                    meeting_id=str(meeting_detail.meeting_id),
+                    meeting_name=meeting_detail.meeting_name,
+                    top_slots=top_slots,
+                    preferred_restaurants=preferred_restaurants,
+                    all_scored_restaurants=all_scored_restaurants,
+                    meal_time=meal_time,
+                    start_date=start_date,
+                    end_date=end_date,
+                    fixed_restaurant=fixed_restaurant,
+                    total_attendees=len(attendee_details)
+                )
     except Exception as e:
         print(f"Failed to send Result notification: {e}")
 

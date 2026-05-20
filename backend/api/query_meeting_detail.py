@@ -22,11 +22,28 @@ def create_meeting(meeting: MeetingCreate, db: Session = Depends(get_db)):
     # Send Notification to LINE Group
     try:
         if new_meeting.group_id:
-            meal_time = new_meeting.initial_data.get("meal_time", "Not specified")
-            start_date = new_meeting.initial_data.get("start_date", "N/A")
-            end_date = new_meeting.initial_data.get("end_date", "N/A")
+            initial_data = new_meeting.initial_data or {}
+            timing_mode = initial_data.get("timing_mode", "period")
             
-            attendees = new_meeting.initial_data.get("attendees", [])
+            # Extract Fixed Restaurant Name & URL
+            fixed_restaurant_list = initial_data.get("fixed_restaurants", [])
+            fixed_restaurant_obj = fixed_restaurant_list[0] if fixed_restaurant_list else None
+            fixed_restaurant = fixed_restaurant_obj.get("name") if fixed_restaurant_obj else ""
+            fixed_restaurant_url = fixed_restaurant_obj.get("url") or fixed_restaurant_obj.get("wongnai_url") if fixed_restaurant_obj else ""
+            
+            # Extract Fixed Location
+            fixed_location = initial_data.get("fixLocation") or ""
+            
+            if timing_mode == "fixed":
+                meal_time = f"{initial_data.get('fixed_start_time', '')} - {initial_data.get('fixed_end_time', '')}"
+                start_date = initial_data.get("fixed_date", "N/A")
+                end_date = "" # Indicate fixed time by empty end_date
+            else:
+                meal_time = initial_data.get("meal_time", "Not specified")
+                start_date = initial_data.get("start_date", "N/A")
+                end_date = initial_data.get("end_date", "N/A")
+            
+            attendees = initial_data.get("attendees", [])
             # Only send "Let's Vote" if there are other attendees involved
             if len(attendees) > 1:
                 push_message_creation_flex(
@@ -35,7 +52,10 @@ def create_meeting(meeting: MeetingCreate, db: Session = Depends(get_db)):
                     meeting_name=new_meeting.meeting_name,
                     meal_time=meal_time,
                     start_date=start_date,
-                    end_date=end_date
+                    end_date=end_date,
+                    fixed_restaurant=fixed_restaurant,
+                    fixed_location=fixed_location,
+                    fixed_restaurant_url=fixed_restaurant_url
                 )
     except Exception as e:
         print(f"Failed to send LINE notification: {e}")

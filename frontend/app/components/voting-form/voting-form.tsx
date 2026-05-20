@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useLiff } from '@/app/context/LiffContext';
 import dynamic from 'next/dynamic';
 import { TimeSlotSelector } from '@/app/components/time-slot-selector/time-slot-selector';
+import { apiService } from '@/app/services/api';
 
 // Dynamically import MapPicker to avoid SSR issues with Leaflet
 const MapPicker = dynamic(() => import('@/app/components/map-picker/map-picker'), {
@@ -88,12 +89,7 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
         if (meetingData?.fixLocation && (!meetingData?.lat || !meetingData?.lng)) {
             const geocodeFixed = async () => {
                 try {
-                    const response = await fetch(
-                        `https://nominatim.openstreetmap.org/search?` +
-                        `format=json&q=${encodeURIComponent(meetingData.fixLocation)}` +
-                        `&countrycodes=th&limit=1`
-                    );
-                    const data = await response.json();
+                    const data = await apiService.searchLocation(meetingData.fixLocation);
                     if (data && data.length > 0) {
                         setLocationCoords({
                             lat: parseFloat(data[0].lat),
@@ -122,12 +118,20 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
                         setIsLocating(false);
                     },
                     (err) => {
-                        console.error("Default location fetch failed:", err);
+                        console.warn("Geolocation failed, using fallback (Bangkok Center):", err);
+                        // Fallback to Bangkok Center
+                        setLocationCoords({ lat: 13.7563, lng: 100.5018 });
                         setIsLocating(false);
                     },
-                    { timeout: 10000 }
+                    { 
+                        enableHighAccuracy: false, 
+                        timeout: 10000,
+                        maximumAge: 60000 
+                    }
                 );
             } else {
+                // Fallback if not supported
+                setLocationCoords({ lat: 13.7563, lng: 100.5018 });
                 setIsLocating(false);
             }
         }
@@ -168,13 +172,7 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
     const handleLocationBlur = async () => {
         if (departureLocation && departureLocation !== "Current Location") {
             try {
-                const response = await fetch(
-                    `https://nominatim.openstreetmap.org/search?` +
-                    `format=json&q=${encodeURIComponent(departureLocation)}` +
-                    `&countrycodes=th` +
-                    `&limit=5`
-                );
-                const data = await response.json();
+                const data = await apiService.searchLocation(departureLocation);
                 if (data && data.length > 0) {
                     const lat = parseFloat(data[0].lat);
                     const lng = parseFloat(data[0].lon);

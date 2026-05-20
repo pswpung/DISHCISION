@@ -8,6 +8,8 @@ from api.query_user import router as query_user_router
 from api.query_meeting_detail import router as query_meeting_detail
 from api.query_meeting_attendee import router as query_meeting_attendee
 from api.restaurant_suggestion import router as resturant_suggestion_router
+from api.playground_router import router as playground_router
+from api.location_router import router as location_router
 from fastapi.middleware.cors import CORSMiddleware
 from services.postgres_services import engine, Base
 import models
@@ -29,6 +31,8 @@ app.include_router(query_user_router)
 app.include_router(query_meeting_detail)
 app.include_router(query_meeting_attendee)
 app.include_router(resturant_suggestion_router)
+app.include_router(playground_router)
+app.include_router(location_router)
 
 def main() -> None:
     """

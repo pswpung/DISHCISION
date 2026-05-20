@@ -71,7 +71,7 @@ mention_text = {
 def create_flex_message(user_id=None, group_id=None):
     # Base URL using the specific LIFF ID
     # Targeting the /create-meeting page specifically
-    LIFF_ID = "2008419367-SeVLxzHP"
+    # LIFF_ID = "2008419367-SeVLxzHP"
     base_liff_url = f"https://liff.line.me/{LIFF_ID}/create-meeting"
     
     # Construct query params
@@ -135,7 +135,7 @@ def push_message_creation_flex(group_id: str, meeting_id: str, meeting_name: str
         return
 
     # Link: /vote?group_id=...&meeting_id=...
-    LIFF_ID = "2008419367-SeVLxzHP"
+    # LIFF_ID = "2008419367-SeVLxzHP"
     params = []
     if group_id:
         params.append(f"group_id={group_id}")
@@ -275,30 +275,28 @@ def push_message_creation_flex(group_id: str, meeting_id: str, meeting_name: str
         else:
             print(f"Error pushing creation message: {e}")
 
-def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, top_slots: list, preferred_restaurants: list = None, all_scored_restaurants: list = None, meal_time: str = "", start_date: str = "", end_date: str = "", fixed_restaurant: dict = None):
-    # if not group_id or not top_slots:
+def push_message_result_flex(group_id, meeting_id, meeting_name, top_slots, preferred_restaurants=None, all_scored_restaurants=None, meal_time="", start_date="", end_date="", fixed_restaurant=None, total_attendees=0):
+    """
+    Push a Flex Message with the voting results/suggestions to a LINE group.
+    """
     if not group_id:
         return
 
-    # Link: /result?group_id=...&meeting_id=...
-    # base_result_url uses global LIFF_ID
-    # Base Params
-    base_params = []
-    if group_id:
-        base_params.append(f"group_id={group_id}")
-    if meeting_id:
-        base_params.append(f"meeting_id={meeting_id}")
-    
-    # Create Summary Bubble
+    # 1. Build Slots Summary Items
     summary_items = []
-    for i, slot in enumerate(top_slots): # Show top 5 in summary
-        if i > 0:
-            summary_items.append({"type": "separator", "margin": "md", "color": "#eeeeee"})
-            
-        date_str = slot['date']
+    for i, slot in enumerate(top_slots[:5]):
+        # Format date for display (e.g. 12/09)
+        date_obj = slot['date']
+        date_str = date_obj.strftime("%d/%m") if hasattr(date_obj, 'strftime') else str(date_obj)
         time_str = slot['time']
         score = slot['final_score']
+        
+        # Calculate participation
+        at_count = len(slot.get('attendees', []))
+        is_partial = total_attendees > 0 and at_count < total_attendees
+        
         score_color = "#FFD700" if score >= 8 else "#F58357" if score >= 5 else "#666666"
+        at_label = f"({at_count}/{total_attendees})" if total_attendees > 0 else f"({at_count})"
         
         summary_items.append({
             "type": "box",
@@ -309,7 +307,7 @@ def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, 
                     "layout": "baseline",
                     "contents": [
                         {"type": "text", "text": f"{i+1}.", "size": "sm", "color": "#2B303B", "flex": 1, "weight": "bold"},
-                        {"type": "text", "text": f"{date_str} {time_str} ({len(slot.get('attendees', []))} 🙋)", "size": "sm", "color": "#555555", "flex": 6, "wrap": True},
+                        {"type": "text", "text": f"{date_str} {time_str} {at_label}", "size": "sm", "color": "#555555" if not is_partial else "#F58357", "flex": 6, "wrap": True},
                         {"type": "text", "text": f"{score:.1f}", "size": "sm", "color": score_color, "flex": 2, "align": "end", "weight": "bold"}
                     ]
                 },
@@ -321,6 +319,12 @@ def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, 
     # Determine meeting status
     is_fixed_time = not end_date or end_date == "N/A" or end_date == ""
     is_fixed_restaurant = fixed_restaurant is not None
+    
+    base_params = []
+    if group_id:
+        base_params.append(f"group_id={group_id}")
+    if meeting_id:
+        base_params.append(f"meeting_id={meeting_id}")
     
     base_query_string = "?" + "&".join(base_params) if base_params else ""
     base_result_url = f"https://liff.line.me/{LIFF_ID}/result{base_query_string}"
@@ -385,7 +389,12 @@ def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, 
             ]
         })
 
-    # Add Attendees if Fixed Time
+    # Add Attendees if Fixed Time or Partial Match
+    is_partial_match = False
+    if top_slots:
+        at_count = len(top_slots[0].get('attendees', []))
+        is_partial_match = total_attendees > 0 and at_count < total_attendees
+
     if is_fixed_time and top_slots:
         attendees = top_slots[0].get('attendees', [])
         hero_body_contents.append({"type": "separator", "margin": "lg"})
@@ -406,8 +415,21 @@ def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, 
                 } if attendees else {"type": "text", "text": "None", "size": "sm", "color": "#555555"}
             ]
         })
+    elif is_partial_match:
+        # Show partial match warning
+        hero_body_contents.append({"type": "separator", "margin": "lg"})
+        hero_body_contents.append({
+            "type": "box",
+            "layout": "vertical",
+            "margin": "lg",
+            "spacing": "xs",
+            "contents": [
+                {"type": "text", "text": "💡 Best Match (Partial)", "weight": "bold", "size": "sm", "color": "#F58357"},
+                {"type": "text", "text": "No time slots where everyone is free. Here are the best alternatives based on majority availability.", "size": "xs", "color": "#aaaaaa", "wrap": True}
+            ]
+        })
     elif not top_slots and not is_fixed_time:
-        # Show warning if no slots found for period voting
+        # Show warning if truly no slots found
         hero_body_contents.append({"type": "separator", "margin": "lg"})
         hero_body_contents.append({
             "type": "box",
@@ -416,7 +438,7 @@ def push_message_result_flex(group_id: str, meeting_id: str, meeting_name: str, 
             "spacing": "xs",
             "contents": [
                 {"type": "text", "text": "⚠️ No Common Time Found", "weight": "bold", "size": "sm", "color": "#F58357"},
-                {"type": "text", "text": "No time slots where all required attendees are available. Try adjusting the period or flexible requirements.", "size": "xs", "color": "#aaaaaa", "wrap": True}
+                {"type": "text", "text": "No time slots found. Try adjusting the period or adding more flexibility.", "size": "xs", "color": "#aaaaaa", "wrap": True}
             ]
         })
 

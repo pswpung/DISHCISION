@@ -23,6 +23,10 @@ const nextConfig: NextConfig = {
         source: '/restaurant/:path*',
         destination: 'http://localhost:8081/restaurant/:path*',
       },
+      {
+        source: '/location/:path*',
+        destination: 'http://localhost:8081/location/:path*',
+      },
     ];
   },
 };

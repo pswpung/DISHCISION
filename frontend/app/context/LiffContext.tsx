@@ -73,7 +73,7 @@ export const LiffProvider = ({ children }: { children: ReactNode }) => {
 export const useLiff = () => {
   const context = useContext(LiffContext);
   if (context === undefined) {
-    throw new Error('useLiff must be used within a LiffProvider');
+    throw new Error('useLaiff must be used within a LiffProvider');
   }
   return context;
 };

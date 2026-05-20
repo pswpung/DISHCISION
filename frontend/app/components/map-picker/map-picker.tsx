@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
+import { apiService } from '@/app/services/api';
 import 'leaflet/dist/leaflet.css';
 
 // Fix for default marker icon in Next.js
@@ -92,13 +93,8 @@ export default function MapPicker({ initialPosition, onConfirm, onClose }: MapPi
     useEffect(() => {
         const reverseGeocode = async () => {
             try {
-                const response = await fetch(
-                    `https://nominatim.openstreetmap.org/reverse?` +
-                    `format=json&lat=${position.lat}&lon=${position.lng}&` +
-                    `countrycodes=th&accept-language=en`
-                );
-                const data = await response.json();
-                setAddress(data.display_name || 'Unknown location');
+                const data = await apiService.reverseGeocode(position.lat, position.lng);
+                setAddress(data?.display_name || 'Unknown location');
             } catch (error) {
                 console.error('Reverse geocoding failed:', error);
                 setAddress('Unable to fetch address');
@@ -118,14 +114,7 @@ export default function MapPicker({ initialPosition, onConfirm, onClose }: MapPi
 
         setIsSearching(true);
         try {
-            const response = await fetch(
-                `https://nominatim.openstreetmap.org/search?` +
-                `format=json&q=${encodeURIComponent(query)}` +
-                `&countrycodes=th&bounded=1` +
-                `&viewbox=100.3327,13.4949,100.9381,13.9555` +
-                `&limit=5`
-            );
-            const data = await response.json();
+            const data = await apiService.searchLocation(query);
             setSearchResults(data);
         } catch (error) {
             console.error('Search failed:', error);

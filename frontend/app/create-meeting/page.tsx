@@ -72,6 +72,7 @@ const CreateMeetingPage = () => {
         }));
 
         if (attendees.length > 0) {
+          console.log("INVITE FRIEND LIST (from DB):", attendees);
           setAttendeeList(attendees);
         }
       } catch (e) {
@@ -341,11 +342,19 @@ const CreateMeetingPage = () => {
         </header>
 
         <CreateMeetingForm
-          attendeeList={
-            profile && !attendeeList.some((a) => a.userId === profile.userId)
-              ? [{ userId: profile.userId, displayName: profile.displayName, pictureUrl: profile.pictureUrl }, ...attendeeList]
-              : attendeeList
-          }
+          attendeeList={(() => {
+            // Combine profile with attendeeList if not already present
+            let list = [...attendeeList];
+            if (profile && !list.some(a => a.userId === profile.userId)) {
+              list = [{ 
+                userId: profile.userId, 
+                displayName: profile.displayName, 
+                pictureUrl: profile.pictureUrl 
+              }, ...list];
+            }
+            // Final deduplication by userId just to be safe
+            return Array.from(new Map(list.map(item => [item.userId, item])).values());
+          })()}
           onDataSubmit={handleMeetingData}
           initialGroupId={paramGroupId || 'group-1'}
           initialUserId={profile?.userId || paramUserId} // If allowed, use profile ID

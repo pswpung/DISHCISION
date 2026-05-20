@@ -35,7 +35,7 @@ Where:
 
 ---
 
-## 3. Comparative Weight Analysis (Category Base = 10)
+## 3. Comparative Weight Analysis
 
 The following table demonstrates the sensitivity of the model to participant agreement. It compares the **Base Ratio** (initial state) against the **Boosted Ratio** (unanimous agreement on a specific factor).
 

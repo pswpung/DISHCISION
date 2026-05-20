@@ -17,7 +17,7 @@ class SuggestionWorkflows:
             "require_all_join": initial_data.get("require_all_join", True),
             "allow_others_suggest": initial_data.get("allow_others_suggest", True),
             "suggest_per_time": initial_data.get("suggest_per_time", False),
-            "min_attendees": 2
+            "min_attendees": 1
         }
         
         appointments_manager = Appointment_Manager(
@@ -95,6 +95,11 @@ class SuggestionWorkflows:
                 }
 
             attendees_availiability = appointments_manager.get_suggested_slots(attendee_availability, suggestion_config)
+            print('-' * 50)
+            print("ATTENDANCE AVAILABILITY :")
+            print('-' * 50)
+            print(attendees_availiability)
+            print('-' * 50)
 
         # SECTION: SUGGEST RESTAURANTS
         preferred_restaurants, suggested_restaurants, all_scored_restaurants = appointments_manager.get_suggesested_restaurants(

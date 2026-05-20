@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useLiff } from '@/app/context/LiffContext';
 import { TimeSlotSelector } from '@/app/components/time-slot-selector/time-slot-selector';
 import dynamic from 'next/dynamic';
+import { apiService } from '@/app/services/api';
 
 // Dynamically import MapPicker to avoid SSR issues with Leaflet
 const MapPicker = dynamic(() => import('@/app/components/map-picker/map-picker'), {
@@ -61,6 +62,11 @@ interface CreateMeetingFormProps {
 
 const CreateMeetingForm = (props: CreateMeetingFormProps) => {
     const { attendeeList, onDataSubmit, initialGroupId, initialUserId } = props;
+    
+    useEffect(() => {
+        console.log("CreateMeetingForm: Received attendeeList:", attendeeList.map(a => `${a.displayName} (${a.userId})`));
+    }, [attendeeList]);
+
     const { profile } = useLiff();
     const [currentStep, setCurrentStep] = useState(0);
     const [meetingName, setMeetingName] = useState('');
@@ -231,12 +237,20 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                         setIsLocating(false);
                     },
                     (err) => {
-                        console.error("Default location fetch failed:", err);
+                        console.warn("Location fetch failed, using default (Bangkok Center):", err);
+                        // Fallback to Bangkok Center if fetch fails
+                        setLocationCoords({ lat: 13.7563, lng: 100.5018 });
                         setIsLocating(false);
                     },
-                    { timeout: 10000 }
+                    { 
+                        enableHighAccuracy: false, // Better for LINE/Android
+                        timeout: 15000, 
+                        maximumAge: 60000 // Use cached location if available
+                    }
                 );
             } else {
+                // Fallback if not supported
+                setLocationCoords({ lat: 13.7563, lng: 100.5018 });
                 setIsLocating(false);
             }
         }
@@ -428,13 +442,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
         if (val && val !== "Current Location") {
             // Geocoding using Nominatim
             try {
-                const response = await fetch(
-                    `https://nominatim.openstreetmap.org/search?` +
-                    `format=json&q=${encodeURIComponent(val)}` +
-                    `&countrycodes=th` + // Removed strict bounding box to allow user input, validation happens after
-                    `&limit=5`
-                );
-                const data = await response.json();
+                const data = await apiService.searchLocation(val);
                 if (data && data.length > 0) {
                     const lat = parseFloat(data[0].lat);
                     const lng = parseFloat(data[0].lon);

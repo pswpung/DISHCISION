@@ -135,5 +135,25 @@ export const apiService = {
         } catch (error) {
             return [];
         }
+    },
+
+    searchLocation: async (query: string) => {
+        try {
+            const response = await apiClient.get(`/location/search?q=${encodeURIComponent(query)}`);
+            return response.data;
+        } catch (error) {
+            console.error("Location search failed", error);
+            return [];
+        }
+    },
+
+    reverseGeocode: async (lat: number, lng: number) => {
+        try {
+            const response = await apiClient.get(`/location/reverse?lat=${lat}&lng=${lng}`);
+            return response.data;
+        } catch (error) {
+            console.error("Reverse geocode failed", error);
+            return null;
+        }
     }
 };
