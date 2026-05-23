@@ -50,6 +50,7 @@ interface MeetingData {
     requireAllJoin?: boolean;
     allowOthersSuggest?: boolean;
     suggest_per_time?: boolean;
+    fixedRestaurants?: any[];
 }
 
 interface CreateMeetingFormProps {
@@ -569,7 +570,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
         items: string[],
         isOpen: boolean,
         setIsOpen: (val: boolean) => void,
-        wrapperRef: React.RefObject<HTMLDivElement>
+        wrapperRef: React.RefObject<HTMLDivElement | null>
     ) => {
         return (
             <div className="space-y-2 relative" ref={wrapperRef}>
@@ -637,7 +638,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
         searchTerm: string,
         setSearchTerm: (val: string) => void,
         placeholder: string,
-        wrapperRef: React.RefObject<HTMLDivElement>,
+        wrapperRef: React.RefObject<HTMLDivElement | null>,
         isFocused: boolean,
         setIsFocused: (val: boolean) => void,
         forbiddenItems: string[] = [],

@@ -62,8 +62,10 @@ class SuggestionWorkflows:
                     'attendees': appointments_manager.attendees,
                     'key_persons_ratio': 100.0,
                     'key_persons': appointments_manager.key_person,
-                    'final_score':10,
-                    'scores': {}
+                    'final_score': 10,
+                    'scores': {},
+                    'full_join': appointments_manager.attendees,
+                    'partial_join': []
                 }]
             }
 
@@ -74,6 +76,7 @@ class SuggestionWorkflows:
                 attendee = attendee_data.get("user_id")
                 # print(f"TRY TO GET AVALIABLE SLOT FROM : {attendee}")
                 available_slots = appointments_manager.parase_avaliable_slots(attendee_data.get("avaliable_at", []))
+                raw_intervals = appointments_manager.parse_raw_available_intervals(attendee_data.get("avaliable_at", []))
                 
                 # Determine effective meal time preference
                 global_meal_time = initial_data.get("meal_time")
@@ -91,6 +94,7 @@ class SuggestionWorkflows:
                 
                 attendee_availability[attendee] = {
                     "availability": available_slots,
+                    "raw_intervals": raw_intervals,
                     "preferred_meal_time": effective_meal_time
                 }
 

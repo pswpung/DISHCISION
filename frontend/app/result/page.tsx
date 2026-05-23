@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLiff } from '@/app/context/LiffContext';
 import { apiService } from '@/app/services/api';
@@ -204,6 +204,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
     const [selectedDate, setSelectedDate] = useState<string>("");
     const [selectedTime, setSelectedTime] = useState<string>("");
     const [suggestions, setSuggestions] = useState<any[]>([]);
+    const [allAttendees, setAllAttendees] = useState<any[]>([]);
 
     const scrollRef = useRef<HTMLDivElement>(null);
     const fetchingRef = useRef(false);
@@ -213,9 +214,9 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
     const [visibleDiscoveryCount, setVisibleDiscoveryCount] = useState(10);
     const [error, setError] = useState<string | null>(null);
 
-    const filteredSuggestions = useMemo(() => {
-        if (!suggestions) return [];
-        return suggestions.filter(p => {
+    const filterRestaurants = useCallback((restaurantList: any[]) => {
+        if (!restaurantList) return [];
+        return restaurantList.filter(p => {
             const cats = typeof p.category === 'string'
                 ? JSON.parse(p.category.replace(/'/g, '"'))
                 : (Array.isArray(p.category) ? p.category : []);
@@ -246,13 +247,41 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
 
             return allCriteriaMatch && categoryMatch;
         });
-    }, [suggestions, selectedCategory, activeFilters, meetingData]);
+    }, [selectedCategory, activeFilters, meetingData]);
+
+    const filteredSuggestions = useMemo(() => {
+        return filterRestaurants(suggestions);
+    }, [suggestions, filterRestaurants]);
 
     const visibleSuggestions = useMemo(() => {
         return viewMode === 'discovery'
             ? filteredSuggestions.slice(0, visibleDiscoveryCount)
             : filteredSuggestions;
     }, [filteredSuggestions, viewMode, visibleDiscoveryCount]);
+
+    const [slotSortKey, setSlotSortKey] = useState<'score' | 'attendees'>('score');
+
+    const allSlots = useMemo(() => {
+        if (!suggestionsMap) return [];
+        const slots: any[] = [];
+        Object.entries(suggestionsMap).forEach(([date, times]: [string, any]) => {
+            Object.entries(times).forEach(([timeKey, slotData]: [string, any]) => {
+                slots.push({ date, time: timeKey, ...slotData });
+            });
+        });
+        return slots;
+    }, [suggestionsMap]);
+
+    const sortedSlots = useMemo(() => {
+        const copy = [...allSlots];
+        const count = (s: any) => (s.full_join?.length ?? 0) + (s.partial_join?.length ?? 0);
+        if (slotSortKey === 'score') {
+            copy.sort((a, b) => (b.final_score ?? 0) - (a.final_score ?? 0) || count(b) - count(a));
+        } else {
+            copy.sort((a, b) => count(b) - count(a) || (b.final_score ?? 0) - (a.final_score ?? 0));
+        }
+        return copy;
+    }, [allSlots, slotSortKey]);
 
     useEffect(() => {
         if (meetingId && !fetchingRef.current) {
@@ -395,6 +424,8 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                     pictureUrl: user?.pictureurl
                 };
             });
+
+            setAllAttendees(enrichedAttendees);
 
             const missing = enrichedAttendees.filter((a: any) => !a.preference || Object.keys(a.preference).length === 0);
             setMissingVoters(missing);
@@ -746,53 +777,32 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                 </div>
             )}
 
-            {viewMode === 'slots' && (meetingData?.initial_data?.timing_mode || 'period') === 'fixed' && (
-                <div className="flex-none px-4 pt-4 space-y-3 z-10">
-                    {availableDates.length > 0 && (
-                        <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar no-scrollbar">
-                            {availableDates.map(date => (
-                                <button
-                                    key={date}
-                                    onClick={() => {
-                                        setSelectedDate(date);
-                                        const times = Object.keys(suggestionsMap[date]).sort();
-                                        if (times.length > 0) setSelectedTime(times[0]);
-                                    }}
-                                    className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${selectedDate === date
-                                        ? 'bg-primary text-white shadow-md shadow-primary/20'
-                                        : 'bg-white/5 text-muted-foreground hover:bg-white/10'
-                                        }`}
-                                >
-                                    {new Date(date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', weekday: 'short' })}
-                                </button>
-                            ))}
-                        </div>
-                    )}
-
-                    {availableTimes.length > 0 && (
-                        <div className="pb-4 border-b border-white/5">
-                            <label className="text-xs text-muted-foreground mb-1.5 block font-medium ml-1">Select Time Slot</label>
-                            <div className="relative">
-                                <select
-                                    value={selectedTime || ''}
-                                    onChange={(e) => setSelectedTime(e.target.value)}
-                                    className="w-full appearance-none bg-white/5 border border-white/10 rounded-xl px-4 py-3 pr-10 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground transition-all"
-                                >
-                                    {availableTimes.map(time => {
-                                        const score = suggestionsMap[selectedDate][time]?.final_score || 0;
-                                        return (
-                                            <option key={time} value={time} className="text-black bg-white dark:bg-zinc-900 dark:text-white">
-                                                {time}
-                                            </option>
-                                        );
-                                    })}
-                                </select>
-                                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
-                                </div>
-                            </div>
-                        </div>
-                    )}
+            {viewMode === 'slots' && (meetingData?.initial_data?.timing_mode || 'period') !== 'fixed' && (
+                <div className="flex-none px-4 pt-4 z-10">
+                    <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Sort by</span>
+                        <button
+                            onClick={() => setSlotSortKey('score')}
+                            className={`px-3 py-1.5 rounded-full text-[10px] font-bold transition-all ${
+                                slotSortKey === 'score'
+                                    ? 'bg-primary text-white shadow-md shadow-primary/20'
+                                    : 'bg-white/5 text-muted-foreground hover:bg-white/10 border border-white/10'
+                            }`}
+                        >
+                            🏆 Score
+                        </button>
+                        <button
+                            onClick={() => setSlotSortKey('attendees')}
+                            className={`px-3 py-1.5 rounded-full text-[10px] font-bold transition-all ${
+                                slotSortKey === 'attendees'
+                                    ? 'bg-primary text-white shadow-md shadow-primary/20'
+                                    : 'bg-white/5 text-muted-foreground hover:bg-white/10 border border-white/10'
+                            }`}
+                        >
+                            👥 Attendees
+                        </button>
+                        <span className="ml-auto text-[9px] text-muted-foreground">{sortedSlots.length} slots</span>
+                    </div>
                 </div>
             )}
 
@@ -833,24 +843,20 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                 )}
 
                 <div className="px-4 pt-4 space-y-4">
-                    {suggestions.length === 0 && (
+                    {suggestions.length === 0 && viewMode !== 'slots' && (
                         <div className="max-w-md mx-auto text-center py-16 px-6 glass-panel rounded-3xl border border-white/5 animate-in fade-in zoom-in duration-700">
                             <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-6 border border-white/10 shadow-inner">
                                 <span className="text-4xl">🍽️</span>
                             </div>
                             <h3 className="text-lg font-bold text-foreground mb-2">
-                                {viewMode === 'slots'
-                                    ? 'No Suggestions Found'
-                                    : viewMode === 'favorites'
-                                        ? 'No Friend Recommends'
-                                        : 'No Discovery Results'}
+                                {viewMode === 'favorites'
+                                    ? 'No Friend Recommends'
+                                    : 'No Discovery Results'}
                             </h3>
                             <p className="text-sm text-muted-foreground leading-relaxed">
-                                {viewMode === 'slots'
-                                    ? 'We couldn\'t find any restaurants open at this time that match your group\'s preferences.'
-                                    : viewMode === 'favorites'
-                                        ? 'It looks like no one has suggested a specific restaurant for this meeting yet.'
-                                        : 'Our discovery engine is still warming up. Try checking back after more members have voted.'}
+                                {viewMode === 'favorites'
+                                    ? 'It looks like no one has suggested a specific restaurant for this meeting yet.'
+                                    : 'Our discovery engine is still warming up. Try checking back after more members have voted.'}
                             </p>
                             <button
                                 onClick={() => setViewMode('slots')}
@@ -862,158 +868,321 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                     )}
 
                     <div className="max-w-lg mx-auto space-y-4">
-                        {filteredSuggestions.length === 0 && suggestions.length > 0 ? (
-                            <div className="bg-white/5 rounded-3xl p-12 text-center border border-dashed border-white/10 mt-4">
-                                <div className="text-4xl mb-4">🔍</div>
-                                <h3 className="text-sm font-bold text-foreground mb-1">No matches found</h3>
-                                <p className="text-[11px] text-muted-foreground">Try adjusting your filters to see more options.</p>
-                                <button
-                                    onClick={() => {
-                                        setActiveFilters({});
-                                        setSelectedCategory('All');
-                                    }}
-                                    className="mt-4 text-[11px] font-bold text-primary hover:underline"
-                                >
-                                    Reset all filters
-                                </button>
-                            </div>
-                        ) : (
-                            <>
-                                {visibleSuggestions.map((place, index) => {
-                                    let locationName = "Bangkok";
-                                    try {
-                                        const validJson = place.address.replace(/'/g, '"');
-                                        const addrObj = JSON.parse(validJson);
-                                        locationName = addrObj.subDistrict?.name || addrObj.district?.name || locationName;
-                                    } catch (e) { }
-
+                        {viewMode === 'slots' ? (
+                            sortedSlots.length === 0 ? (
+                                <div className="text-center text-muted-foreground py-12">
+                                    No available time slots found.
+                                </div>
+                            ) : (
+                                sortedSlots.map((slot: any) => {
+                                    const filteredRestaurants = filterRestaurants(slot.restaurants || []);
+                                    const totalAttendees = (slot.full_join?.length ?? 0) + (slot.partial_join?.length ?? 0);
+                                    const dateLabel = new Date(slot.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
                                     return (
-                                        <a
-                                            key={place.id}
-                                            href={`https://${place.wongnai_link}`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="block glass-panel overflow-hidden rounded-2xl animate-in slide-in-from-bottom-4 duration-500 shadow-lg border border-white/5 hover:border-primary/40 hover:bg-white/5 transition-all cursor-pointer group"
-                                            style={{ animationDelay: `${index * 100}ms` }}
-                                        >
-                                            <div className="h-32 w-full relative bg-gradient-to-r from-gray-700 to-gray-600">
-                                                {viewMode === 'discovery' && index < 3 && (
-                                                    <div className="absolute top-2 left-2 w-10 h-10 flex items-center justify-center bg-black/40 backdrop-blur-md rounded-full border border-white/10 z-20 shadow-xl overflow-hidden group/medal">
-                                                        <div className={`text-2xl ${index === 0 ? 'animate-bounce-slow' : ''}`}>
-                                                            {index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}
-                                                        </div>
-                                                        <div className="absolute inset-0 bg-gradient-to-tr from-white/10 to-transparent pointer-events-none" />
-                                                    </div>
-                                                )}
-                                                <div className="absolute inset-0 flex items-center justify-center text-4xl opacity-50 group-hover:scale-110 transition-transform duration-300">
-                                                    🍽️
-                                                </div>
-                                                <div
-                                                    onClick={(e) => {
-                                                        e.preventDefault();
-                                                        e.stopPropagation();
-                                                        const newExpanded = new Set(expandedReasonIds);
-                                                        if (newExpanded.has(place.id)) newExpanded.delete(place.id);
-                                                        else newExpanded.add(place.id);
-                                                        setExpandedReasonIds(newExpanded);
-                                                    }}
-                                                    className={`absolute top-2 right-2 glass-panel px-3 py-1 rounded-full border transition-all z-20 cursor-pointer active:scale-95 ${expandedReasonIds.has(place.id) ? 'border-primary bg-primary/20' : 'border-white/10 backdrop-blur-md'}`}
-                                                >
-                                                    <div className="flex flex-col items-center">
-                                                        <span className={`font-black text-[10px] ${place.score >= 80 ? 'text-green-400' : place.score >= 50 ? 'text-yellow-400' : 'text-gray-400'}`}>
-                                                            Match: {place.score}/100
-                                                        </span>
-                                                        <span className="text-[7px] font-bold uppercase tracking-tighter opacity-70">
-                                                            {expandedReasonIds.has(place.id) ? 'Hide Scores' : 'View Scores'}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div className="p-4">
-                                                <div className="flex justify-between items-start mb-2">
+                                        <div key={`${slot.date}-${slot.time}`} className="glass-panel p-5 rounded-3xl border border-white/5 space-y-4 shadow-lg text-left">
+                                            {/* Header: Time slot and score badge */}
+                                            <div className="flex justify-between items-center">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xl">📅</span>
                                                     <div>
-                                                        <h3 className="text-lg font-bold text-foreground line-clamp-1 group-hover:text-primary transition-colors">{place.name}</h3>
-                                                        <p className="text-xs text-muted-foreground">
-                                                            {(() => {
-                                                                try {
-                                                                    const categories = typeof place.category === 'string'
-                                                                        ? JSON.parse(place.category.replace(/'/g, '"'))
-                                                                        : (Array.isArray(place.category) ? place.category : []);
-                                                                    return categories.length > 0
-                                                                        ? `${categories.join(' • ')} • ${locationName}`
-                                                                        : locationName;
-                                                                } catch {
-                                                                    return `${place.category?.[0] || ''} • ${locationName}`;
-                                                                }
-                                                            })()}
-                                                        </p>
-                                                    </div>
-                                                    <div className="text-right shrink-0 ml-2">
-                                                        <p className="text-sm font-medium text-primary">{place.price}</p>
-                                                        <p className="text-[10px] text-muted-foreground">⭐ {place.rating ? place.rating.toFixed(1) : '-'}</p>
+                                                        <h3 className="text-sm font-bold text-foreground">{slot.time}</h3>
+                                                        <span className="text-[10px] text-muted-foreground">{dateLabel}</span>
                                                     </div>
                                                 </div>
-
-                                                {expandedReasonIds.has(place.id) && (
-                                                    <div className="grid grid-cols-2 gap-2 mb-3 animate-in fade-in slide-in-from-top-2 duration-300">
-                                                        {Array.isArray(place.reason) ? (
-                                                            place.reason.slice(0, 4).map((r: string, i: number) => (
-                                                                <div key={i} className="bg-white/5 rounded-xl p-2 border border-white/10 flex items-center justify-center text-center">
-                                                                    <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-tight line-clamp-2">{r}</span>
-                                                                </div>
-                                                            ))
-                                                        ) : (
-                                                            Object.entries(place.reason || {})
-                                                                .filter(([key]) => key !== 'Fixed')
-                                                                .sort(([keyA, detailsA]: [any, any], [keyB, detailsB]: [any, any]) => {
-                                                                    const maxA = detailsA.max_score || 0;
-                                                                    const maxB = detailsB.max_score || 0;
-                                                                    if (maxB !== maxA) return maxB - maxA;
-                                                                    return keyA.localeCompare(keyB);
-                                                                })
-                                                                .map(([key, details]: [string, any], i: number) => {
-                                                                    const score = details.weighted_score
-                                                                    const max = details.max_score || 1;
-                                                                    return (
-                                                                        <div key={i} className="bg-white/5 rounded-xl p-2 border border-white/10 hover:bg-white/5 transition-colors">
-                                                                            <div className="flex justify-between items-center mb-1.5">
-                                                                                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider line-clamp-1">{key}</span>
-                                                                                <span className="text-[10px] font-black text-primary shrink-0">
-                                                                                    {typeof score === 'number' ? parseFloat(score.toFixed(1)) : score}/{max}
-                                                                                </span>
-                                                                            </div>
-                                                                            <div className="h-1 bg-white/5 rounded-full overflow-hidden">
-                                                                                <div
-                                                                                    className="h-full bg-primary/60"
-                                                                                    style={{ width: `${(score / max) * 100}%` }}
-                                                                                />
-                                                                            </div>
-                                                                        </div>
-                                                                    );
-                                                                })
-                                                        )}
-                                                    </div>
-                                                )}
-
-                                                <div className="text-xs text-center text-primary/50 mt-2 font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    Tap to view on Wongnai →
+                                                <div className="flex items-center gap-2">
+                                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-white/5 text-muted-foreground border border-white/10">
+                                                        👥 {totalAttendees}
+                                                    </span>
+                                                    <span className="px-3 py-1 rounded-full text-[10px] font-black bg-primary/20 text-primary border border-primary/30">
+                                                        Score: {typeof slot.final_score === 'number' ? parseFloat(slot.final_score.toFixed(1)) : (slot.final_score ?? 10)}
+                                                    </span>
                                                 </div>
                                             </div>
-                                        </a>
-                                    );
-                                })}
 
-                                {viewMode === 'discovery' && filteredSuggestions.length > visibleDiscoveryCount && (
-                                    <div className="pt-2 pb-6 flex justify-center">
-                                        <button
-                                            onClick={() => setVisibleDiscoveryCount(prev => prev + 10)}
-                                            className="px-8 py-3 bg-white/5 border border-white/10 rounded-2xl text-xs font-black uppercase tracking-widest text-primary hover:bg-white/10 active:scale-95 transition-all shadow-lg"
-                                        >
-                                            See More (+10)
-                                        </button>
-                                    </div>
-                                )}
-                            </>
+                                            {/* Full Attendees Section */}
+                                            <div className="space-y-2">
+                                                <h4 className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">
+                                                    Can Join Full Duration
+                                                </h4>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {slot.full_join && slot.full_join.length > 0 ? (
+                                                        slot.full_join.map((userId: string) => {
+                                                            const user = allAttendees.find(a => a.user_id === userId);
+                                                            return (
+                                                                <div key={userId} className="flex items-center gap-1.5 bg-green-100 dark:bg-green-500/10 border border-green-300 dark:border-green-500/20 px-2.5 py-1.5 rounded-full" title={user?.displayName || 'Unknown'}>
+                                                                    {user?.pictureUrl ? (
+                                                                        <img src={user.pictureUrl} alt={user.displayName} className="w-5 h-5 rounded-full object-cover" />
+                                                                    ) : (
+                                                                        <div className="w-5 h-5 rounded-full bg-zinc-800 flex items-center justify-center text-[10px] text-zinc-400 font-bold">
+                                                                            {user?.displayName?.slice(0, 1) || '?'}
+                                                                        </div>
+                                                                    )}
+                                                                    <span className="text-[11px] font-semibold text-green-700 dark:text-green-400 max-w-[80px] truncate">
+                                                                        {user?.displayName || 'Unknown'}
+                                                                    </span>
+                                                                </div>
+                                                            );
+                                                        })
+                                                    ) : (
+                                                        <span className="text-xs text-muted-foreground italic">None</span>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Partial Attendees Section */}
+                                            <div className="space-y-2">
+                                                <h4 className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">
+                                                    Partially Available
+                                                </h4>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {slot.partial_join && slot.partial_join.length > 0 ? (
+                                                        slot.partial_join.map((pJoin: any) => {
+                                                            const user = allAttendees.find(a => a.user_id === pJoin.user_id);
+                                                            return (
+                                                                <div key={pJoin.user_id} className="flex items-center gap-1.5 bg-amber-100 dark:bg-yellow-500/10 border border-amber-300 dark:border-yellow-500/20 px-2.5 py-1.5 rounded-full" title={user?.displayName || 'Unknown'}>
+                                                                    {user?.pictureUrl ? (
+                                                                        <img src={user.pictureUrl} alt={user.displayName} className="w-5 h-5 rounded-full object-cover" />
+                                                                    ) : (
+                                                                        <div className="w-5 h-5 rounded-full bg-zinc-800 flex items-center justify-center text-[10px] text-zinc-400 font-bold">
+                                                                            {user?.displayName?.slice(0, 1) || '?'}
+                                                                        </div>
+                                                                    )}
+                                                                    <span className="text-[11px] font-semibold text-amber-700 dark:text-yellow-400 max-w-[80px] truncate">
+                                                                        {user?.displayName || 'Unknown'}
+                                                                    </span>
+                                                                    <span className="text-[9px] bg-amber-200 dark:bg-yellow-500/20 text-amber-800 dark:text-yellow-300 px-1.5 py-0.5 rounded-md font-bold">
+                                                                        {pJoin.overlap_text}
+                                                                    </span>
+                                                                </div>
+                                                            );
+                                                        })
+                                                    ) : (
+                                                        <span className="text-xs text-muted-foreground italic">None</span>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Suggested Restaurants Section – collapsible */}
+                                            {filteredRestaurants.length > 0 && (
+                                            <details className="pt-2 border-t border-white/5 group">
+                                                <summary className="flex items-center justify-between cursor-pointer list-none py-1">
+                                                    <h4 className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">
+                                                        🍽️ Suggested Restaurants ({filteredRestaurants.length})
+                                                    </h4>
+                                                    <span className="text-[10px] text-muted-foreground group-open:rotate-180 transition-transform">▼</span>
+                                                </summary>
+                                                <div className="grid gap-2 mt-2">
+                                                    {filteredRestaurants.map((place: any) => (
+                                                        <a
+                                                            key={place.id}
+                                                            href={`https://${place.wongnai_link}`}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="flex items-center justify-between p-3 rounded-2xl bg-white/5 border border-white/5 hover:border-primary/30 hover:bg-white/10 transition-all group"
+                                                        >
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-lg">🍱</span>
+                                                                <div className="text-left">
+                                                                    <span className="text-xs font-bold text-foreground group-hover:text-primary transition-colors">
+                                                                        {place.name}
+                                                                    </span>
+                                                                    {place.category && (
+                                                                        <p className="text-[9px] text-muted-foreground">
+                                                                            {Array.isArray(place.category) ? place.category.slice(0, 2).join(', ') : ''}
+                                                                        </p>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            <div className="text-right">
+                                                                <span className="text-[10px] font-black text-primary">
+                                                                    Match: {typeof place.score === 'number' ? parseFloat(place.score.toFixed(1)) : place.score}/100
+                                                                </span>
+                                                            </div>
+                                                        </a>
+                                                    ))}
+                                                </div>
+                                            </details>
+                                            )}
+                                        </div>
+                                    );
+                                })
+                            )
+                        ) : (
+                            filteredSuggestions.length === 0 && suggestions.length > 0 ? (
+                                <div className="bg-white/5 rounded-3xl p-12 text-center border border-dashed border-white/10 mt-4">
+                                    <div className="text-4xl mb-4">🔍</div>
+                                    <h3 className="text-sm font-bold text-foreground mb-1">No matches found</h3>
+                                    <p className="text-[11px] text-muted-foreground">Try adjusting your filters to see more options.</p>
+                                    <button
+                                        onClick={() => {
+                                            setActiveFilters({});
+                                            setSelectedCategory('All');
+                                        }}
+                                        className="mt-4 text-[11px] font-bold text-primary hover:underline"
+                                    >
+                                        Reset all filters
+                                    </button>
+                                </div>
+                            ) : (
+                                <>
+                                    {visibleSuggestions.map((place, index) => {
+                                        let locationName = "Bangkok";
+                                        try {
+                                            const validJson = place.address.replace(/'/g, '"');
+                                            const addrObj = JSON.parse(validJson);
+                                            locationName = addrObj.subDistrict?.name || addrObj.district?.name || locationName;
+                                        } catch (e) { }
+
+                                        return (
+                                            <a
+                                                key={place.id}
+                                                href={`https://${place.wongnai_link}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="block glass-panel overflow-hidden rounded-2xl animate-in slide-in-from-bottom-4 duration-500 shadow-lg border border-white/5 hover:border-primary/40 hover:bg-white/5 transition-all cursor-pointer group"
+                                                style={{ animationDelay: `${index * 100}ms` }}
+                                            >
+                                                <div className="h-32 w-full relative bg-gradient-to-r from-gray-700 to-gray-600">
+                                                    {viewMode === 'discovery' && index < 3 && (
+                                                        <div className="absolute top-2 left-2 w-10 h-10 flex items-center justify-center bg-black/40 backdrop-blur-md rounded-full border border-white/10 z-20 shadow-xl overflow-hidden group/medal">
+                                                            <div className={`text-2xl ${index === 0 ? 'animate-bounce-slow' : ''}`}>
+                                                                {index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}
+                                                            </div>
+                                                            <div className="absolute inset-0 bg-gradient-to-tr from-white/10 to-transparent pointer-events-none" />
+                                                        </div>
+                                                    )}
+                                                    <div className="absolute inset-0 flex items-center justify-center text-4xl opacity-50 group-hover:scale-110 transition-transform duration-300">
+                                                        🍽️
+                                                    </div>
+                                                    <div
+                                                        onClick={(e) => {
+                                                            e.preventDefault();
+                                                            e.stopPropagation();
+                                                            const newExpanded = new Set(expandedReasonIds);
+                                                            if (newExpanded.has(place.id)) newExpanded.delete(place.id);
+                                                            else newExpanded.add(place.id);
+                                                            setExpandedReasonIds(newExpanded);
+                                                        }}
+                                                        className={`absolute top-2 right-2 glass-panel px-3 py-1 rounded-full border transition-all z-20 cursor-pointer active:scale-95 ${expandedReasonIds.has(place.id) ? 'border-primary bg-primary/20' : 'border-white/10 backdrop-blur-md'}`}
+                                                    >
+                                                        <div className="flex flex-col items-center">
+                                                            <span className={`font-black text-[10px] ${place.score >= 80 ? 'text-green-400' : place.score >= 50 ? 'text-yellow-400' : 'text-gray-400'}`}>
+                                                                Match: {place.score}/100
+                                                            </span>
+                                                            <span className="text-[7px] font-bold uppercase tracking-tighter opacity-70">
+                                                                {expandedReasonIds.has(place.id) ? 'Hide Scores' : 'View Scores'}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="p-4">
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <div>
+                                                            <h3 className="text-lg font-bold text-foreground line-clamp-1 group-hover:text-primary transition-colors">{place.name}</h3>
+                                                            <p className="text-xs text-muted-foreground">
+                                                                {(() => {
+                                                                    try {
+                                                                        const categories = typeof place.category === 'string'
+                                                                            ? JSON.parse(place.category.replace(/'/g, '"'))
+                                                                            : (Array.isArray(place.category) ? place.category : []);
+                                                                        return categories.length > 0
+                                                                            ? `${categories.join(' • ')} • ${locationName}`
+                                                                            : locationName;
+                                                                    } catch {
+                                                                        return `${place.category?.[0] || ''} • ${locationName}`;
+                                                                    }
+                                                                })()}
+                                                            </p>
+                                                        </div>
+                                                        <div className="text-right shrink-0 ml-2">
+                                                            <p className="text-sm font-medium text-primary">{place.price}</p>
+                                                            <p className="text-[10px] text-muted-foreground">⭐ {place.rating ? place.rating.toFixed(1) : '-'}</p>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="flex flex-wrap gap-1 mb-3">
+                                                        {(() => {
+                                                            try {
+                                                                const cats = typeof place.category === 'string'
+                                                                    ? JSON.parse(place.category.replace(/'/g, '"'))
+                                                                    : (Array.isArray(place.category) ? place.category : []);
+                                                                return cats.slice(0, 3).map((c: string) => (
+                                                                    <span key={c} className="px-2 py-0.5 rounded-md bg-white/5 text-[9px] font-bold text-muted-foreground">
+                                                                        {c}
+                                                                    </span>
+                                                                ));
+                                                            } catch (e) {
+                                                                return null;
+                                                            }
+                                                        })()}
+                                                    </div>
+
+                                                    {expandedReasonIds.has(place.id) && (
+                                                        <div className="mt-3 pt-3 border-t border-white/5 space-y-2 animate-in fade-in duration-300">
+                                                            {(() => {
+                                                                let reasonObj = place.reason;
+                                                                if (typeof reasonObj === 'string') {
+                                                                    try { reasonObj = JSON.parse(reasonObj.replace(/'/g, '"')); } catch (e) { }
+                                                                }
+                                                                if (!reasonObj || typeof reasonObj !== 'object' || Array.isArray(reasonObj)) return null;
+
+                                                                return (
+                                                                    <div className="grid grid-cols-2 gap-2 mb-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                                                                        {Object.entries(reasonObj)
+                                                                            .filter(([key]) => key !== 'Fixed')
+                                                                            .sort(([keyA, detailsA]: [any, any], [keyB, detailsB]: [any, any]) => {
+                                                                                const maxA = detailsA.max_score || 0;
+                                                                                const maxB = detailsB.max_score || 0;
+                                                                                if (maxB !== maxA) return maxB - maxA;
+                                                                                return keyA.localeCompare(keyB);
+                                                                            })
+                                                                            .map(([key, details]: [string, any], i: number) => {
+                                                                                const score = details.weighted_score
+                                                                                const max = details.max_score || 1;
+                                                                                return (
+                                                                                    <div key={i} className="bg-white/5 rounded-xl p-2 border border-white/10 hover:bg-white/5 transition-colors">
+                                                                                        <div className="flex justify-between items-center mb-1.5">
+                                                                                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider line-clamp-1">{key}</span>
+                                                                                            <span className="text-[10px] font-black text-primary shrink-0">
+                                                                                                {typeof score === 'number' ? parseFloat(score.toFixed(1)) : score}/{max}
+                                                                                            </span>
+                                                                                        </div>
+                                                                                        <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                                                                                            <div
+                                                                                                className="h-full bg-primary/60"
+                                                                                                style={{ width: `${(score / max) * 100}%` }}
+                                                                                            />
+                                                                                        </div>
+                                                                                    </div>
+                                                                                );
+                                                                            })
+                                                                        }
+                                                                    </div>
+                                                                );
+                                                            })()}
+                                                        </div>
+                                                    )}
+
+                                                    <div className="text-xs text-center text-primary/50 mt-2 font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        Tap to view on Wongnai →
+                                                    </div>
+                                                </div>
+                                            </a>
+                                        );
+                                    })}
+
+                                    {viewMode === 'discovery' && filteredSuggestions.length > visibleDiscoveryCount && (
+                                        <div className="pt-2 pb-6 flex justify-center">
+                                            <button
+                                                onClick={() => setVisibleDiscoveryCount(prev => prev + 10)}
+                                                className="px-8 py-3 bg-white/5 border border-white/10 rounded-2xl text-xs font-black uppercase tracking-widest text-primary hover:bg-white/10 active:scale-95 transition-all shadow-lg"
+                                            >
+                                                See More (+10)
+                                            </button>
+                                        </div>
+                                    )}
+                                </>
+                            )
                         )}
                     </div>
                 </div>
@@ -1022,4 +1191,12 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
     );
 };
 
-export default ResultPage;
+const ResultPageWithSuspense = () => {
+    return (
+        <Suspense fallback={<div className="h-[100dvh] flex items-center justify-center bg-background text-muted-foreground text-sm">Loading results...</div>}>
+            <ResultPage />
+        </Suspense>
+    );
+};
+
+export default ResultPageWithSuspense;

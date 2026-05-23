@@ -186,8 +186,8 @@ def generate_and_send_suggestion(meeting_id: UUID, db: Session):
                         "attendee_names": attendee_names
                     })
 
-        # Sort by final score descending
-        sorted_slots = sorted(all_slots, key=lambda x: x['final_score'], reverse=True)
+        # Sort by final score descending, then by attendee count descending as tiebreaker
+        sorted_slots = sorted(all_slots, key=lambda x: (x['final_score'], len(x.get('attendees', []))), reverse=True)
         top_slots = sorted_slots[:10] # Top 10 for Carousel
         
         # Global Discovery Ranking

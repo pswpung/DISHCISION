@@ -142,6 +142,99 @@ class Appointment_Manager(object):
         available_slots = self.get_available_slots(calendar_data)
         print(f"DEBUG: Parsed {len(available_slots)} dates with available slots")
         return available_slots
+
+    def get_raw_available_intervals(self, data: list):
+        results = {}
+        avail = [
+            slot for slot in data
+            if slot.get("is_available", True)
+        ]
+        if avail != []:
+            grouped = defaultdict(list)
+            for slot in avail:
+                grouped[slot["start"].date()].append(slot)
+            for date, slots in grouped.items():
+                slots = sorted(slots, key=lambda x: x["start"])
+                merged = []
+                for slot in slots:
+                    s, e = slot["start"], slot["end"]
+                    if not merged or merged[-1]["end"] < s:
+                        merged.append({"start": s, "end": e})
+                    else:
+                        merged[-1]["end"] = max(merged[-1]["end"], e)
+                results[date] = merged
+            return results
+
+        unavail = [
+            slot for slot in data 
+            if not slot.get("is_available", True)
+        ]
+        if unavail != []:
+            grouped = defaultdict(list)
+            for slot in unavail:
+                grouped[slot["start"].date()].append(slot)
+
+            for date, slots in grouped.items():
+                slots = sorted(slots, key=lambda x: x["start"])
+                intervals = []
+
+                start = self.TZ.localize(datetime.combine(date, self.DAY_START))
+                end = self.TZ.localize(datetime.combine(date, self.DAY_END))
+
+                current = start
+                for slot in slots:
+                    s, e = slot["start"], slot["end"]
+                    if current < s:
+                        intervals.append({"start": current, "end": s})
+                    current = max(current, e)
+                if current < end:
+                    intervals.append({"start": current, "end": end})
+                results[date] = intervals
+            return results
+        return results
+
+    def parse_raw_available_intervals(self, attendee_avaliablity_list):
+        calendar_data = []
+        for each_slot in attendee_avaliablity_list:
+            slot_start = datetime.strptime(each_slot["start"]["dateTime"], "%Y-%m-%dT%H:%M:%S%z")
+            slot_end = datetime.strptime(each_slot["end"]["dateTime"], "%Y-%m-%dT%H:%M:%S%z")
+            calendar_data.append({
+                "start": slot_start.astimezone(self.TZ),
+                "end": slot_end.astimezone(self.TZ),
+                "is_available" : each_slot["is_avaliable"]
+            })
+        return self.get_raw_available_intervals(calendar_data)
+
+    def calculate_overlap_minutes(self, slot_start, slot_end, attendee_raw_intervals):
+        total_overlap = 0.0
+        for interval in attendee_raw_intervals:
+            overlap_start = max(slot_start, interval["start"])
+            overlap_end = min(slot_end, interval["end"])
+            if overlap_start < overlap_end:
+                total_overlap += (overlap_end - overlap_start).total_seconds() / 60
+        return total_overlap
+
+    def format_overlap_time(self, minutes):
+        hours = minutes / 60.0
+        if hours == 1.0:
+            return "1 hr"
+        elif hours == 1.5:
+            return "1.5 hr"
+        elif hours == 2.0:
+            return "2 hr"
+        elif hours == 0.5:
+            return "30 mins"
+        elif hours == 0.0:
+            return "0 mins"
+        else:
+            h = int(minutes // 60)
+            m = int(minutes % 60)
+            parts = []
+            if h > 0:
+                parts.append(f"{h} hr")
+            if m > 0:
+                parts.append(f"{m} mins")
+            return " ".join(parts) if parts else "0 mins"
     
     def get_available_slots(self, data: list):
         results = {}
@@ -329,6 +422,34 @@ class Appointment_Manager(object):
                 # 3. Final Weighted Score
                 final_score = (0.7 * norm_avail) + (0.2 * norm_meal) + (0.1 * norm_quality)
                 
+                # 4. Compute Full Join vs Partial Join
+                slot_start = avail_time["start"]
+                slot_end = avail_time["end"]
+                slot_duration_minutes = (slot_end - slot_start).total_seconds() / 60
+                
+                full_join = []
+                partial_join = []
+                
+                for attendee in self.attendees:
+                    if attendee in avail_time.get("attendees", []):
+                        full_join.append(attendee)
+                    else:
+                        # Get their raw intervals for this date
+                        attendee_data_item = attendee_availiability.get(attendee, {})
+                        raw_intervals = attendee_data_item.get("raw_intervals", {}).get(date, [])
+                        overlap = self.calculate_overlap_minutes(slot_start, slot_end, raw_intervals)
+                        if overlap >= slot_duration_minutes:
+                            full_join.append(attendee)
+                        elif overlap > 0:
+                            partial_join.append({
+                                "user_id": attendee,
+                                "overlap_minutes": overlap,
+                                "overlap_text": self.format_overlap_time(overlap)
+                            })
+                
+                avail_time["full_join"] = full_join
+                avail_time["partial_join"] = partial_join
+
                 # Store Step Scores
                 avail_time["scores"] = {
                     "availability": round(norm_avail, 1),
@@ -821,7 +942,9 @@ class Appointment_Manager(object):
                         "restaurants": [],
                         "scores": slot.get("scores", {}),
                         "final_score": slot.get("final_score", 10),
-                        "attendees": slot.get("attendees", [])
+                        "attendees": slot.get("attendees", []),
+                        "full_join": slot.get("full_join", []),
+                        "partial_join": slot.get("partial_join", [])
                     }
             return unique_fixed, suggestions_map, []
 
@@ -973,7 +1096,9 @@ class Appointment_Manager(object):
                         "restaurants": [],
                         "scores": slot.get("scores", {}),
                         "final_score": slot.get("final_score", 0),
-                        "attendees": slot.get("attendees", [])
+                        "attendees": slot.get("attendees", []),
+                        "full_join": slot.get("full_join", []),
+                        "partial_join": slot.get("partial_join", [])
                     }
                 else:
                     # Apply Opening Hours Filter
@@ -987,7 +1112,10 @@ class Appointment_Manager(object):
                         suggestions_map[date_str][time_key] = {
                             "restaurants": [],
                             "scores": slot.get("scores", {}),
-                            "final_score": slot.get("final_score", 0)
+                            "final_score": slot.get("final_score", 0),
+                            "attendees": slot.get("attendees", []),
+                            "full_join": slot.get("full_join", []),
+                            "partial_join": slot.get("partial_join", [])
                         }
                         continue
 
@@ -1021,7 +1149,9 @@ class Appointment_Manager(object):
                         "restaurants": top_5.replace({np.nan: None}).to_dict(orient="records"),
                         "scores": slot.get("scores", {}),
                         "final_score": slot.get("final_score", 0),
-                        "attendees": slot.get("attendees", [])
+                        "attendees": slot.get("attendees", []),
+                        "full_join": slot.get("full_join", []),
+                        "partial_join": slot.get("partial_join", [])
                     }
         # logger.info(f"SUGGESTIONS MAP : {suggestions_map}")
         

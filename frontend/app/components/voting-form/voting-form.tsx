@@ -315,7 +315,7 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
         items: string[],
         isOpen: boolean,
         setIsOpen: (val: boolean) => void,
-        wrapperRef: React.RefObject<HTMLDivElement>
+        wrapperRef: React.RefObject<HTMLDivElement | null>
     ) => {
         return (
             <div className="space-y-2 relative" ref={wrapperRef}>
@@ -362,7 +362,7 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
         searchTerm: string,
         setSearchTerm: (val: string) => void,
         placeholder: string,
-        wrapperRef: React.RefObject<HTMLDivElement>,
+        wrapperRef: React.RefObject<HTMLDivElement | null>,
         isFocused: boolean,
         setIsFocused: (val: boolean) => void,
         forbiddenItems: string[] = [],
