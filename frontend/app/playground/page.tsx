@@ -9,7 +9,7 @@ interface Preference {
   good_fors: string[];
   parking: boolean;
   alcohols: boolean;
-  priorities: string[];
+  priorities: any;
   lat: number;
   lng: number;
 }

@@ -593,256 +593,225 @@ class Appointment_Manager(object):
             logger.warning(f"Error checking if restaurant is open: {e}")
             return True
 
-    def _calculate_dynamic_weights(self, attendee_datas: list):
+    def _calculate_user_roc_weights(self, priorities):
         """
-        Calculate dynamic weights based on Rank 1 (5pts), Rank 2 (3pts), Rank 3 (1pt).
-        Factors: 'Price', 'Category', 'Vibe/Good For', 'Distance from BTS', 'Rating'
+        Calculate ROC weights for a single user's priorities.
+        priorities is a list of lists of strings, e.g. [["Price", "Category"], ["Vibe"]]
         """
-        base_weights = {
-            'Price': 10.0,
-            'Category': 10.0,
-            'Vibe': 10.0,
-            'Station': 5.0,
-            'Rating': 5.0,
-            'Ancillary': 10.0 # Parking (5) + Alcohol (5)
-        }
-        
-        points_map = {0: 5.0, 1: 3.0, 2: 1.0} # Index in priorities list to points
-        accumulated_boosts = defaultdict(float)
-        total_people = len(attendee_datas) if attendee_datas else 1
-
-        for data in attendee_datas:
-            priorities = data.get('preference', {}).get('priorities', [])
-            for i, factor in enumerate(priorities[:3]):
-                boost = points_map.get(i, 0)
-                if factor in ['Vibe/Good For', 'Vibe']: factor = 'Vibe'
-                if factor in ['Distance from BTS', 'Distance', 'Station']: factor = 'Station'
-                accumulated_boosts[factor] += boost
-        
-        print("\n" + "="*50)
-        print("STEP 1: CALCULATING DYNAMIC WEIGHTS (BOOSTING)")
-        print("="*50)
-        for factor, boost in accumulated_boosts.items():
-            print(f"Factor: {factor:10} | Total Boost: {boost:4.1f} | Avg Boost: {accumulated_boosts[factor]/total_people:4.2f}")
-        
-        # Calculate final dynamic weights: Base + (Sum / N)
-        dynamic_weights = {}
-        for key, base in base_weights.items():
-            avg_boost = accumulated_boosts[key] / total_people
-            dynamic_weights[key] = base + avg_boost
-            print(f"FINAL WEIGHT -> {key:10}: {dynamic_weights[key]:4.2f} (Base: {base})")
-        print("="*50 + "\n")
+        # Convert legacy format (list of strings) to list of lists of strings
+        normalized = []
+        if isinstance(priorities, list):
+            for item in priorities:
+                if isinstance(item, str):
+                    normalized.append([item])
+                elif isinstance(item, list):
+                    normalized.append(item)
+        else:
+            normalized = []
             
-        return dynamic_weights
+        # 1. Flatten and count total items k
+        flat_items = []
+        for group in normalized:
+            flat_items.extend(group)
+            
+        k = len(flat_items)
+        all_factors = ['Price', 'Category', 'Vibe', 'Station', 'Rating', 'Parking', 'Alcohol']
+        
+        if k == 0:
+            # Fallback: all 7 factors get equal weight (1/7 each)
+            return {f: 1.0 / 7.0 for f in all_factors}
+            
+        # 2. Calculate ROC weights for k items
+        # Wr = (1/k) * sum_{j=r}^k (1/j)
+        roc_weights = []
+        for r in range(1, k + 1):
+            w_r = sum(1.0 / j for j in range(r, k + 1)) / k
+            roc_weights.append(w_r)
+            
+        # 3. Assign weights to groups
+        user_weights = {f: 0.0 for f in all_factors}
+        current_rank_idx = 0
+        for group in normalized:
+            group_size = len(group)
+            if group_size == 0:
+                continue
+                
+            # Get ROC weights for the ranks this group covers
+            group_weights = roc_weights[current_rank_idx : current_rank_idx + group_size]
+            avg_weight = sum(group_weights) / group_size
+            
+            for item in group:
+                key = item
+                # Normalize frontend names to backend keys
+                if key in ['Vibe/Good For', 'Vibe']: key = 'Vibe'
+                if key in ['Distance from BTS', 'Distance', 'Station']: key = 'Station'
+                if key in all_factors:
+                    user_weights[key] = avg_weight
+                
+            current_rank_idx += group_size
+            
+        return user_weights
 
-    def calculate_restaurant_score(self, summary_preference: dict, restaurant_row: list, weights: dict = None):
+    def calculate_restaurant_score(self, attendee_preference: dict, restaurant_row: dict, weights: dict = None):
         """
-        Calculate a dynamic score (0-100) for a restaurant based on group preferences.
-        Uses weights from Dynamic MCDM framework.
+        Calculate a dynamic score (0-100) for a restaurant based on a SINGLE attendee's preferences.
+        Uses weights from the attendee's personal ROC calculation.
         """
-        # Fallback to defaults if no dynamic weights provided
         if not weights:
-            weights = {'Price': 10.0, 'Category': 10.0, 'Vibe': 10.0, 'Station': 5.0, 'Rating': 5.0, 'Ancillary': 10.0}
+            # Fallback
+            weights = {f: 1.0/7.0 for f in ['Price', 'Category', 'Vibe', 'Station', 'Rating', 'Parking', 'Alcohol']}
 
         score = 0.0
-        max_score = 0.0
         reason = {}
         
-        total_people = summary_preference.get('count', 1)
-        if total_people <= 0: total_people = 1
-
-        # Ensure coordinates and rating are float
-        try:
-            res_lat = float(restaurant_row.get('lat', 0))
-            res_lng = float(restaurant_row.get('lng', 0))
-            res_rating = float(restaurant_row.get('rating', 0) or 0)
-        except (ValueError, TypeError, AttributeError):
-            res_lat, res_lng, res_rating = 0.0, 0.0, 0.0
-
-        # --- 1. Preferences ---
-        print(f"\n--- AUDIT: SCORING RESTAURANT: {restaurant_row.get('name', 'Unknown')} ---")
-        print(f"Targeting {total_people} attendees. Weights: {weights}")
-
-        # A. Price
-        w_price = weights.get('Price', 10.0)
-        max_score += w_price
+        # Helper to normalize strings for comparison
         def normalize_str(s):
             import re
             return re.sub(r'[^a-zA-Z0-9\u0E00-\u0E7F]', '', str(s))
 
-        res_price_norm = normalize_str(restaurant_row.get('price', ''))
-        pref_price_counts = {normalize_str(k): v for k, v in summary_preference.get('price', {}).items()}
-        price_votes = pref_price_counts.get(res_price_norm, 0)
-        
+        try:
+            res_lat = float(restaurant_row.get('lat', 0) or 0)
+            res_lng = float(restaurant_row.get('lng', 0) or 0)
+            res_rating = float(restaurant_row.get('rating', 0) or 0)
+        except (ValueError, TypeError, AttributeError):
+            res_lat, res_lng, res_rating = 0.0, 0.0, 0.0
+
+        # --- A. Price ---
+        w_price = weights.get('Price', 0.0)
         p_score = 0.0
-        if price_votes > 0:
-            p_score = (price_votes / total_people) * w_price
-        
-        print(f"[PRICE] Match: '{res_price_norm}' | Votes: {price_votes}/{total_people} | Score: {p_score:.2f}/{w_price:.1f}")
-        reason["Price"] = {"score": round(p_score, 1), "max": w_price, "base": 10.0}
-
-        # B. Category
-        w_cat = weights.get('Category', 10.0)
-        max_score += w_cat
-        try:
-            res_cats = restaurant_row.get('category', [])
-            if isinstance(res_cats, str):
-                res_cats = set(ast.literal_eval(res_cats))
+        if w_price > 0:
+            pref_price = attendee_preference.get('price')
+            res_price = restaurant_row.get('price')
+            
+            # If no price preference is set, or if they set "Any", it matches 100%
+            if not pref_price or pref_price == 'Any':
+                p_score = 100.0
             else:
-                res_cats = set(res_cats)
+                p_score = 100.0 if normalize_str(res_price) == normalize_str(pref_price) else 0.0
                 
-            pref_cat_counts = summary_preference.get('category', {})
-            total_cat_votes = sum(pref_cat_counts.values())
-            c_score = 0.0
+            score += w_price * p_score
+            reason["Price"] = {"score": round(w_price * p_score, 1), "max": w_price * 100.0, "base": p_score}
+
+        # --- B. Category ---
+        w_cat = weights.get('Category', 0.0)
+        c_score = 0.0
+        if w_cat > 0:
+            try:
+                res_cats = restaurant_row.get('category', [])
+                if isinstance(res_cats, str):
+                    res_cats = set(ast.literal_eval(res_cats))
+                else:
+                    res_cats = set(res_cats)
+                
+                pref_cats = attendee_preference.get('category', [])
+                # If no preferred categories are specified, default to 100% (neutral match)
+                if not pref_cats:
+                    c_score = 100.0
+                else:
+                    # check if any preferred category overlaps with restaurant categories
+                    overlap = [c for c in pref_cats if c in res_cats]
+                    c_score = 100.0 if overlap else 0.0
+            except Exception as e:
+                logger.warning(f"Error parsing categories: {e}")
+                c_score = 0.0
+                
+            score += w_cat * c_score
+            reason["Category"] = {"score": round(w_cat * c_score, 1), "max": w_cat * 100.0, "base": c_score}
+
+        # --- C. Vibe / Good For ---
+        w_vibe = weights.get('Vibe', 0.0)
+        v_score = 0.0
+        if w_vibe > 0:
+            try:
+                res_gf = restaurant_row.get('good_fors', [])
+                if isinstance(res_gf, str):
+                    res_gf = set(ast.literal_eval(res_gf))
+                else:
+                    res_gf = set(res_gf)
+                    
+                pref_gf = attendee_preference.get('good_fors', [])
+                if not pref_gf:
+                    v_score = 100.0
+                else:
+                    # check if any preferred vibe overlaps
+                    overlap = [g for g in pref_gf if g in res_gf]
+                    v_score = 100.0 if (overlap or len(res_gf) == 0) else 0.0
+            except Exception as e:
+                logger.warning(f"Error parsing vibes: {e}")
+                v_score = 0.0
+                
+            score += w_vibe * v_score
+            reason["Vibe"] = {"score": round(w_vibe * v_score, 1), "max": w_vibe * 100.0, "base": v_score}
+
+        # --- D. Station Proximity (Distance from BTS) ---
+        w_station = weights.get('Station', 0.0)
+        s_score = 0.0
+        if w_station > 0:
+            station_dist, station_name = self._get_distance_to_nearest_station(res_lat, res_lng)
+            # Retrieve user-specific walk limit (in meters), default to 1000m
+            max_walk_m = attendee_preference.get('max_walk_distance', 1000)
+            try:
+                max_walk_km = float(max_walk_m) / 1000.0
+            except (ValueError, TypeError):
+                max_walk_km = 1.0 # 1km fallback
+                
+            s_score = max(0.0, (1.0 - (station_dist / max_walk_km))) * 100.0 if station_dist < max_walk_km else 0.0
             
-            if total_cat_votes > 0:
-                matched_votes = sum(pref_cat_counts.get(c, 0) for c in res_cats)
-                print(f"[CAT] Res: {res_cats} | Matched Votes: {matched_votes}/{total_cat_votes}")
-                if matched_votes > 0:
-                    c_score = (matched_votes / total_cat_votes) * w_cat
-                    c_score = min(c_score, w_cat) 
+            score += w_station * s_score
+            reason["Station"] = {
+                "score": round(w_station * s_score, 1),
+                "max": w_station * 100.0,
+                "base": round(s_score, 1),
+                "dist_km": round(station_dist, 2),
+                "nearest_station": station_name
+            }
 
-            # Apply Avoid Penalty
-            avoid_counts = summary_preference.get('avoid_categories', {})
-            if any(c in avoid_counts for c in res_cats):
-                print(f"[CAT] AVOID PENALTY APPLIED")
-                c_score *= 0.5 # 50% penalty for avoid match
-                
-            print(f"[CAT] Final Score: {c_score:.2f}/{w_cat:.1f}")
-            reason["Category"] = {"score": round(c_score, 1), "max": w_cat, "base": 10.0}
-        except Exception as e:
-            print(f"[CAT] ERROR: {e}")
-            reason["Category"] = {"score": 0.0, "max": w_cat}
+        # --- E. Rating ---
+        w_rating = weights.get('Rating', 0.0)
+        r_score = 0.0
+        if w_rating > 0:
+            r_score = (res_rating / 5.0) * 100.0
+            score += w_rating * r_score
+            reason["Rating"] = {"score": round(w_rating * r_score, 1), "max": w_rating * 100.0, "base": r_score}
 
-        # C. Good Fors (Vibe)
-        w_vibe = weights.get('Vibe', 10.0)
-        max_score += w_vibe
-        try:
-            res_gf = restaurant_row.get('good_fors', [])
-            if isinstance(res_gf, str):
-                res_gf = set(ast.literal_eval(res_gf))
+        # --- F. Parking ---
+        w_parking = weights.get('Parking', 0.0)
+        pk_score = 0.0
+        if w_parking > 0:
+            res_parking = "มีที่จอดรถ" in str(restaurant_row.get('parking', ''))
+            req_parking = attendee_preference.get('parking', False)
+            if not req_parking:
+                pk_score = 100.0
             else:
-                res_gf = set(res_gf)
+                pk_score = 100.0 if res_parking else 0.0
                 
-            pref_gf_counts = summary_preference.get('unique_good_fors', {})
-            total_gf_votes = sum(pref_gf_counts.values())
-            gf_score = 0.0
-            
-            if len(res_gf) == 0:
-                gf_score = w_vibe
-                print(f"[VIBE] Res has NO VIBE metadata. Awarding full score: {w_vibe}")
-            elif total_gf_votes > 0:
-                matched_gf_votes = sum(pref_gf_counts.get(g, 0) for g in res_gf)
-                print(f"[VIBE] Res: {res_gf} | Matched Votes: {matched_gf_votes}/{total_gf_votes}")
-                print(f"SUMMARY PREF: {pref_gf_counts}")
-                print(f"RES PREF: {res_gf}")
-                if matched_gf_votes > 0:
-                    gf_score = (matched_gf_votes / total_gf_votes) * w_vibe
-                    gf_score = min(gf_score, w_vibe)
+            score += w_parking * pk_score
+            reason["Parking"] = {"score": round(w_parking * pk_score, 1), "max": w_parking * 100.0, "base": pk_score}
+
+        # --- G. Alcohol ---
+        w_alcohol = weights.get('Alcohol', 0.0)
+        alc_score = 0.0
+        if w_alcohol > 0:
+            res_alcohol_list = restaurant_row.get('alcohols')
+            has_alcohol = isinstance(res_alcohol_list, list) and len(res_alcohol_list) > 0
+            if not has_alcohol and isinstance(res_alcohol_list, str):
+                try:
+                    res_alcohol_list = ast.literal_eval(res_alcohol_list)
+                    has_alcohol = isinstance(res_alcohol_list, list) and len(res_alcohol_list) > 0
+                except:
+                    has_alcohol = False
+                    
+            req_alcohol = attendee_preference.get('alcohols', False)
+            if not req_alcohol:
+                alc_score = 100.0
             else:
-                # If no one voted for vibes, award full score (neutral)
-                gf_score = w_vibe
-                print(f"[VIBE] No votes for vibe. Awarding full score: {w_vibe}")
-            reason["Vibe"] = {"score": round(gf_score, 1), "max": w_vibe, "base": 10.0}
-            print(f"[VIBE] Final Score: {gf_score:.2f}/{w_vibe:.1f}")
-        except Exception as e:
-            print(f"[VIBE] ERROR: {e}")
-            reason["Vibe"] = {"score": 0.0, "max": w_vibe}
+                alc_score = 100.0 if has_alcohol else 0.0
+                
+            score += w_alcohol * alc_score
+            reason["Alcohol"] = {"score": round(w_alcohol * alc_score, 1), "max": w_alcohol * 100.0, "base": alc_score}
 
-        # D. Amenities - Parking (Split half of Ancillary weight)
-        w_ancillary = weights.get('Ancillary', 10.0)
-        w_amenity = w_ancillary / 2.0
-        
-        max_score += w_amenity
-        res_parking = "มีที่จอดรถ" in str(restaurant_row.get('parking', ''))
-        parking_votes = summary_preference['parking'].get(True, 0)
-        pk_score = w_amenity if (res_parking or parking_votes == 0) else 0.0
-        reason["Parking"] = {"score": round(pk_score, 1), "max": w_amenity, "base": 5.0}
-            
-        # E. Amenities - Alcohols
-        max_score += w_amenity
-        res_alcohol_list = restaurant_row.get('alcohols')
-        has_alcohol = isinstance(res_alcohol_list, list) and len(res_alcohol_list) > 0
-        alcohol_votes = summary_preference['alcohols'].get(True, 0)
-        alc_score = w_amenity if (has_alcohol or alcohol_votes == 0) else 0.0
-        reason["Alcohol"] = {"score": round(alc_score, 1), "max": w_amenity, "base": 5.0}
-           
-        score += (p_score + c_score + gf_score + pk_score + alc_score)
-
-        # --- 2. Train Station Proximity ---
-        w_station = weights.get('Station', 5.0)
-        max_score += w_station
-        station_dist, station_name = self._get_distance_to_nearest_station(res_lat, res_lng)
-        
-        # 0.5km = max score, 2km = 0 score
-        # Note: using a more generous 3km limit for playground testing
-        station_pts = max(0, (1 - (station_dist / 3.0))) * w_station if station_dist < 3.0 else 0
-        score += station_pts
-        print(f"[STATION] Dist: {station_dist:.2f}km | Station: {station_name} | Score: {station_pts:.2f}/{w_station:.1f}")
-        reason["Station"] = {
-            "score": round(station_pts, 1), 
-            "max": w_station, 
-            "base": 5.0, 
-            "dist_km": round(station_dist, 2),
-            "nearest_station": station_name
-        }
-
-        # --- 3. Rating ---
-        w_rating = weights.get('Rating', 5.0)
-        max_score += w_rating   
-        # Rating is 0-5, normalize to weight
-        r_score = (res_rating / 5.0) * w_rating
-        score += r_score
-        print(f"[RATING] Rating: {res_rating} | Score: {r_score:.2f}/{w_rating:.1f}")
-        reason["Rating"] = {"score": round(r_score, 1), "max": w_rating, "base": 5.0}
-
-        print(f"SUM SCORE: {score:.2f} / MAX: {max_score:.1f}")
-
-        # --- 4. User Suggestion (Weight: ~20% -> 15 pts) ---
-        # If any suggestions exist in the group, include this component
-        preferred_counts = summary_preference.get('preferred_restaurants', {})
-        if preferred_counts:
-             w_suggest = 15.0
-             max_score += w_suggest
-             res_name = str(restaurant_row.get('name', ''))
-             res_id = str(restaurant_row.get('id', ''))
-             
-             # Check match by name or ID
-             votes = preferred_counts.get(res_id, 0) or preferred_counts.get(res_name, 0)
-             s_score = (votes / total_people) * w_suggest
-             reason["Suggestion"] = {"score": round(s_score, 1), "max": w_suggest}
-             score += s_score
-
-        # Normalize to 100
-        final_score = (score / max_score) * 100.0 if max_score > 0 else 0.0
-        return round(min(final_score, 100.0), 1), reason
-        # # --- 3. User Suggestion (Weight: ~20% -> 15 pts) ---
-        # # If any suggestions exist in the group, include this component
-        # preferred_counts = summary_preference.get('preferred_restaurants', {})
-        # if preferred_counts:
-        #      max_score += 15.0
-        #      res_id = str(restaurant_row.get('id', ''))
-        #      count = preferred_counts.get(res_id, 0)
-             
-        #      # Differential points: Key=10, General=5 (default)
-        #      points_per_vote = summary_preference.get('points_per_vote', 5.0)
-        #      suggestion_pts = min(count * points_per_vote, 15.0)
-        #      score += suggestion_pts
-             
-        #      if suggestion_pts > 0:
-        #           reason.append(f"Suggestion: {suggestion_pts:.1f}/15")
-
-        # Normalize to 100
-        if max_score > 0:
-            final_score = (score / max_score) * 100.0
-        else:
-            final_score = 0.0
-
-        # Clip to max 100
-        if final_score > 100.0:
-            final_score = 100.0
-            
-        return round(final_score, 1), reason
+        # Return score out of 100
+        return round(min(score, 100.0), 1), reason
     
     def _get_summary(self, datas, points_per_vote=5.0):
         if not datas:
@@ -855,50 +824,81 @@ class Appointment_Manager(object):
         summary['points_per_vote'] = points_per_vote
         return summary
 
-    def _calculate_weighted_score(self, row, key_summary, general_summary, weights=None):
-        # Key Person Score
-        score_key, reason_key = 0, {}
-        if key_summary['count'] > 0:
-            score_key, reason_key = self.calculate_restaurant_score(key_summary, row, weights)
+    def _calculate_weighted_score(self, row, key_persons_data, general_persons_data):
+        # 1. Calculate score for Key Persons group
+        key_scores = []
+        key_reasons = []
+        for attendee in key_persons_data:
+            pref = attendee.get('preference', {}) or {}
+            priorities = pref.get('priorities', [])
+            weights = self._calculate_user_roc_weights(priorities)
+            score, reason = self.calculate_restaurant_score(pref, row, weights)
+            key_scores.append(score)
+            key_reasons.append(reason)
+            
+        score_key = sum(key_scores) / len(key_scores) if key_scores else 0.0
         
-        # General Score
-        score_gen, reason_gen = 0, {}
-        if general_summary['count'] > 0:
-            score_gen, reason_gen = self.calculate_restaurant_score(general_summary, row, weights)
+        # 2. Calculate score for General Persons group
+        gen_scores = []
+        gen_reasons = []
+        for attendee in general_persons_data:
+            pref = attendee.get('preference', {}) or {}
+            priorities = pref.get('priorities', [])
+            weights = self._calculate_user_roc_weights(priorities)
+            score, reason = self.calculate_restaurant_score(pref, row, weights)
+            gen_scores.append(score)
+            gen_reasons.append(reason)
+            
+        score_gen = sum(gen_scores) / len(gen_scores) if gen_scores else 0.0
         
-        # Weights (Organizer Priority: self.key_weight Key, 1.0 - self.key_weight General)
-        final_score = 0
-        if key_summary['count'] > 0 and general_summary['count'] > 0:
+        # 3. Combine scores using key_weight
+        if key_scores and gen_scores:
             final_score = (score_key * self.key_weight) + (score_gen * (1.0 - self.key_weight))
-        elif key_summary['count'] > 0:
+        elif key_scores:
             final_score = score_key
         else:
             final_score = score_gen
-        
-        # Combine reasons into structured format
+            
+        # 4. Combine reasons for debugging UI
         combined_reason = {}
-        all_criteria = set(reason_key.keys()) | set(reason_gen.keys())
+        all_criteria = ['Price', 'Category', 'Vibe', 'Station', 'Rating', 'Parking', 'Alcohol']
         
         for criterion in all_criteria:
-            k_score = reason_key.get(criterion, {}).get("score", 0)
-            g_score = reason_gen.get(criterion, {}).get("score", 0)
+            # Average base score (0-100) for key group
+            k_bases = [r.get(criterion, {}).get("base", 0.0) for r in key_reasons if criterion in r]
+            k_avg_base = sum(k_bases) / len(k_bases) if k_bases else 0.0
             
-            # Calculate weighted score for this specific criterion
-            if key_summary['count'] > 0 and general_summary['count'] > 0:
-                w_score = (k_score * self.key_weight) + (g_score * (1.0 - self.key_weight))
-            elif key_summary['count'] > 0:
-                w_score = k_score
+            # Average base score (0-100) for general group
+            g_bases = [r.get(criterion, {}).get("base", 0.0) for r in gen_reasons if criterion in r]
+            g_avg_base = sum(g_bases) / len(g_bases) if g_bases else 0.0
+            
+            # Weighted criteria scores (weights * base)
+            k_weighted = [r.get(criterion, {}).get("score", 0.0) for r in key_reasons if criterion in r]
+            k_avg_weighted = sum(k_weighted) / len(key_reasons) if key_reasons else 0.0
+            
+            g_weighted = [r.get(criterion, {}).get("score", 0.0) for r in gen_reasons if criterion in r]
+            g_avg_weighted = sum(g_weighted) / len(gen_reasons) if gen_reasons else 0.0
+            
+            # Combine the weighted scores using key_weight
+            if key_reasons and gen_reasons:
+                w_score = (k_avg_weighted * self.key_weight) + (g_avg_weighted * (1.0 - self.key_weight))
+                max_w = (sum(r.get(criterion, {}).get("max", 0.0) for r in key_reasons) / len(key_reasons) * self.key_weight) + \
+                        (sum(r.get(criterion, {}).get("max", 0.0) for r in gen_reasons) / len(gen_reasons) * (1.0 - self.key_weight))
+            elif key_reasons:
+                w_score = k_avg_weighted
+                max_w = sum(r.get(criterion, {}).get("max", 0.0) for r in key_reasons) / len(key_reasons)
             else:
-                w_score = g_score
-
+                w_score = g_avg_weighted
+                max_w = sum(r.get(criterion, {}).get("max", 0.0) for r in gen_reasons) / len(gen_reasons)
+                
             combined_reason[criterion] = {
-                "key_ratio": round(k_score, 1),
-                "attendee_ratio": round(g_score, 1),
+                "key_ratio": round(k_avg_base, 1),
+                "attendee_ratio": round(g_avg_base, 1),
                 "weighted_score": round(w_score, 1),
-                "max_score": round(reason_key.get(criterion, {}).get("max") or reason_gen.get(criterion, {}).get("max") or 0, 1),
-                "base_score": reason_key.get(criterion, {}).get("base") or reason_gen.get(criterion, {}).get("base") or 0
+                "max_score": round(max_w, 1),
+                "base_score": round((k_avg_base + g_avg_base) / 2.0, 1)
             }
-        
+            
         return round(final_score, 1), combined_reason
 
     def get_suggesested_restaurants(self, attendee_datas: list, attendees_availiability: dict, suggestion_config: dict, fixed_restaurants: Optional[list] = None, fixed_location: Optional[Dict[str, float]] = None):
@@ -1072,13 +1072,9 @@ class Appointment_Manager(object):
             logger.info(f"RESTAURANT AFTER PREFERRED RESTAURANTS FILTER : {nearby_restaurants.shape[0]}")
         
         # 4.4 Global Scoring (Score all candidates once)
-        # Calculate Dynamic Weights once for the whole meeting
-        dynamic_weights = self._calculate_dynamic_weights(attendee_datas)
-        logger.info(f"DYNAMIC WEIGHTS : {dynamic_weights}")
-
         if not nearby_restaurants.empty:
             nearby_restaurants[["score", "reason"]] = nearby_restaurants.apply(
-                lambda row: self._calculate_weighted_score(row, key_summary, general_summary, weights=dynamic_weights), 
+                lambda row: self._calculate_weighted_score(row, key_persons_data, general_persons_data), 
                 axis=1,
                 result_type='expand'
             )
@@ -1143,11 +1139,8 @@ class Appointment_Manager(object):
                         slot_key_persons_data = [d for d in slot_attendee_datas if d.get('is_key_person', False)]
                         slot_general_persons_data = [d for d in slot_attendee_datas if not d.get('is_key_person', False)]
                         
-                        slot_key_summary = self._get_summary(slot_key_persons_data, points_per_vote=10.0)
-                        slot_general_summary = self._get_summary(slot_general_persons_data, points_per_vote=5.0)
-                        
                         valid_restaurants[["score", "reason"]] = valid_restaurants.apply(
-                            lambda row: self._calculate_weighted_score(row, slot_key_summary, slot_general_summary, weights=dynamic_weights),
+                            lambda row: self._calculate_weighted_score(row, slot_key_persons_data, slot_general_persons_data),
                             axis=1,
                             result_type='expand'
                         )

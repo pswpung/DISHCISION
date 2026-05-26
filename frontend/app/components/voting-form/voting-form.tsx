@@ -48,8 +48,22 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
     const [priceFocused, setPriceFocused] = useState(false);
     const [cuisineFocused, setCuisineFocused] = useState(false);
     const [avoidCuisineFocused, setAvoidCuisineFocused] = useState(false);
-    const [selectedPriorities, setSelectedPriorities] = useState<string[]>([]);
-    const priorityFactors = ['Price', 'Category', 'Vibe/Good For', 'Distance from BTS', 'Rating'];
+    const [prioritiesMode, setPrioritiesMode] = useState<'normal' | 'advanced'>('normal');
+    const [normalPriorities, setNormalPriorities] = useState<Record<string, 'high' | 'medium' | 'none'>>({
+        'Price': 'none',
+        'Category': 'none',
+        'Vibe/Good For': 'none',
+        'Distance from BTS': 'none',
+        'Rating': 'none',
+        'Parking': 'none',
+        'Alcohol': 'none',
+    });
+    const [advancedPriorities, setAdvancedPriorities] = useState<string[][]>([]);
+    const [maxWalkDistance, setMaxWalkDistance] = useState<number>(1000);
+    const priorityFactors = ['Price', 'Category', 'Vibe/Good For', 'Distance from BTS', 'Rating', 'Parking', 'Alcohol'];
+
+    const [isDragging, setIsDragging] = useState<string | null>(null);
+    const [dragOverIndex, setDragOverIndex] = useState<{ index: number; type: 'tie' | 'insert' | 'pool' } | null>(null);
 
     const priceRef = useRef<HTMLDivElement>(null);
     const cuisineSearchRef = useRef<HTMLDivElement>(null);
@@ -272,6 +286,141 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
         }
     };
 
+    const getSerializedPriorities = (): string[][] => {
+        if (prioritiesMode === 'normal') {
+            const high: string[] = [];
+            const medium: string[] = [];
+            Object.entries(normalPriorities).forEach(([factor, level]) => {
+                if (level === 'high') {
+                    high.push(factor);
+                } else if (level === 'medium') {
+                    medium.push(factor);
+                }
+            });
+            const result: string[][] = [];
+            if (high.length > 0) result.push(high);
+            if (medium.length > 0) result.push(medium);
+            return result;
+        } else {
+            return advancedPriorities.filter(group => group.length > 0);
+        }
+    };
+
+    const isFactorActive = (factor: string): boolean => {
+        if (prioritiesMode === 'normal') {
+            return normalPriorities[factor] === 'high' || normalPriorities[factor] === 'medium';
+        } else {
+            return advancedPriorities.some(group => group.includes(factor));
+        }
+    };
+
+    const getActivePrioritiesCount = (): number => {
+        if (prioritiesMode === 'normal') {
+            return Object.values(normalPriorities).filter(val => val !== 'none').length;
+        } else {
+            return advancedPriorities.reduce((acc, group) => acc + group.length, 0);
+        }
+    };
+
+    const toggleNormalPriority = (factor: string) => {
+        setNormalPriorities(prev => {
+            const current = prev[factor] || 'none';
+            let next: 'high' | 'medium' | 'none' = 'none';
+            if (current === 'none') next = 'high';
+            else if (current === 'high') next = 'medium';
+            else next = 'none';
+            return { ...prev, [factor]: next };
+        });
+    };
+
+    const toggleAdvancedPriority = (factor: string) => {
+        const isSelected = advancedPriorities.some(group => group.includes(factor));
+        if (isSelected) {
+            setAdvancedPriorities(prev => 
+                prev.map(group => group.filter(p => p !== factor)).filter(group => group.length > 0)
+            );
+        } else {
+            setAdvancedPriorities(prev => [...prev, [factor]]);
+        }
+    };
+
+    const removeAdvancedPriority = (factor: string) => {
+        setAdvancedPriorities(prev => 
+            prev.map(group => group.filter(p => p !== factor)).filter(group => group.length > 0)
+        );
+    };
+
+    const handleDropFactor = (factor: string, targetIndex: number, type: 'tie' | 'insert' | 'remove') => {
+        setAdvancedPriorities(prev => {
+            const sourceGroupIndex = prev.findIndex(group => group.includes(factor));
+            let adjustedTargetIndex = targetIndex;
+            if (sourceGroupIndex !== -1 && prev[sourceGroupIndex].length === 1) {
+                if (targetIndex > sourceGroupIndex) {
+                    adjustedTargetIndex = targetIndex - 1;
+                }
+            }
+
+            // Remove factor from all groups
+            let cleaned = prev.map(group => group.filter(f => f !== factor)).filter(group => group.length > 0);
+            
+            if (type === 'remove') {
+                return cleaned;
+            }
+            
+            if (type === 'tie') {
+                const next = [...cleaned];
+                if (adjustedTargetIndex >= 0 && adjustedTargetIndex < next.length) {
+                    next[adjustedTargetIndex] = [...next[adjustedTargetIndex], factor];
+                } else {
+                    next.push([factor]);
+                }
+                return next;
+            }
+            
+            if (type === 'insert') {
+                const next = [...cleaned];
+                next.splice(adjustedTargetIndex, 0, [factor]);
+                return next;
+            }
+            
+            return cleaned;
+        });
+    };
+
+    const handleDragStart = (e: React.DragEvent, factor: string) => {
+        e.dataTransfer.setData("text/plain", factor);
+        setIsDragging(factor);
+    };
+
+    const handleDragEnd = () => {
+        setIsDragging(null);
+        setDragOverIndex(null);
+    };
+
+    const handleDragOver = (e: React.DragEvent, index: number, type: 'tie' | 'insert' | 'pool') => {
+        e.preventDefault();
+        setDragOverIndex({ index, type });
+    };
+
+    const handleDragLeave = () => {
+        setDragOverIndex(null);
+    };
+
+    const handleDrop = (e: React.DragEvent, targetIndex: number, type: 'tie' | 'insert' | 'pool') => {
+        e.preventDefault();
+        const factor = e.dataTransfer.getData("text/plain");
+        if (!factor) return;
+
+        setDragOverIndex(null);
+        setIsDragging(null);
+
+        if (type === 'pool') {
+            handleDropFactor(factor, -1, 'remove');
+        } else {
+            handleDropFactor(factor, targetIndex, type);
+        }
+    };
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
 
@@ -297,7 +446,8 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
             lat: locationCoords?.lat || null,
             lng: locationCoords?.lng || null,
             preferredRestaurant,
-            priorities: selectedPriorities
+            priorities: getSerializedPriorities(),
+            max_walk_distance: maxWalkDistance
         };
 
         onVoteSubmit({
@@ -445,58 +595,228 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
         </div>
     );
 
-    const togglePriority = (factor: string) => {
-        if (selectedPriorities.includes(factor)) {
-            setSelectedPriorities(selectedPriorities.filter(p => p !== factor));
-        } else {
-            if (selectedPriorities.length < 3) {
-                setSelectedPriorities([...selectedPriorities, factor]);
-            }
-        }
-    };
+    const renderPrioritySelector = () => {
+        const isDraggedFactorRanked = isDragging ? advancedPriorities.some(group => group.includes(isDragging)) : false;
+        const isPoolHovered = dragOverIndex?.type === 'pool';
 
-    const renderPrioritySelector = () => (
-        <div className="space-y-3 py-4">
-            <div className="space-y-1">
-                <label className="block text-sm font-bold text-primary uppercase tracking-wider">Top 3 Focus Factors</label>
-                <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium">Rank your top priorities for better suggestions</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-                {priorityFactors.map((factor) => {
-                    const index = selectedPriorities.indexOf(factor);
-                    const isSelected = index !== -1;
-                    return (
-                        <button
-                            key={factor}
-                            type="button"
-                            onClick={() => togglePriority(factor)}
-                            className={`relative px-4 py-2.5 rounded-xl text-xs font-bold border transition-all duration-300 flex items-center gap-2 ${isSelected
-                                ? 'bg-primary border-primary text-white shadow-lg scale-105'
-                                : 'bg-black/5 dark:bg-white/5 border-black/10 dark:border-white/10 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10 hover:border-black/20 dark:hover:border-white/20'
-                                }`}
-                        >
-                            {isSelected && (
-                                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-white text-primary text-[10px] font-black shadow-inner">
-                                    {index + 1}
-                                </span>
-                            )}
-                            {factor}
-                        </button>
-                    );
-                })}
-            </div>
-            {selectedPriorities.length > 0 && (
-                <div className="pt-2 flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
-                    {selectedPriorities.map((p, i) => (
-                        <div key={p} className="flex items-center gap-1 shrink-0">
-                            <span className="text-[10px] font-bold text-primary/80">{i + 1}. {p}</span>
-                            {i < selectedPriorities.length - 1 && <span className="text-[10px] text-black/20 dark:text-white/20">→</span>}
-                        </div>
-                    ))}
+        const renderInsertDropZone = (targetIndex: number) => {
+            const isHovered = dragOverIndex?.type === 'insert' && dragOverIndex?.index === targetIndex;
+            return (
+                <div
+                    onDragOver={(e) => handleDragOver(e, targetIndex, 'insert')}
+                    onDragLeave={handleDragLeave}
+                    onDrop={(e) => handleDrop(e, targetIndex, 'insert')}
+                    className={`relative w-full transition-all duration-200 flex items-center justify-center ${
+                        isHovered 
+                            ? 'py-3.5 opacity-100' 
+                            : isDragging 
+                            ? 'py-2 opacity-50' 
+                            : 'py-0 h-0.5 opacity-0 pointer-events-none'
+                    }`}
+                >
+                    <div className={`w-full border-t-2 border-dashed rounded transition-colors ${
+                        isHovered 
+                            ? 'border-primary shadow-[0_0_8px_rgba(var(--primary-rgb),0.3)]' 
+                            : 'border-primary/20'
+                    }`} />
+                    {isHovered && (
+                        <span className="absolute px-2.5 py-0.5 rounded-full bg-primary text-[8px] font-black text-white uppercase tracking-widest pointer-events-none shadow-md">
+                            Insert Rank Level {targetIndex + 1}
+                        </span>
+                    )}
                 </div>
-            )}
-        </div>
-    );
+            );
+        };
+
+        return (
+            <div className="space-y-4 py-4 border-b border-black/5 dark:border-white/5">
+                <div className="flex justify-between items-center pb-3 border-b border-black/5 dark:border-white/5">
+                    <div className="space-y-1">
+                        <label className="block text-sm font-bold text-primary uppercase tracking-wider">Focus Factors</label>
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium">Rank or select what you care about</p>
+                    </div>
+                    {/* Mode Toggle Switch */}
+                    <div className="flex bg-black/5 dark:bg-white/5 p-1 rounded-xl gap-1 border border-black/5 dark:border-white/5">
+                        <button
+                            type="button"
+                            onClick={() => setPrioritiesMode('normal')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                prioritiesMode === 'normal'
+                                    ? 'bg-primary text-white shadow-md'
+                                    : 'text-muted-foreground hover:text-foreground'
+                            }`}
+                        >
+                            Normal
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setPrioritiesMode('advanced')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                prioritiesMode === 'advanced'
+                                    ? 'bg-primary text-white shadow-md'
+                                    : 'text-muted-foreground hover:text-foreground'
+                            }`}
+                        >
+                            Advanced
+                        </button>
+                    </div>
+                </div>
+
+                {prioritiesMode === 'normal' ? (
+                    /* Normal Mode UI */
+                    <div className="space-y-3">
+                        <p className="text-[10px] text-muted-foreground/80 italic">Tap chips to cycle: Unselected ➔ ⭐ High Priority ➔ 👍 Medium Priority</p>
+                        <div className="flex flex-wrap gap-2">
+                            {priorityFactors.map((factor) => {
+                                const level = normalPriorities[factor] || 'none';
+                                return (
+                                    <button
+                                        key={factor}
+                                        type="button"
+                                        onClick={() => toggleNormalPriority(factor)}
+                                        className={`relative px-4 py-2.5 rounded-xl text-xs font-bold border transition-all duration-300 flex items-center gap-1.5 ${
+                                            level === 'high'
+                                                ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg scale-105'
+                                                : level === 'medium'
+                                                ? 'bg-teal-600 border-teal-600 text-white shadow-md'
+                                                : 'bg-black/5 dark:bg-white/5 border-black/10 dark:border-white/10 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10 hover:border-black/20'
+                                        }`}
+                                    >
+                                        {level === 'high' && <span>⭐ High:</span>}
+                                        {level === 'medium' && <span>👍 Med:</span>}
+                                        {factor}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                ) : (
+                    /* Advanced Mode UI */
+                    <div className="space-y-4">
+                        <p className="text-[10px] text-muted-foreground/80 italic">
+                            Drag & drop chips to rank and tie them freely, or tap them in order.
+                        </p>
+                        
+                        {/* Available Pool Wrapper with drag target for removing */}
+                        <div
+                            onDragOver={(e) => isDraggedFactorRanked ? handleDragOver(e, -1, 'pool') : undefined}
+                            onDragLeave={handleDragLeave}
+                            onDrop={(e) => isDraggedFactorRanked ? handleDrop(e, -1, 'pool') : undefined}
+                            className={`p-3 rounded-2xl border transition-all duration-300 ${
+                                isPoolHovered && isDraggedFactorRanked
+                                    ? 'border-red-500/40 bg-red-500/5 shadow-[0_0_12px_rgba(239,68,68,0.15)]'
+                                    : isDragging && isDraggedFactorRanked
+                                    ? 'border-dashed border-red-500/30 bg-red-500/[0.02]'
+                                    : 'border-transparent bg-transparent'
+                            }`}
+                        >
+                            {isPoolHovered && isDraggedFactorRanked && (
+                                <div className="text-center text-[10px] text-red-400 font-bold mb-2 uppercase tracking-wider animate-pulse">
+                                    Drop here to remove from ranking
+                                </div>
+                            )}
+                            <div className="flex flex-wrap gap-2">
+                                {priorityFactors.map((factor) => {
+                                    const isSelected = advancedPriorities.some(group => group.includes(factor));
+                                    return (
+                                        <button
+                                            key={factor}
+                                            type="button"
+                                            disabled={isSelected}
+                                            draggable={!isSelected}
+                                            onDragStart={(e) => handleDragStart(e, factor)}
+                                            onDragEnd={handleDragEnd}
+                                            onClick={() => toggleAdvancedPriority(factor)}
+                                            className={`px-4 py-2.5 rounded-xl text-xs font-bold border transition-all duration-300 ${
+                                                isSelected
+                                                    ? 'opacity-40 bg-black/10 dark:bg-white/10 border-dashed border-black/10 dark:border-white/10 text-muted-foreground/60 cursor-default pointer-events-none'
+                                                    : 'bg-black/5 dark:bg-white/5 border-black/10 dark:border-white/10 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10 hover:border-black/20 dark:hover:border-white/20 cursor-grab active:cursor-grabbing hover:scale-[1.02]'
+                                            }`}
+                                        >
+                                            {factor}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {/* Selected Sequence with drag and drop zones */}
+                        <div className="glass-panel p-4 rounded-2xl border border-black/5 dark:border-white/5 space-y-2">
+                            <label className="block text-[10px] uppercase font-black tracking-widest text-primary/80">Priority Ranking</label>
+                            
+                            {/* Top Drop Zone */}
+                            {advancedPriorities.length > 0 && renderInsertDropZone(0)}
+
+                            {advancedPriorities.length === 0 ? (
+                                <div
+                                    onDragOver={(e) => handleDragOver(e, 0, 'insert')}
+                                    onDragLeave={handleDragLeave}
+                                    onDrop={(e) => handleDrop(e, 0, 'insert')}
+                                    className={`py-12 border-2 border-dashed rounded-xl text-center transition-all ${
+                                        dragOverIndex?.type === 'insert' && dragOverIndex?.index === 0
+                                            ? 'border-primary bg-primary/5 text-primary scale-[0.99]'
+                                            : 'border-black/10 dark:border-white/10 text-muted-foreground'
+                                    }`}
+                                >
+                                    <p className="text-xs uppercase tracking-wider font-bold">Drag and drop factors here to start ranking</p>
+                                    <p className="text-[10px] text-muted-foreground/60 mt-1 italic">Or tap factors from the pool above</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-1">
+                                    {advancedPriorities.map((group, index) => {
+                                        const isTieHovered = dragOverIndex?.type === 'tie' && dragOverIndex?.index === index;
+                                        return (
+                                            <div key={index} className="flex flex-col space-y-1">
+                                                {/* Group Row (Drop Target for Ties) */}
+                                                <div
+                                                    onDragOver={(e) => handleDragOver(e, index, 'tie')}
+                                                    onDragLeave={handleDragLeave}
+                                                    onDrop={(e) => handleDrop(e, index, 'tie')}
+                                                    className={`flex items-center gap-3 p-3 rounded-xl border transition-all duration-200 ${
+                                                        isTieHovered
+                                                            ? 'bg-primary/10 border-primary scale-[1.01] shadow-[0_0_10px_rgba(var(--primary-rgb),0.15)]'
+                                                            : 'bg-black/5 dark:bg-white/5 border-black/5 dark:border-white/5'
+                                                    }`}
+                                                >
+                                                    <span className="flex items-center justify-center w-5 h-5 rounded-full bg-primary text-white text-[9px] font-black shrink-0">
+                                                        {index + 1}
+                                                    </span>
+                                                    <div className="flex flex-wrap gap-2 flex-grow">
+                                                        {group.map((factor) => (
+                                                            <span
+                                                                key={factor}
+                                                                draggable
+                                                                onDragStart={(e) => handleDragStart(e, factor)}
+                                                                onDragEnd={handleDragEnd}
+                                                                onClick={() => removeAdvancedPriority(factor)}
+                                                                className="px-3 py-1.5 rounded-lg bg-black/10 hover:bg-red-500/20 hover:text-red-400 border border-black/10 text-xs font-bold flex items-center gap-1.5 cursor-grab active:cursor-grabbing transition-all hover:border-black/30"
+                                                                title="Drag to reorder / Click to remove"
+                                                            >
+                                                                {factor}
+                                                                <span className="text-[9px] opacity-60">×</span>
+                                                            </span>
+                                                        ))}
+                                                        {isTieHovered && (
+                                                            <span className="text-[10px] text-primary/80 font-bold border border-dashed border-primary/40 px-2 py-1 rounded bg-primary/5 animate-pulse">
+                                                                + Drop to Tie
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                
+                                                {/* Insert Spacer Zone below this group */}
+                                                {renderInsertDropZone(index + 1)}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
 
     const categories = restaurantConfig?.category || ["Japanese", "Thai", "Italian", "Chinese", "Korean", "Buffet", "Cafe", "Izakaya"];
     const goodFors = restaurantConfig?.good_fors || ["Friends", "Business", "Date", "Family", "Party"];
@@ -675,10 +995,12 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
                             </div>
                         ) : (
                             <div className="space-y-6">
-                                <div className="space-y-6">
-                                    <div className="space-y-6">
+                                {meetingData?.allowOthersSuggest || meetingData?.fixedRestaurants?.length === 0 ? (
+                                    <div className="space-y-6 mt-4">
+                                        {renderPrioritySelector()}
+
                                         {meetingData.allowSystemSuggest !== false && (
-                                            <>
+                                            <div className="space-y-6">
                                                 {/* Meal Time Choice */}
                                                 {meetingData.mealTime === 'Any' && meetingData.timingMode !== 'fixed' && (
                                                     <div className="space-y-2">
@@ -698,7 +1020,7 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
                                                     </div>
                                                 )}
 
-                                                {renderDropdown(
+                                                {isFactorActive('Price') && renderDropdown(
                                                     "Budget / Person",
                                                     priceRange,
                                                     setPriceRange,
@@ -708,114 +1030,134 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
                                                     priceRef
                                                 )}
 
-                                                <div className="space-y-5">
-                                                    {renderSearchableChipGroup("Prefer Cuisine", categories, selectedCategories, setSelectedCategories, cuisineSearchTerm, setCuisineSearchTerm, "Search cuisines...", cuisineSearchRef, cuisineFocused, setCuisineFocused, avoidCategories)}
-                                                    {renderSearchableChipGroup("Avoid Cuisine", categories, avoidCategories, setAvoidCategories, avoidCuisineSearchTerm, setAvoidCuisineSearchTerm, "Avoid cuisines...", avoidCuisineSearchRef, avoidCuisineFocused, setAvoidCuisineFocused, selectedCategories, 'negative')}
+                                                {isFactorActive('Category') && (
+                                                    <div className="space-y-5">
+                                                        {renderSearchableChipGroup("Prefer Cuisine", categories, selectedCategories, setSelectedCategories, cuisineSearchTerm, setCuisineSearchTerm, "Search cuisines...", cuisineSearchRef, cuisineFocused, setCuisineFocused, avoidCategories)}
+                                                        {renderSearchableChipGroup("Avoid Cuisine", categories, avoidCategories, setAvoidCategories, avoidCuisineSearchTerm, setAvoidCuisineSearchTerm, "Avoid cuisines...", avoidCuisineSearchRef, avoidCuisineFocused, setAvoidCuisineFocused, selectedCategories, 'negative')}
+                                                    </div>
+                                                )}
+
+                                                {isFactorActive('Vibe/Good For') && renderChipGroup("Vibe / Good For", goodFors, selectedGoodFors, setSelectedGoodFors)}
+
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    {isFactorActive('Alcohol') && (
+                                                        <div className="flex items-center justify-between glass-panel p-3 rounded-xl border border-black/5 dark:border-white/5">
+                                                            <span className="text-sm font-medium uppercase tracking-wider text-primary dark:text-white">Alcohol</span>
+                                                            <input type="checkbox" checked={selectedAlcohols} onChange={e => setSelectedAlcohols(e.target.checked)} className="toggle" />
+                                                        </div>
+                                                    )}
+                                                    {isFactorActive('Parking') && (
+                                                        <div className="flex items-center justify-between glass-panel p-3 rounded-xl border border-black/5 dark:border-white/5">
+                                                            <span className="text-sm font-medium uppercase tracking-wider text-primary dark:text-white">Parking</span>
+                                                            <input type="checkbox" checked={selectedParking} onChange={e => setSelectedParking(e.target.checked)} className="toggle" />
+                                                        </div>
+                                                    )}
                                                 </div>
 
-                                                {renderChipGroup("Vibe / Good For", goodFors, selectedGoodFors, setSelectedGoodFors)}
+                                                {isFactorActive('Distance from BTS') && (
+                                                    <div className="space-y-4">
+                                                        {!meetingData?.fixLocation && (
+                                                            <div className="space-y-2">
+                                                                <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Prefer Location</label>
+                                                                <div className="relative flex gap-2">
+                                                                    <input
+                                                                        type="text"
+                                                                        placeholder="e.g. Siam Paragon"
+                                                                        value={departureLocation}
+                                                                        onChange={(e) => setDepartureLocation(e.target.value)}
+                                                                        onBlur={handleLocationBlur}
+                                                                        className="glass-input w-full p-3 rounded-xl text-sm font-medium"
+                                                                    />
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => { setMapPickerTarget('prefer'); setShowMapPicker(true); }}
+                                                                        className="glass-button px-4 py-3 rounded-xl hover:bg-black/10 dark:bg-white/10 transition-all"
+                                                                    >
+                                                                        {isLocating ? (
+                                                                            <div className="w-5 h-5 border-2 border-black/5 dark:bg-white/50 border-t-white rounded-full animate-spin" />
+                                                                        ) : (
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
+                                                                            </svg>
+                                                                        )}
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        )}
 
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    <div className="flex items-center justify-between glass-panel p-3 rounded-xl border border-black/5 dark:border-white/5">
-                                                        <span className="text-sm font-medium uppercase tracking-wider">Alcohol</span>
-                                                        <input type="checkbox" checked={selectedAlcohols} onChange={e => setSelectedAlcohols(e.target.checked)} className="toggle" />
-                                                    </div>
-                                                    <div className="flex items-center justify-between glass-panel p-3 rounded-xl border border-black/5 dark:border-white/5">
-                                                        <span className="text-sm font-medium uppercase tracking-wider">Parking</span>
-                                                        <input type="checkbox" checked={selectedParking} onChange={e => setSelectedParking(e.target.checked)} className="toggle" />
-                                                    </div>
-                                                </div>
-
-                                                {!meetingData?.fixLocation && (
-                                                    <div className="space-y-2">
-                                                        <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Prefer Location</label>
-                                                        <div className="relative flex gap-2">
-                                                            <input
-                                                                type="text"
-                                                                placeholder="e.g. Siam Paragon"
-                                                                value={departureLocation}
-                                                                onChange={(e) => setDepartureLocation(e.target.value)}
-                                                                onBlur={handleLocationBlur}
-                                                                className="glass-input w-full p-3 rounded-xl text-sm font-medium"
-                                                            />
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => { setMapPickerTarget('prefer'); setShowMapPicker(true); }}
-                                                                className="glass-button px-4 py-3 rounded-xl hover:bg-black/10 dark:bg-white/10 transition-all"
+                                                        <div className="space-y-2">
+                                                            <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Max Walk Distance</label>
+                                                            <select
+                                                                value={maxWalkDistance}
+                                                                onChange={(e) => setMaxWalkDistance(Number(e.target.value))}
+                                                                className="glass-input w-full p-3 rounded-xl text-sm font-medium bg-transparent border border-black/10 dark:border-white/10 text-primary dark:text-white"
                                                             >
-                                                                {isLocating ? (
-                                                                    <div className="w-5 h-5 border-2 border-black/5 dark:border-white/50 border-t-white rounded-full animate-spin" />
-                                                                ) : (
-                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
-                                                                    </svg>
-                                                                )}
-                                                            </button>
+                                                                <option value={500} className="bg-dropdown-bg dark:bg-neutral-900 text-black dark:text-white">500 m (approx. 5 mins walk)</option>
+                                                                <option value={1000} className="bg-dropdown-bg dark:bg-neutral-900 text-black dark:text-white">1000 m (approx. 10 mins walk)</option>
+                                                                <option value={1500} className="bg-dropdown-bg dark:bg-neutral-900 text-black dark:text-white">1500 m (approx. 15 mins walk)</option>
+                                                                <option value={2000} className="bg-dropdown-bg dark:bg-neutral-900 text-black dark:text-white">2000 m (approx. 20 mins walk)</option>
+                                                            </select>
                                                         </div>
                                                     </div>
                                                 )}
-                                            </>
+                                            </div>
                                         )}
-                                    </div>
 
-                                    {meetingData?.allowOthersSuggest && (
-                                        <div className="space-y-4 pt-6 border-t border-black/10 dark:border-white/10">
-                                            <div className="space-y-3 relative" ref={searchWrapperRef}>
-                                                <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Add Suggested Restaurants (Optional)</label>
+                                        {meetingData?.allowOthersSuggest && (
+                                            <div className="space-y-4 pt-6 border-t border-black/10 dark:border-white/10">
+                                                <div className="space-y-3 relative" ref={searchWrapperRef}>
+                                                    <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Add Suggested Restaurants (Optional)</label>
 
-                                                <div className="flex flex-wrap gap-2 mb-2">
-                                                    {preferredRestaurant.map((rest: any) => (
-                                                        <span key={rest.name} className="px-3 py-1.5 rounded-full text-[10px] font-bold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center gap-2">
-                                                            {rest.name}
-                                                            <button type="button" onClick={() => removeRestaurant(rest.name)} className="text-xs hover:text-white transition-colors">×</button>
-                                                        </span>
-                                                    ))}
-                                                </div>
-
-                                                <input
-                                                    type="text"
-                                                    placeholder="Search venues..."
-                                                    value={searchTerm}
-                                                    onChange={(e) => handleSearch(e.target.value)}
-                                                    className="glass-input w-full p-3 rounded-xl text-sm font-medium"
-                                                />
-
-                                                {searchResults.length > 0 && (
-                                                    <div className="absolute z-50 w-full mt-2 bg-dropdown-bg border border-dropdown-border rounded-xl shadow-2xl max-h-48 overflow-y-auto backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200">
-                                                        {searchResults.map((place, idx) => (
-                                                            <button
-                                                                key={idx}
-                                                                type="button"
-                                                                onClick={() => selectRestaurant(place)}
-                                                                className="w-full text-left px-4 py-3 hover:bg-dropdown-hover border-b border-dropdown-border last:border-0 transition-colors"
-                                                            >
-                                                                <p className="font-bold text-sm text-primary dark:text-white">{place.name}</p>
-                                                                <p className="text-[10px] text-gray-500 dark:text-muted-foreground">{place.category?.[0]} • {place.price}</p>
-                                                            </button>
+                                                    <div className="flex flex-wrap gap-2 mb-2">
+                                                        {preferredRestaurant.map((rest: any) => (
+                                                            <span key={rest.name} className="px-3 py-1.5 rounded-full text-[10px] font-bold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center gap-2">
+                                                                {rest.name}
+                                                                <button type="button" onClick={() => removeRestaurant(rest.name)} className="text-xs hover:text-white transition-colors">×</button>
+                                                            </span>
                                                         ))}
                                                     </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-                        {meetingData?.allowOthersSuggest || meetingData?.fixedRestaurants?.length === 0 ? (
-                            renderPrioritySelector()
-                        ) : (
-                            <div className="py-8 text-center animate-in fade-in zoom-in duration-500">
-                                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-primary/10 mb-4">
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-primary">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                </div>
-                                <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-1">Restaurant Fixed</h3>
-                                <p className="text-xs text-muted-foreground uppercase tracking-widest font-medium">The restaurant is fixed by the organizer. Personal preferences are disabled.</p>
-                            </div>
-                        )}
 
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Search venues..."
+                                                        value={searchTerm}
+                                                        onChange={(e) => handleSearch(e.target.value)}
+                                                        className="glass-input w-full p-3 rounded-xl text-sm font-medium"
+                                                    />
+
+                                                    {searchResults.length > 0 && (
+                                                        <div className="absolute z-50 w-full mt-2 bg-dropdown-bg border border-dropdown-border rounded-xl shadow-2xl max-h-48 overflow-y-auto backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200">
+                                                            {searchResults.map((place, idx) => (
+                                                                <button
+                                                                    key={idx}
+                                                                    type="button"
+                                                                    onClick={() => selectRestaurant(place)}
+                                                                    className="w-full text-left px-4 py-3 hover:bg-dropdown-hover border-b border-dropdown-border last:border-0 transition-colors"
+                                                                >
+                                                                    <p className="font-bold text-sm text-primary dark:text-white">{place.name}</p>
+                                                                    <p className="text-[10px] text-gray-500 dark:text-muted-foreground">{place.category?.[0]} • {place.price}</p>
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div className="py-8 text-center animate-in fade-in zoom-in duration-500">
+                                        <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-primary/10 mb-4">
+                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-primary">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                        </div>
+                                        <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-1">Restaurant Fixed</h3>
+                                        <p className="text-xs text-muted-foreground uppercase tracking-widest font-medium">The restaurant is fixed by the organizer. Personal preferences are disabled.</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         <button type="submit" className="glass-button w-full py-4 rounded-xl font-bold text-lg tracking-wide uppercase shadow-lg shadow-primary/10 mt-6 active:scale-[0.98] transition-all">
                             Submit Vote

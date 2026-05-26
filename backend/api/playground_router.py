@@ -70,24 +70,32 @@ def calculate_playground_score(request: CalculationRequest):
         # 2. Convert attendees to dict format expected by am
         attendee_datas = [a.dict() for a in request.attendees]
 
-        # 3. Calculate Dynamic Weights
-        dynamic_weights = am._calculate_dynamic_weights(attendee_datas)
+        # 3. Calculate average weights for display
+        avg_weights = {}
+        for d in attendee_datas:
+            pref = d.get('preference', {}) or {}
+            priorities = pref.get('priorities', [])
+            w = am._calculate_user_roc_weights(priorities)
+            for k, val in w.items():
+                avg_weights[k] = avg_weights.get(k, 0.0) + val
+        if attendee_datas:
+            for k in avg_weights:
+                avg_weights[k] = round(avg_weights[k] / len(attendee_datas), 2)
+        else:
+            avg_weights = {f: 1.0/7.0 for f in ['Price', 'Category', 'Vibe', 'Station', 'Rating', 'Parking', 'Alcohol']}
 
-        # 4. Summarize Preferences for Key and General
+        # 4. Filter Key and General Data
         key_persons_data = [d for d in attendee_datas if d.get('is_key_person', False)]
         general_persons_data = [d for d in attendee_datas if not d.get('is_key_person', False)]
         
-        key_summary = am._get_summary(key_persons_data, points_per_vote=10.0)
-        general_summary = am._get_summary(general_persons_data, points_per_vote=5.0)
         # 5. Prepare Restaurant Data
         res_row = request.restaurant.dict()
         
         # 6. Calculate Group Score
         final_score, combined_reason = am._calculate_weighted_score(
             res_row, 
-            key_summary, 
-            general_summary, 
-            weights=dynamic_weights
+            key_persons_data, 
+            general_persons_data
         )
         print('-' * 50)
         print(res_row)
@@ -96,20 +104,22 @@ def calculate_playground_score(request: CalculationRequest):
         # 7. Calculate Individual Scores for Detail
         individual_results = []
         for d in attendee_datas:
-            # Create a summary for just this one person
-            single_summary = am._get_summary([d], points_per_vote=10.0)
-            # Individual scores use the group's dynamic weights for consistency
-            p_score, p_reason = am.calculate_restaurant_score(single_summary, res_row, weights=dynamic_weights)
-            print(f"USER ID : {d['user_id']} | {single_summary} | {p_score} | {p_reason}")
+            pref = d.get('preference', {}) or {}
+            priorities = pref.get('priorities', [])
+            weights = am._calculate_user_roc_weights(priorities)
+            p_score, p_reason = am.calculate_restaurant_score(pref, res_row, weights=weights)
             individual_results.append({
                 "user_id": d["user_id"],
                 "score": p_score,
                 "breakdown": p_reason
             })
 
+        key_summary = am._get_summary(key_persons_data, points_per_vote=10.0)
+        general_summary = am._get_summary(general_persons_data, points_per_vote=5.0)
+
         return {
             "final_score": final_score,
-            "dynamic_weights": dynamic_weights,
+            "dynamic_weights": avg_weights,
             "reason_breakdown": combined_reason,
             "individual_results": individual_results,
             "summaries": {
