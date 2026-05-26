@@ -41,6 +41,7 @@ interface MeetingData {
     preferredRestaurant: any[];
     // Availability
     availability: any;
+    keyDecisionRatio?: number;
     // New Timing Fields
     timingMode?: 'period' | 'fixed';
     fixedDate?: string;
@@ -100,6 +101,10 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                 alert("Please enter a meeting topic.");
                 return;
             }
+            if (selectedAttendees.length < 2) {
+                alert("A meeting must have at least 2 participants (including yourself). Please invite at least one friend.");
+                return;
+            }
             if (timingMode === 'period') {
                 if (!startDate || !endDate) {
                     alert("Please select start and end dates.");
@@ -152,6 +157,19 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
 
     const [selectedAttendees, setSelectedAttendees] = useState<string[]>(initialUserId ? [initialUserId] : []);
     const [selectedKeyPersons, setSelectedKeyPersons] = useState<string[]>([]);
+    const [keyPersonRatio, setKeyPersonRatio] = useState<number>(70);
+
+    // Sync effect to keep organizer in selectedAttendees
+    useEffect(() => {
+        if (initialUserId && !selectedAttendees.includes(initialUserId)) {
+            setSelectedAttendees(prev => {
+                if (!prev.includes(initialUserId)) {
+                    return [...prev, initialUserId];
+                }
+                return prev;
+            });
+        }
+    }, [initialUserId]);
 
     // Organizer Preferences
     const [priceRange, setPriceRange] = useState<string>(''); // Default to empty for selection
@@ -477,6 +495,11 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
 
+        if (selectedAttendees.length < 2) {
+            alert("A meeting must have at least 2 participants (including yourself). Please invite at least one friend.");
+            return;
+        }
+
         // 1. Validation: Mandatory Location (Only if no fixed restaurants)
         const activeLocation = fixLocation || departureLocation;
         const activeCoords = fixLocationCoords || locationCoords;
@@ -546,6 +569,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
             locationCoordinates: locationCoords || undefined,
             preferredRestaurant,
             availability,
+            keyDecisionRatio: keyPersonRatio,
             // Timing Mode Fields
             timingMode,
             fixedDate,
@@ -945,6 +969,11 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                                         </button>
                                     ))}
                                 </div>
+                                {selectedAttendees.length < 2 && (
+                                    <p className="text-amber-400 text-[11px] font-bold mt-1 animate-pulse">
+                                        ⚠️ A meeting must have at least 2 participants (including yourself). Please invite at least one friend.
+                                    </p>
+                                )}
                             </div>
 
                             <div className="space-y-2">
@@ -966,6 +995,45 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                                     ))}
                                 </div>
                             </div>
+
+                            {selectedKeyPersons.length > 0 && (
+                                <div className="space-y-3 pt-4 p-4 bg-white/5 rounded-xl border border-white/5 animate-in fade-in duration-300">
+                                    <div className="flex justify-between items-center text-xs font-bold uppercase tracking-wider">
+                                        <span className="text-amber-500">Key Decision Makers: {keyPersonRatio}%</span>
+                                        <span className="text-primary">General Attendees: {100 - keyPersonRatio}%</span>
+                                    </div>
+                                    
+                                    <div className="relative w-full h-3 bg-white/10 rounded-full overflow-hidden flex">
+                                        {/* Progress bar visual split */}
+                                        <div 
+                                            className="h-full bg-amber-500 transition-all duration-300"
+                                            style={{ width: `${keyPersonRatio}%` }}
+                                        />
+                                        <div 
+                                            className="h-full bg-primary/70 transition-all duration-300"
+                                            style={{ width: `${100 - keyPersonRatio}%` }}
+                                        />
+                                    </div>
+
+                                    <div className="flex items-center gap-4">
+                                        <input
+                                            type="range"
+                                            min="70"
+                                            max="90"
+                                            step="5"
+                                            value={keyPersonRatio}
+                                            onChange={(e) => setKeyPersonRatio(parseInt(e.target.value))}
+                                            className="flex-1 h-1.5 rounded-lg appearance-none cursor-pointer bg-white/10 accent-amber-500 focus:outline-none"
+                                            style={{
+                                                background: `linear-gradient(to right, rgb(245, 158, 11) 0%, rgb(245, 158, 11) ${((keyPersonRatio - 70) / 20) * 100}%, rgba(255, 255, 255, 0.1) ${((keyPersonRatio - 70) / 20) * 100}%, rgba(255, 255, 255, 0.1) 100%)`
+                                            }}
+                                        />
+                                    </div>
+                                    <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium">
+                                        Adjust decision priority. Key person weight must be between 70% and 90%.
+                                    </p>
+                                </div>
+                            )}
                         </div>
 
                         {/* Meeting Location & Restaurants */}

@@ -10,7 +10,7 @@ import numpy as np
 from typing import Optional, Dict
 
 class Appointment_Manager(object):
-    def __init__(self, key_person, attendees, start_date, end_date, meal_time, meeting_duration_hours: int = 2, step_minutes: int = 30):
+    def __init__(self, key_person, attendees, start_date, end_date, meal_time, meeting_duration_hours: int = 2, step_minutes: int = 30, key_weight: float = 0.7):
         self.DAY_START = time(hour=10)
         self.DAY_END = time(hour=23)
         self.TZ = pytz.timezone("Asia/Bangkok")
@@ -24,6 +24,7 @@ class Appointment_Manager(object):
         self.start_date = start_date
         self.end_date = end_date
         self.meal_time = meal_time
+        self.key_weight = key_weight
 
         # Load stations
         try:
@@ -383,46 +384,7 @@ class Appointment_Manager(object):
             print(f"DEBUG: Processing date {date} with {len(avail_times)} slots")
             valid_times = []
             for avail_time in avail_times:
-                # 0. Check mandatory join constraint if enabled
-                kp_ratio = avail_time.get("key_persons_ratio", 0)
-                at_ratio = avail_time.get("attendee_ratio", 0)
-                
-                # if require_all_join:
-                #     # Filter out slots that don't have 100% participation
-                #     if kp_ratio < 1.0 or at_ratio < 1.0:
-                #         continue
-
-                # 1. Get Base Scores
-                points, meal_time_scores = self.__get_time_scoring(avail_time["start"], avail_time["end"], preferred_meal_time)
-                avail_time["points"] = points
-                avail_time["meal_time_scores"] = meal_time_scores
-                
-                # 2. Calculate Final Score Components (0-10 Scale)
-                # Normalized Availability (Weight: 50%)
-                raw_avail = ((kp_ratio * 0.7) + (at_ratio * 0.3)) / 10.0
-                norm_avail = 1 + (raw_avail / 10.0) * 9.0
-                
-                # Meal Preference Alignment (Weight: 30%)
-                duration_minutes = (avail_time["end"] - avail_time["start"]).total_seconds() / 60
-                steps = duration_minutes / 30
-                max_meal_score = steps * total_attendees if total_attendees > 0 else 1
-                
-                raw_meal = 0
-                if max_meal_score > 0:
-                    raw_meal = (meal_time_scores / max_meal_score) * 10.0
-                norm_meal = 1 + (raw_meal / 10.0) * 9.0
-                
-                # Time Quality / Standard Hours (Weight: 20%)
-                max_points = steps * 2
-                raw_quality = 0
-                if max_points > 0:
-                    raw_quality = (points / max_points) * 10.0
-                norm_quality = 1 + (raw_quality / 10.0) * 9.0
-                
-                # 3. Final Weighted Score
-                final_score = (0.7 * norm_avail) + (0.2 * norm_meal) + (0.1 * norm_quality)
-                
-                # 4. Compute Full Join vs Partial Join
+                # 1. Compute Full Join vs Partial Join first
                 slot_start = avail_time["start"]
                 slot_end = avail_time["end"]
                 slot_duration_minutes = (slot_end - slot_start).total_seconds() / 60
@@ -446,6 +408,60 @@ class Appointment_Manager(object):
                                 "overlap_minutes": overlap,
                                 "overlap_text": self.format_overlap_time(overlap)
                             })
+                
+                # Filter out slots with only 1 person if the meeting has > 1 attendee total
+                total_slot_participants = len(full_join) + len(partial_join)
+                if len(self.attendees) > 1 and total_slot_participants <= 1:
+                    continue
+
+                # Calculate adjusted key person and attendee ratios
+                full_kp_count = sum(1 for kp in self.key_person if kp in full_join)
+                full_at_count = sum(1 for at in self.attendees if at in full_join)
+                
+                partial_kp_weighted = 0.0
+                partial_at_weighted = 0.0
+                for p in partial_join:
+                    weight = p["overlap_minutes"] / slot_duration_minutes
+                    if p["user_id"] in self.key_person:
+                        partial_kp_weighted += weight
+                    if p["user_id"] in self.attendees:
+                        partial_at_weighted += weight
+                
+                adjusted_kp_count = full_kp_count + partial_kp_weighted
+                adjusted_at_count = full_at_count + partial_at_weighted
+                
+                kp_ratio = (adjusted_kp_count / len(self.key_person)) * 100.0 if len(self.key_person) > 0 else 0.0
+                at_ratio = (adjusted_at_count / len(self.attendees)) * 100.0 if len(self.attendees) > 0 else 0.0
+
+                # 2. Get Base Scores
+                points, meal_time_scores = self.__get_time_scoring(slot_start, slot_end, preferred_meal_time)
+                avail_time["points"] = points
+                avail_time["meal_time_scores"] = meal_time_scores
+                
+                # 3. Calculate Final Score Components (0-10 Scale)
+                # Normalized Availability (Weight: 50%)
+                raw_avail = ((kp_ratio * self.key_weight) + (at_ratio * (1.0 - self.key_weight))) / 10.0
+                norm_avail = 1 + (raw_avail / 10.0) * 9.0
+                
+                # Meal Preference Alignment (Weight: 30%)
+                duration_minutes = (slot_end - slot_start).total_seconds() / 60
+                steps = duration_minutes / 30
+                max_meal_score = steps * total_attendees if total_attendees > 0 else 1
+                
+                raw_meal = 0
+                if max_meal_score > 0:
+                    raw_meal = (meal_time_scores / max_meal_score) * 10.0
+                norm_meal = 1 + (raw_meal / 10.0) * 9.0
+                
+                # Time Quality / Standard Hours (Weight: 20%)
+                max_points = steps * 2
+                raw_quality = 0
+                if max_points > 0:
+                    raw_quality = (points / max_points) * 10.0
+                norm_quality = 1 + (raw_quality / 10.0) * 9.0
+                
+                # 4. Final Weighted Score
+                final_score = (0.7 * norm_avail) + (0.2 * norm_meal) + (0.1 * norm_quality)
                 
                 avail_time["full_join"] = full_join
                 avail_time["partial_join"] = partial_join
@@ -850,10 +866,10 @@ class Appointment_Manager(object):
         if general_summary['count'] > 0:
             score_gen, reason_gen = self.calculate_restaurant_score(general_summary, row, weights)
         
-        # Weights (Organizer Priority: 70% Key, 30% General)
+        # Weights (Organizer Priority: self.key_weight Key, 1.0 - self.key_weight General)
         final_score = 0
         if key_summary['count'] > 0 and general_summary['count'] > 0:
-            final_score = (score_key * 0.7) + (score_gen * 0.3)
+            final_score = (score_key * self.key_weight) + (score_gen * (1.0 - self.key_weight))
         elif key_summary['count'] > 0:
             final_score = score_key
         else:
@@ -869,7 +885,7 @@ class Appointment_Manager(object):
             
             # Calculate weighted score for this specific criterion
             if key_summary['count'] > 0 and general_summary['count'] > 0:
-                w_score = (k_score * 0.7) + (g_score * 0.3)
+                w_score = (k_score * self.key_weight) + (g_score * (1.0 - self.key_weight))
             elif key_summary['count'] > 0:
                 w_score = k_score
             else:

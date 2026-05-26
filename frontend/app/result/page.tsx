@@ -234,9 +234,12 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                 } else if (reasonObj && reasonObj[criterion]) {
                     const details = reasonObj[criterion];
                     const hasKeyPersons = (meetingData?.key_person?.length || 0) > 0;
+                    const keyRatioVal = meetingData?.initial_data?.key_decision_ratio !== undefined 
+                        ? (meetingData.initial_data.key_decision_ratio / 100.0) 
+                        : 0.7;
                     scoreToFilter = details.weighted_score ?? (
                         hasKeyPersons
-                            ? (details.key_ratio * 0.7 + details.attendee_ratio * 0.3)
+                            ? (details.key_ratio * keyRatioVal + details.attendee_ratio * (1.0 - keyRatioVal))
                             : (details.attendee_ratio || details.key_ratio || 0)
                     );
                 } else {
@@ -600,13 +603,13 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                         <button
                             key={tab.id}
                             onClick={() => setViewMode(tab.id as any)}
-                            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold transition-all ${viewMode === tab.id
+                            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl text-xs font-bold text-center transition-all ${viewMode === tab.id
                                 ? 'bg-primary text-white shadow-lg shadow-primary/25'
                                 : 'text-muted-foreground hover:text-foreground'
                                 }`}
                         >
-                            <span className="text-sm">{tab.icon}</span>
-                            {tab.label}
+                            <span className="text-sm hidden sm:inline">{tab.icon}</span>
+                            <span>{tab.label}</span>
                         </button>
                     ))}
                 </div>

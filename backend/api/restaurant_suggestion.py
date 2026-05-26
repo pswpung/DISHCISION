@@ -160,11 +160,13 @@ def generate_and_send_suggestion(meeting_id: UUID, db: Session):
                     final_score = slot_data.get("final_score", 0)
                     restaurants = slot_data.get("restaurants", [])
                     attendees_ids_list = slot_data.get("attendees", [])
+                    partial_join = slot_data.get("partial_join", [])
                 else:
                     # Fallback
                     final_score = 0
                     restaurants = slot_data if isinstance(slot_data, list) else []
                     attendees_ids_list = []
+                    partial_join = []
                 
                 # Map IDs to Picture URLs and Names
                 attendee_images = []
@@ -183,11 +185,12 @@ def generate_and_send_suggestion(meeting_id: UUID, db: Session):
                         "final_score": final_score,
                         "restaurants": restaurants,
                         "attendees": attendee_images,
-                        "attendee_names": attendee_names
+                        "attendee_names": attendee_names,
+                        "partial_join": partial_join
                     })
 
-        # Sort by final score descending, then by attendee count descending as tiebreaker
-        sorted_slots = sorted(all_slots, key=lambda x: (x['final_score'], len(x.get('attendees', []))), reverse=True)
+        # Sort by final score descending, then by attendee count descending, then by partial join count descending
+        sorted_slots = sorted(all_slots, key=lambda x: (x['final_score'], len(x.get('attendees', [])), len(x.get('partial_join', []))), reverse=True)
         top_slots = sorted_slots[:10] # Top 10 for Carousel
         
         # Global Discovery Ranking

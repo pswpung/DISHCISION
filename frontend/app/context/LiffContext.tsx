@@ -20,9 +20,29 @@ export const LiffProvider = ({ children }: { children: ReactNode }) => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      // LIFF SDK rejections can bubble up as standard Event objects in local development
+      if (
+        event.reason &&
+        (event.reason instanceof Event ||
+         event.reason.toString() === '[object Event]' ||
+         (event.reason.message && event.reason.message.includes('LIFF')))
+      ) {
+        console.warn('Suppressed unhandled rejection (likely LIFF SDK internal load failure):', event.reason);
+        event.preventDefault();
+      }
+    };
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+    return () => {
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    };
+  }, []);
+
+  useEffect(() => {
     const initLiff = async () => {
       try {
-        await liff.init({ liffId: '2008419367-SeVLxzHP' });
+        const liffId = process.env.NEXT_PUBLIC_LIFF_ID || '2010074250-9aD5NH9x';
+        await liff.init({ liffId });
         setLiffObject(liff);
         if (liff.isLoggedIn()) {
           setIsLoggedIn(true);

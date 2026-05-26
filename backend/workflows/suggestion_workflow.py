@@ -20,12 +20,14 @@ class SuggestionWorkflows:
             "min_attendees": 1
         }
         
+        key_decision_ratio = initial_data.get("key_decision_ratio", 70) if initial_data else 70
         appointments_manager = Appointment_Manager(
             key_person = [attendee.get("user_id") for attendee in attendee_datas if attendee.get("is_key_person", False)],
             attendees = [attendee.get("user_id") for attendee in attendee_datas],
             start_date = initial_data.get("start_date"),
             end_date = initial_data.get("end_date"),
-            meal_time = initial_data.get("meal_time")
+            meal_time = initial_data.get("meal_time"),
+            key_weight = float(key_decision_ratio) / 100.0
         )
         
         # SECTION: SUGGEST APPOINTMENT TIME

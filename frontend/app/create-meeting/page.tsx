@@ -131,6 +131,7 @@ const CreateMeetingPage = () => {
           meal_time: data.mealTime,
           attendees: data.attendees.map((a: any) => a.userId),
           key_person: data.keyPersons.map((k: any) => k.userId),
+          key_decision_ratio: data.keyDecisionRatio || 70,
           fixed_restaurants: data.fixedRestaurants || [],
           // Location Data
           fix_location: data.fixLocation || null,
