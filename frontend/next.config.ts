@@ -50,17 +50,17 @@ const nextConfig: NextConfig = {
 
   async headers() {
     return [
-      // All pages: no-cache HTML (always re-fetch the page, never serve stale HTML)
+      // All pages: revalidate HTML on each load (prevents stale content)
+      // Use no-cache (not no-store) so iOS LIFF's redirect dance can still use
+      // cached responses during navigation — no-store breaks LIFF on iOS/WKWebView.
+      // X-Frame-Options is intentionally omitted: LIFF renders in WKWebView from
+      // LINE's origin, so SAMEORIGIN would block it on iOS.
       {
         source: '/:path*',
         headers: [
           {
             key: 'Cache-Control',
-            value: 'no-cache, no-store, must-revalidate',
-          },
-          {
-            key: 'X-Frame-Options',
-            value: 'SAMEORIGIN',
+            value: 'no-cache, must-revalidate',
           },
         ],
       },

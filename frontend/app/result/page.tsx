@@ -145,9 +145,12 @@ const GroupDashboardView = ({ groupId }: { groupId: string }) => {
                                     <p className="text-sm text-muted-foreground">📅 {meeting.date}</p>
                                 </div>
                                 <div className="text-right">
-                                    <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${meeting.status === 'open' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                                    <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${
+                                        meeting.status === 'open'
+                                            ? 'bg-green-500/20 text-green-400'
+                                            : 'bg-white/10 text-muted-foreground'
                                         }`}>
-                                        {meeting.status}
+                                        {meeting.status === 'open' ? 'Vote Now' : 'Closed'}
                                     </span>
                                     <div className="text-muted-foreground text-xs mt-1">Tap to view</div>
                                 </div>
@@ -214,7 +217,7 @@ const SpinWheel = ({ options, targetAngle, spinAt, isSpinning, onComplete }: Spi
             ctx.strokeStyle = 'rgba(255,255,255,0.1)';
             ctx.lineWidth = 2;
             ctx.stroke();
-            
+
             ctx.fillStyle = 'rgba(255,255,255,0.4)';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
@@ -333,7 +336,9 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
     const [suggestionsMap, setSuggestionsMap] = useState<any>(null);
     const [preferredRestaurants, setPreferredRestaurants] = useState<any[]>([]);
     const [discoveryRestaurants, setDiscoveryRestaurants] = useState<any[]>([]);
-    const [viewMode, setViewMode] = useState<'slots' | 'favorites' | 'discovery' | 'decision'>('slots');
+    const [viewMode, setViewMode] = useState<'slots' | 'restaurants' | 'decision'>('decision');
+    // Sub-tab inside the Restaurants tab: 'friends' (suggested by attendees) | 'suggested' (by system)
+    const [restaurantSubTab, setRestaurantSubTab] = useState<'friends' | 'suggested'>('friends');
     const [meetingData, setMeetingData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [status, setStatus] = useState('open'); // 'open' | 'closed'
@@ -366,11 +371,11 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
 
     const liveVenueCandidates = useMemo(() => {
         let list = [...preferredRestaurants];
-        
+
         const votedNames = new Set(Object.keys(votingState.restaurant_preferences || {}).filter(name => {
             return (votingState.restaurant_preferences[name]?.length || 0) > 0;
         }));
-        
+
         votedNames.forEach(name => {
             if (!list.some(r => r.name === name)) {
                 const found = discoveryRestaurants.find(r => r.name === name);
@@ -386,7 +391,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                 }
             }
         });
-        
+
         return list.map(place => {
             const prefCount = votingState.restaurant_preferences?.[place.name]?.length || 0;
             const vetoCount = votingState.restaurant_vetoes?.[place.name]?.length || 0;
@@ -410,7 +415,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
     // Pre-fill confirmed options from spin results or database
     useEffect(() => {
         if (votingState.wheel_state?.status === 'spinning') return;
-        
+
         if (votingState.wheel_state?.target_type === 'time' && votingState.wheel_state?.landed_key) {
             setConfirmedTimeSlot(votingState.wheel_state.landed_key);
         }
@@ -472,8 +477,8 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                 } else if (reasonObj && reasonObj[criterion]) {
                     const details = reasonObj[criterion];
                     const hasKeyPersons = (meetingData?.key_person?.length || 0) > 0;
-                    const keyRatioVal = meetingData?.initial_data?.key_decision_ratio !== undefined 
-                        ? (meetingData.initial_data.key_decision_ratio / 100.0) 
+                    const keyRatioVal = meetingData?.initial_data?.key_decision_ratio !== undefined
+                        ? (meetingData.initial_data.key_decision_ratio / 100.0)
                         : 0.7;
                     scoreToFilter = details.weighted_score ?? (
                         hasKeyPersons
@@ -495,10 +500,10 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
     }, [suggestions, filterRestaurants]);
 
     const visibleSuggestions = useMemo(() => {
-        return viewMode === 'discovery'
+        return viewMode === 'restaurants' && restaurantSubTab === 'suggested'
             ? filteredSuggestions.slice(0, visibleDiscoveryCount)
             : filteredSuggestions;
-    }, [filteredSuggestions, viewMode, visibleDiscoveryCount]);
+    }, [filteredSuggestions, viewMode, restaurantSubTab, visibleDiscoveryCount]);
 
     const [slotSortKey, setSlotSortKey] = useState<'score' | 'attendees'>('score');
 
@@ -655,14 +660,16 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
             } else {
                 setSuggestions([]);
             }
-        } else if (viewMode === 'favorites') {
-            setSuggestions(preferredRestaurants);
-        } else if (viewMode === 'discovery') {
-            setSuggestions(discoveryRestaurants);
+        } else if (viewMode === 'restaurants') {
+            if (restaurantSubTab === 'friends') {
+                setSuggestions(preferredRestaurants);
+            } else {
+                setSuggestions(discoveryRestaurants);
+            }
         } else if (viewMode === 'decision' && suggestionsMap) {
             let activeDate = selectedDate;
             let activeTime = selectedTime;
-            
+
             if ((meetingData?.initial_data?.timing_mode || 'period') === 'fixed') {
                 activeDate = meetingData?.initial_data?.fixed_date || '';
                 activeTime = meetingData?.initial_data?.fixed_start_time || '';
@@ -676,7 +683,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                 activeDate = sortedSlots[0].date;
                 activeTime = sortedSlots[0].time;
             }
-            
+
             if (activeDate && activeTime) {
                 const dateSlots = suggestionsMap[activeDate];
                 if (dateSlots && dateSlots[activeTime]) {
@@ -695,7 +702,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                 setSuggestions([]);
             }
         }
-    }, [suggestionsMap, selectedDate, selectedTime, viewMode, preferredRestaurants, discoveryRestaurants, confirmedTimeSlot, sortedSlots, meetingData]);
+    }, [suggestionsMap, selectedDate, selectedTime, viewMode, restaurantSubTab, preferredRestaurants, discoveryRestaurants, confirmedTimeSlot, sortedSlots, meetingData]);
 
     useEffect(() => {
         if (scrollRef.current) {
@@ -758,7 +765,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                 const data = await apiService.getMeeting(meetingId, currentUserId);
                 setMeetingData(data);
                 setStatus(data.initial_data?.status || 'open');
-                
+
                 // If suggestionsMap is null, check if we need to load full suggestions
                 if (!suggestionsMap) {
                     const attendees = await apiService.getMeetingAttendees(meetingId);
@@ -1007,16 +1014,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
 
     return (
         <div className="h-[100dvh] flex flex-col bg-background overflow-hidden">
-            <div className="flex-none p-4 pb-2 z-10 bg-background/95 backdrop-blur-md border-b border-white/5 shadow-sm">
-                <div className="mb-2">
-                    <button
-                        onClick={() => router.push(groupId ? `/result?group_id=${groupId}` : '/')}
-                        className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
-                    >
-                        ← Back to Dashboard
-                    </button>
-                </div>
-
+        <div className="flex-none p-4 pb-2 z-10 bg-background/95 backdrop-blur-md border-b border-white/5 shadow-sm">
                 <header className="space-y-4 mb-4">
                     <div className="flex items-center justify-between">
                         <h1 className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">
@@ -1080,19 +1078,18 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
 
                 {/* View Mode Selector */}
                 <div className="flex p-1 bg-white/5 rounded-2xl border border-white/5">
-                    {[
-                        { id: 'slots', label: 'Slots' },
-                        { id: 'favorites', label: 'Friends' },
-                        { id: 'discovery', label: 'Discovery' },
-                        { id: 'decision', label: 'Decision' }
-                    ].filter(tab => {
+                    {((): { id: string; label: string }[] => {
                         const mode = meetingData?.initial_data?.timing_mode?.toLowerCase() || 'period';
                         const allowSuggest = meetingData?.initial_data?.allow_system_suggest !== false;
+                        const isFixedRestaurant = (meetingData?.initial_data?.fixed_restaurants?.length || 0) > 0;
+                        const hasRestaurants = (preferredRestaurants.length > 0) || (allowSuggest && discoveryRestaurants.length > 0);
 
-                        if (tab.id === 'slots' && mode === 'fixed') return false;
-                        if (tab.id === 'discovery' && !allowSuggest) return false;
-                        return true;
-                    }).map((tab) => (
+                        const tabs: { id: string; label: string }[] = [];
+                        if (mode !== 'fixed') tabs.push({ id: 'slots', label: 'Slots' });
+                        if (!isFixedRestaurant && hasRestaurants) tabs.push({ id: 'restaurants', label: 'Restaurants' });
+                        tabs.push({ id: 'decision', label: 'Decision' });
+                        return tabs;
+                    })().map((tab) => (
                         <button
                             key={tab.id}
                             onClick={() => setViewMode(tab.id as any)}
@@ -1264,21 +1261,19 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                         <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Sort by</span>
                         <button
                             onClick={() => setSlotSortKey('score')}
-                            className={`px-3 py-1.5 rounded-full text-[10px] font-bold transition-all ${
-                                slotSortKey === 'score'
-                                    ? 'bg-primary text-white shadow-md shadow-primary/20'
-                                    : 'bg-white/5 text-muted-foreground hover:bg-white/10 border border-white/10'
-                            }`}
+                            className={`px-3 py-1.5 rounded-full text-[10px] font-bold transition-all ${slotSortKey === 'score'
+                                ? 'bg-primary text-white shadow-md shadow-primary/20'
+                                : 'bg-white/5 text-muted-foreground hover:bg-white/10 border border-white/10'
+                                }`}
                         >
                             🏆 Score
                         </button>
                         <button
                             onClick={() => setSlotSortKey('attendees')}
-                            className={`px-3 py-1.5 rounded-full text-[10px] font-bold transition-all ${
-                                slotSortKey === 'attendees'
-                                    ? 'bg-primary text-white shadow-md shadow-primary/20'
-                                    : 'bg-white/5 text-muted-foreground hover:bg-white/10 border border-white/10'
-                            }`}
+                            className={`px-3 py-1.5 rounded-full text-[10px] font-bold transition-all ${slotSortKey === 'attendees'
+                                ? 'bg-primary text-white shadow-md shadow-primary/20'
+                                : 'bg-white/5 text-muted-foreground hover:bg-white/10 border border-white/10'
+                                }`}
                         >
                             👥 Attendees
                         </button>
@@ -1305,6 +1300,39 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                 </div>
             )} */}
 
+            {/* Restaurants sub-tab switcher */}
+            {viewMode === 'restaurants' && (() => {
+                const hasFriends = preferredRestaurants.length > 0;
+                const hasSuggested = (meetingData?.initial_data?.allow_system_suggest !== false) && discoveryRestaurants.length > 0;
+                const showSubTabs = hasFriends && hasSuggested;
+                return showSubTabs ? (
+                    <div className="flex-none px-4 pt-3">
+                        <div className="flex p-0.5 bg-white/5 rounded-xl border border-white/5">
+                            <button
+                                onClick={() => setRestaurantSubTab('friends')}
+                                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
+                                    restaurantSubTab === 'friends'
+                                        ? 'bg-white/10 text-foreground'
+                                        : 'text-muted-foreground hover:text-foreground'
+                                }`}
+                            >
+                                Friends ({preferredRestaurants.length})
+                            </button>
+                            <button
+                                onClick={() => setRestaurantSubTab('suggested')}
+                                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
+                                    restaurantSubTab === 'suggested'
+                                        ? 'bg-white/10 text-foreground'
+                                        : 'text-muted-foreground hover:text-foreground'
+                                }`}
+                            >
+                                Suggested ({discoveryRestaurants.length})
+                            </button>
+                        </div>
+                    </div>
+                ) : null;
+            })()}
+
             <div ref={scrollRef} className="flex-1 overflow-y-auto pb-8 no-scrollbar scroll-smooth">
                 {/* Sticky Results Header */}
                 {viewMode !== 'decision' && suggestions.length > 0 && filteredSuggestions.length > 0 && (
@@ -1324,26 +1352,26 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                 )}
 
                 <div className="px-4 pt-4 space-y-4">
-                    {suggestions.length === 0 && viewMode !== 'slots' && viewMode !== 'decision' && (
+                    {suggestions.length === 0 && viewMode === 'restaurants' && (
                         <div className="max-w-md mx-auto text-center py-16 px-6 glass-panel rounded-3xl border border-white/5 animate-in fade-in zoom-in duration-700">
                             <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-6 border border-white/10 shadow-inner">
                                 <span className="text-4xl">🍽️</span>
                             </div>
                             <h3 className="text-lg font-bold text-foreground mb-2">
-                                {viewMode === 'favorites'
-                                    ? 'No Friend Recommends'
-                                    : 'No Discovery Results'}
+                                {restaurantSubTab === 'friends'
+                                    ? 'No Friend Suggestions'
+                                    : 'No Suggested Restaurants'}
                             </h3>
                             <p className="text-sm text-muted-foreground leading-relaxed">
-                                {viewMode === 'favorites'
-                                    ? 'It looks like no one has suggested a specific restaurant for this meeting yet.'
-                                    : 'Our discovery engine is still warming up. Try checking back after more members have voted.'}
+                                {restaurantSubTab === 'friends'
+                                    ? 'No one has suggested a specific restaurant yet.'
+                                    : 'System recommendations are still being generated. Check back soon.'}
                             </p>
                             <button
-                                onClick={() => setViewMode('slots')}
+                                onClick={() => setViewMode('decision')}
                                 className="mt-8 text-xs font-bold text-primary uppercase tracking-widest hover:underline"
                             >
-                                Explore other options
+                                Go to Decision
                             </button>
                         </div>
                     )}
@@ -1351,6 +1379,32 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                     <div className="max-w-lg mx-auto space-y-4">
                         {viewMode === 'decision' ? (
                             <div className="space-y-6 animate-in fade-in duration-300">
+                                {/* Guidance banner — shown when user hasn't voted on anything yet */}
+                                {status === 'open' && (() => {
+                                    const hasVotedTime = Object.values(votingState.time_votes || {}).some(
+                                        (voters: any) => voters.includes(currentUserId)
+                                    );
+                                    const hasVotedRestaurant =
+                                        (votingState.restaurant_preferences?.[currentUserId]?.length || 0) > 0 ||
+                                        Object.values(votingState.restaurant_vetoes || {}).some(
+                                            (voters: any) => voters.includes(currentUserId)
+                                        );
+                                    const showBanner = !hasVotedTime && !hasVotedRestaurant;
+                                    return showBanner ? (
+                                        <div className="bg-primary/10 border border-primary/20 rounded-2xl p-4 space-y-1">
+                                            <p className="text-xs font-black text-foreground uppercase tracking-wider">What to do next</p>
+                                            <p className="text-xs text-muted-foreground leading-relaxed">
+                                                {(meetingData?.initial_data?.timing_mode || 'period') !== 'fixed' && (
+                                                    <>
+                                                        Go to <button onClick={() => setViewMode('slots')} className="text-primary font-bold hover:underline">Slots</button> to vote for your preferred time, then{' '}
+                                                    </>
+                                                )}
+                                                Go to <button onClick={() => setViewMode('restaurants')} className="text-primary font-bold hover:underline">Restaurants</button> to mark the ones you like or want to avoid.
+                                            </p>
+                                        </div>
+                                    ) : null;
+                                })()}
+
                                 {/* Final Decision Ticket (if closed) */}
                                 {status === 'closed' && votingState.final_decision && (
                                     <div className="px-4 pt-2 max-w-lg mx-auto">
@@ -1358,13 +1412,13 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                             {/* Decorative ticket punches */}
                                             <div className="absolute -left-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-[#09090b] rounded-full border border-white/5" />
                                             <div className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-[#09090b] rounded-full border border-white/5" />
-                                            
+
                                             <div className="text-3xl animate-bounce">🎉</div>
                                             <div>
                                                 <h2 className="text-lg font-black text-white uppercase tracking-tight">Meeting Plan Locked!</h2>
                                                 <p className="text-[10px] text-white/70 uppercase tracking-widest font-black mt-1">Confirmed details sent to LINE</p>
                                             </div>
-                                            
+
                                             <div className="border-t border-dashed border-white/30 pt-4 space-y-3 text-left">
                                                 <div>
                                                     <span className="text-[9px] uppercase font-black text-white/50 tracking-widest block">Date & Time Slot</span>
@@ -1397,11 +1451,10 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                 </div>
                                                 <button
                                                     onClick={handleToggleReady}
-                                                    className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 duration-200 ${
-                                                        votingState.ready_users?.includes(currentUserId)
-                                                            ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                                                            : 'bg-primary text-white shadow-lg shadow-primary/20'
-                                                    }`}
+                                                    className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 duration-200 ${votingState.ready_users?.includes(currentUserId)
+                                                        ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                                                        : 'bg-primary text-white shadow-lg shadow-primary/20'
+                                                        }`}
                                                 >
                                                     {votingState.ready_users?.includes(currentUserId) ? '✓ Ready' : 'I\'m Ready'}
                                                 </button>
@@ -1447,21 +1500,19 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                     <div className="flex gap-2 p-1 bg-white/5 rounded-xl border border-white/5 text-[11px]">
                                                         <button
                                                             onClick={() => handleSetDecisionMethod('time', 'majority')}
-                                                            className={`flex-1 py-1.5 rounded-lg font-bold transition-all ${
-                                                                votingState.time_decision_method !== 'wheel'
-                                                                    ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-[1.02]'
-                                                                    : 'text-muted-foreground hover:text-foreground'
-                                                            }`}
+                                                            className={`flex-1 py-1.5 rounded-lg font-bold transition-all ${votingState.time_decision_method !== 'wheel'
+                                                                ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-[1.02]'
+                                                                : 'text-muted-foreground hover:text-foreground'
+                                                                }`}
                                                         >
                                                             Majority Vote
                                                         </button>
                                                         <button
                                                             onClick={() => handleSetDecisionMethod('time', 'wheel')}
-                                                            className={`flex-1 py-1.5 rounded-lg font-bold transition-all ${
-                                                                votingState.time_decision_method === 'wheel'
-                                                                    ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-[1.02]'
-                                                                    : 'text-muted-foreground hover:text-foreground'
-                                                            }`}
+                                                            className={`flex-1 py-1.5 rounded-lg font-bold transition-all ${votingState.time_decision_method === 'wheel'
+                                                                ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-[1.02]'
+                                                                : 'text-muted-foreground hover:text-foreground'
+                                                                }`}
                                                         >
                                                             Spin Wheel
                                                         </button>
@@ -1475,7 +1526,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                         <div className="space-y-1">
                                                             <p className="font-black uppercase tracking-wider">Tie Detected!</p>
                                                             <p className="leading-relaxed opacity-90">
-                                                                There is a tie between the top time slot options ({timeSlotTies.map(s => `${s.date.slice(5)} ${s.time}`).join(' vs ')}). 
+                                                                There is a tie between the top time slot options ({timeSlotTies.map(s => `${s.date.slice(5)} ${s.time}`).join(' vs ')}).
                                                                 Discuss with your friends to decide, or let the organizer use the **Spin Wheel** to make the final decision.
                                                             </p>
                                                         </div>
@@ -1537,11 +1588,10 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                                         onClick={() => {
                                                                             if (isOrganizer) setConfirmedTimeSlot(key);
                                                                         }}
-                                                                        className={`flex justify-between items-center p-3 rounded-2xl border text-xs cursor-pointer transition-all ${
-                                                                            confirmedTimeSlot === key
-                                                                                ? 'bg-purple-500/20 border-purple-500/40 text-purple-400'
-                                                                                : 'bg-white/5 border-white/5 hover:border-white/10'
-                                                                        }`}
+                                                                        className={`flex justify-between items-center p-3 rounded-2xl border text-xs cursor-pointer transition-all ${confirmedTimeSlot === key
+                                                                            ? 'bg-purple-500/20 border-purple-500/40 text-purple-400'
+                                                                            : 'bg-white/5 border-white/5 hover:border-white/10'
+                                                                            }`}
                                                                     >
                                                                         <div className="flex items-center gap-2">
                                                                             <span>{isTop ? '🏆' : '⏰'}</span>
@@ -1580,21 +1630,19 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                 <div className="flex gap-2 p-1 bg-white/5 rounded-xl border border-white/5 text-[11px]">
                                                     <button
                                                         onClick={() => handleSetDecisionMethod('restaurant', 'list')}
-                                                        className={`flex-1 py-1.5 rounded-lg font-bold transition-all ${
-                                                            votingState.restaurant_decision_method !== 'wheel'
-                                                                ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-[1.02]'
-                                                                : 'text-muted-foreground hover:text-foreground'
-                                                        }`}
+                                                        className={`flex-1 py-1.5 rounded-lg font-bold transition-all ${votingState.restaurant_decision_method !== 'wheel'
+                                                            ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-[1.02]'
+                                                            : 'text-muted-foreground hover:text-foreground'
+                                                            }`}
                                                     >
                                                         Scoring List
                                                     </button>
                                                     <button
                                                         onClick={() => handleSetDecisionMethod('restaurant', 'wheel')}
-                                                        className={`flex-1 py-1.5 rounded-lg font-bold transition-all ${
-                                                            votingState.restaurant_decision_method === 'wheel'
-                                                                ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-[1.02]'
-                                                                : 'text-muted-foreground hover:text-foreground'
-                                                        }`}
+                                                        className={`flex-1 py-1.5 rounded-lg font-bold transition-all ${votingState.restaurant_decision_method === 'wheel'
+                                                            ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-[1.02]'
+                                                            : 'text-muted-foreground hover:text-foreground'
+                                                            }`}
                                                     >
                                                         Spin Wheel
                                                     </button>
@@ -1608,7 +1656,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                     <div className="space-y-1">
                                                         <p className="font-black uppercase tracking-wider">Tie Detected!</p>
                                                         <p className="leading-relaxed opacity-90">
-                                                            There is a tie between the top venues ({restaurantTies.map(r => r.name).join(' vs ')}). 
+                                                            There is a tie between the top venues ({restaurantTies.map(r => r.name).join(' vs ')}).
                                                             Discuss with your friends to decide, or let the organizer use the **Spin Wheel** to make the final decision.
                                                         </p>
                                                     </div>
@@ -1702,11 +1750,10 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                                     onClick={() => {
                                                                         if (isOrganizer) setConfirmedRestaurant(place.name);
                                                                     }}
-                                                                    className={`flex justify-between items-center p-3 rounded-2xl border text-xs cursor-pointer transition-all ${
-                                                                        confirmedRestaurant === place.name
-                                                                            ? 'bg-purple-500/20 border-purple-500/40 text-purple-400'
-                                                                            : 'bg-white/5 border-white/5 hover:border-white/10'
-                                                                    }`}
+                                                                    className={`flex justify-between items-center p-3 rounded-2xl border text-xs cursor-pointer transition-all ${confirmedRestaurant === place.name
+                                                                        ? 'bg-purple-500/20 border-purple-500/40 text-purple-400'
+                                                                        : 'bg-white/5 border-white/5 hover:border-white/10'
+                                                                        }`}
                                                                 >
                                                                     <div className="flex items-center gap-2 min-w-0">
                                                                         <span>{isTop ? '🥇' : i === 1 ? '🥈' : '🥉'}</span>
@@ -1784,19 +1831,17 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                     {status === 'open' && (
                                                         <button
                                                             onClick={(e) => handleToggleTimeVote(slot.date, slot.time, e)}
-                                                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[9px] font-black uppercase tracking-wider transition-all active:scale-95 duration-200 ${
-                                                                votingState.time_votes?.[`${slot.date}_${slot.time}`]?.includes(currentUserId)
-                                                                    ? 'bg-purple-500/20 text-purple-400 border-purple-500/40 shadow-sm'
-                                                                    : 'bg-white/5 text-muted-foreground border-white/10 hover:border-white/20'
-                                                            }`}
+                                                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[9px] font-black uppercase tracking-wider transition-all active:scale-95 duration-200 ${votingState.time_votes?.[`${slot.date}_${slot.time}`]?.includes(currentUserId)
+                                                                ? 'bg-purple-500/20 text-purple-400 border-purple-500/40 shadow-sm'
+                                                                : 'bg-white/5 text-muted-foreground border-white/10 hover:border-white/20'
+                                                                }`}
                                                         >
                                                             <span>👍 {votingState.time_votes?.[`${slot.date}_${slot.time}`]?.includes(currentUserId) ? 'Voted' : 'Vote'}</span>
                                                             {(votingState.time_votes?.[`${slot.date}_${slot.time}`]?.length || 0) > 0 && (
-                                                                <span className={`text-[8px] font-black px-1 rounded-full ${
-                                                                    votingState.time_votes?.[`${slot.date}_${slot.time}`]?.includes(currentUserId)
-                                                                        ? 'bg-purple-500/30 text-purple-200'
-                                                                        : 'bg-white/10 text-muted-foreground'
-                                                                }`}>
+                                                                <span className={`text-[8px] font-black px-1 rounded-full ${votingState.time_votes?.[`${slot.date}_${slot.time}`]?.includes(currentUserId)
+                                                                    ? 'bg-purple-500/30 text-purple-200'
+                                                                    : 'bg-white/10 text-muted-foreground'
+                                                                    }`}>
                                                                     {votingState.time_votes?.[`${slot.date}_${slot.time}`]?.length}
                                                                 </span>
                                                             )}
@@ -1876,44 +1921,44 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
 
                                             {/* Suggested Restaurants Section – collapsible */}
                                             {filteredRestaurants.length > 0 && (
-                                            <details className="pt-2 border-t border-white/5 group">
-                                                <summary className="flex items-center justify-between cursor-pointer list-none py-1">
-                                                    <h4 className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">
-                                                        🍽️ Suggested Restaurants ({filteredRestaurants.length})
-                                                    </h4>
-                                                    <span className="text-[10px] text-muted-foreground group-open:rotate-180 transition-transform">▼</span>
-                                                </summary>
-                                                <div className="grid gap-2 mt-2">
-                                                    {filteredRestaurants.map((place: any) => (
-                                                        <a
-                                                            key={place.id}
-                                                            href={`https://${place.wongnai_link}`}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="flex items-center justify-between p-3 rounded-2xl bg-white/5 border border-white/5 hover:border-primary/30 hover:bg-white/10 transition-all group"
-                                                        >
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="text-lg">🍱</span>
-                                                                <div className="text-left">
-                                                                    <span className="text-xs font-bold text-foreground group-hover:text-primary transition-colors">
-                                                                        {place.name}
-                                                                    </span>
-                                                                    {place.category && (
-                                                                        <p className="text-[9px] text-muted-foreground">
-                                                                            {Array.isArray(place.category) ? place.category.slice(0, 2).join(', ') : ''}
-                                                                        </p>
-                                                                    )}
+                                                <details className="pt-2 border-t border-white/5 group">
+                                                    <summary className="flex items-center justify-between cursor-pointer list-none py-1">
+                                                        <h4 className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">
+                                                            🍽️ Suggested Restaurants ({filteredRestaurants.length})
+                                                        </h4>
+                                                        <span className="text-[10px] text-muted-foreground group-open:rotate-180 transition-transform">▼</span>
+                                                    </summary>
+                                                    <div className="grid gap-2 mt-2">
+                                                        {filteredRestaurants.map((place: any) => (
+                                                            <a
+                                                                key={place.id}
+                                                                href={`https://${place.wongnai_link}`}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="flex items-center justify-between p-3 rounded-2xl bg-white/5 border border-white/5 hover:border-primary/30 hover:bg-white/10 transition-all group"
+                                                            >
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-lg">🍱</span>
+                                                                    <div className="text-left">
+                                                                        <span className="text-xs font-bold text-foreground group-hover:text-primary transition-colors">
+                                                                            {place.name}
+                                                                        </span>
+                                                                        {place.category && (
+                                                                            <p className="text-[9px] text-muted-foreground">
+                                                                                {Array.isArray(place.category) ? place.category.slice(0, 2).join(', ') : ''}
+                                                                            </p>
+                                                                        )}
+                                                                    </div>
                                                                 </div>
-                                                            </div>
-                                                            <div className="text-right">
-                                                                <span className="text-[10px] font-black text-primary">
-                                                                    Match: {typeof place.score === 'number' ? parseFloat(place.score.toFixed(1)) : place.score}/100
-                                                                </span>
-                                                            </div>
-                                                        </a>
-                                                    ))}
-                                                </div>
-                                            </details>
+                                                                <div className="text-right">
+                                                                    <span className="text-[10px] font-black text-primary">
+                                                                        Match: {typeof place.score === 'number' ? parseFloat(place.score.toFixed(1)) : place.score}/100
+                                                                    </span>
+                                                                </div>
+                                                            </a>
+                                                        ))}
+                                                    </div>
+                                                </details>
                                             )}
                                         </div>
                                     );
@@ -1954,15 +1999,14 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                             <div
                                                 key={place.id}
                                                 onClick={() => window.open(`https://${place.wongnai_link}`, '_blank', 'noopener,noreferrer')}
-                                                className={`block glass-panel overflow-hidden rounded-2xl animate-in slide-in-from-bottom-4 duration-500 shadow-lg border transition-all cursor-pointer group ${
-                                                    vetoCount > 0
-                                                        ? 'opacity-60 saturate-[0.2] border-red-500/10'
-                                                        : 'border-white/5 hover:border-primary/40 hover:bg-white/5'
-                                                }`}
+                                                className={`block glass-panel overflow-hidden rounded-2xl animate-in slide-in-from-bottom-4 duration-500 shadow-lg border transition-all cursor-pointer group ${vetoCount > 0
+                                                    ? 'opacity-60 saturate-[0.2] border-red-500/10'
+                                                    : 'border-white/5 hover:border-primary/40 hover:bg-white/5'
+                                                    }`}
                                                 style={{ animationDelay: `${index * 100}ms` }}
                                             >
                                                 <div className="h-32 w-full relative bg-gradient-to-r from-gray-700 to-gray-600">
-                                                    {viewMode === 'discovery' && index < 3 && (
+                                                    {viewMode === 'restaurants' && restaurantSubTab === 'suggested' && index < 3 && (
                                                         <div className="absolute top-2 left-2 w-10 h-10 flex items-center justify-center bg-black/40 backdrop-blur-md rounded-full border border-white/10 z-20 shadow-xl overflow-hidden group/medal">
                                                             <div className={`text-2xl ${index === 0 ? 'animate-bounce-slow' : ''}`}>
                                                                 {index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}
@@ -2098,18 +2142,16 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                                     e.stopPropagation();
                                                                     handleToggleTailIn(place.name, e);
                                                                 }}
-                                                                className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-black uppercase tracking-wider transition-all active:scale-95 duration-200 ${
-                                                                    isPreferredByMe
-                                                                        ? 'bg-rose-500/20 text-rose-400 border-rose-500/40 shadow-md shadow-rose-500/10'
-                                                                        : 'bg-white/5 text-muted-foreground border-white/5 hover:border-white/10 hover:text-foreground'
-                                                                }`}
+                                                                className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-black uppercase tracking-wider transition-all active:scale-95 duration-200 ${isPreferredByMe
+                                                                    ? 'bg-rose-500/20 text-rose-400 border-rose-500/40 shadow-md shadow-rose-500/10'
+                                                                    : 'bg-white/5 text-muted-foreground border-white/5 hover:border-white/10 hover:text-foreground'
+                                                                    }`}
                                                             >
                                                                 <span>❤️</span>
                                                                 <span>{isPreferredByMe ? 'Preferred' : 'Prefer'}</span>
                                                                 {prefCount > 0 && (
-                                                                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${
-                                                                        isPreferredByMe ? 'bg-rose-500/30 text-rose-200' : 'bg-white/10 text-muted-foreground'
-                                                                    }`}>
+                                                                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${isPreferredByMe ? 'bg-rose-500/30 text-rose-200' : 'bg-white/10 text-muted-foreground'
+                                                                        }`}>
                                                                         {prefCount}
                                                                     </span>
                                                                 )}
@@ -2119,18 +2161,16 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                                     e.stopPropagation();
                                                                     handleToggleTailOut(place.name, e);
                                                                 }}
-                                                                className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-black uppercase tracking-wider transition-all active:scale-95 duration-200 ${
-                                                                    isVetoedByMe
-                                                                        ? 'bg-red-500/20 text-red-400 border-red-500/40 shadow-md shadow-red-500/10'
-                                                                        : 'bg-white/5 text-muted-foreground border-white/5 hover:border-white/10 hover:text-foreground'
-                                                                }`}
+                                                                className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-black uppercase tracking-wider transition-all active:scale-95 duration-200 ${isVetoedByMe
+                                                                    ? 'bg-red-500/20 text-red-400 border-red-500/40 shadow-md shadow-red-500/10'
+                                                                    : 'bg-white/5 text-muted-foreground border-white/5 hover:border-white/10 hover:text-foreground'
+                                                                    }`}
                                                             >
                                                                 <span>🚫</span>
                                                                 <span>{isVetoedByMe ? 'Vetoed' : 'Veto'}</span>
                                                                 {vetoCount > 0 && (
-                                                                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${
-                                                                        isVetoedByMe ? 'bg-red-500/30 text-red-200' : 'bg-white/10 text-muted-foreground'
-                                                                    }`}>
+                                                                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${isVetoedByMe ? 'bg-red-500/30 text-red-200' : 'bg-white/10 text-muted-foreground'
+                                                                        }`}>
                                                                         {vetoCount}
                                                                     </span>
                                                                 )}
@@ -2142,7 +2182,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                         );
                                     })}
 
-                                    {viewMode === 'discovery' && filteredSuggestions.length > visibleDiscoveryCount && (
+                                    {viewMode === 'restaurants' && restaurantSubTab === 'suggested' && filteredSuggestions.length > visibleDiscoveryCount && (
                                         <div className="pt-2 pb-6 flex justify-center">
                                             <button
                                                 onClick={() => setVisibleDiscoveryCount(prev => prev + 10)}

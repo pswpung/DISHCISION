@@ -134,7 +134,7 @@ def push_message_creation_flex(group_id: str, meeting_id: str, meeting_name: str
     if not group_id:
         return
 
-    # Link: /vote?group_id=...&meeting_id=...
+    # Link: /availability?group_id=...&meeting_id=...
     # LIFF_ID = "2008419367-SeVLxzHP"
     params = []
     if group_id:
@@ -143,7 +143,7 @@ def push_message_creation_flex(group_id: str, meeting_id: str, meeting_name: str
         params.append(f"meeting_id={meeting_id}")
 
     query_string = "?" + "&".join(params) if params else ""
-    vote_url = f"https://liff.line.me/{LIFF_ID}/vote{query_string}"
+    vote_url = f"https://liff.line.me/{LIFF_ID}/availability{query_string}"
     
     # Format Period/Date String
     is_fixed_time = not end_date or end_date == "N/A" or end_date == ""
@@ -203,7 +203,7 @@ def push_message_creation_flex(group_id: str, meeting_id: str, meeting_name: str
             "color": "#F58357",
             "action": {
                 "type": "uri",
-                "label": "Join & Vote",
+                "label": "Add Preferences",
                 "uri": vote_url
             }
         }
@@ -341,7 +341,7 @@ def push_message_result_flex(group_id, meeting_id, meeting_name, top_slots, pref
     elif is_fixed_restaurant:
         hero_header_title = "📍 Restaurant Fixed"
     else:
-        hero_header_title = "🏁 Voting Results"
+        hero_header_title = "Suggestions Ready"
     
     # Build Hero Body Contents
     hero_body_contents = [
@@ -521,7 +521,7 @@ def push_message_result_flex(group_id, meeting_id, meeting_name, top_slots, pref
                     "color": "#F58357",
                     "action": {
                         "type": "uri",
-                        "label": "See All Results",
+                        "label": "See Suggestions & Vote",
                         "uri": base_result_url
                     }
                 }
@@ -557,7 +557,7 @@ def push_message_result_flex(group_id, meeting_id, meeting_name, top_slots, pref
                 "backgroundColor": "#F58357", # Orange/Coral
                 "paddingAll": "lg",
                 "contents": [
-                    {"type": "text", "text": "🙋 Friend Recommends", "weight": "bold", "size": "lg", "color": "#FFFFFF"},
+                    {"type": "text", "text": "Friend Suggestions", "weight": "bold", "size": "lg", "color": "#FFFFFF"},
                 ]
             },
             "body": {
@@ -581,7 +581,7 @@ def push_message_result_flex(group_id, meeting_id, meeting_name, top_slots, pref
                         "color": "#F58357",
                         "action": {
                             "type": "uri",
-                            "label": "View Details",
+                            "label": "See Suggestions & Vote",
                             "uri": base_result_url
                         }
                     }
@@ -614,7 +614,7 @@ def push_message_result_flex(group_id, meeting_id, meeting_name, top_slots, pref
                 "backgroundColor": "#F58357", # Orange/Coral
                 "paddingAll": "lg",
                 "contents": [
-                    {"type": "text", "text": "🔍 Discovery Ranking", "weight": "bold", "size": "lg", "color": "#FFFFFF"},
+                    {"type": "text", "text": "Suggested Restaurants", "weight": "bold", "size": "lg", "color": "#FFFFFF"},
                 ]
             },
             "body": {
@@ -638,7 +638,7 @@ def push_message_result_flex(group_id, meeting_id, meeting_name, top_slots, pref
                         "color": "#F58357",
                         "action": {
                             "type": "uri",
-                            "label": "Explore All",
+                            "label": "See Suggestions & Vote",
                             "uri": base_result_url
                         }
                     }
