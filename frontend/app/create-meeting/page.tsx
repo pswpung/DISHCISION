@@ -6,7 +6,7 @@ import { apiService } from '@/app/services/api';
 import CreateMeetingForm from '../components/create-meeting-form/create-meeting-form';
 
 const CreateMeetingPage = () => {
-  const { profile, isLoggedIn, login, liffObject } = useLiff();
+  const { profile, isLoggedIn, login, liffObject, error, bypassLiff } = useLiff();
   const router = useRouter();
   console.log("Profile:", profile);
   console.log("Is Logged In:", isLoggedIn);
@@ -146,6 +146,7 @@ const CreateMeetingPage = () => {
           fixed_date: data.fixedDate || null,
           fixed_start_time: data.fixedStartTime || null,
           fixed_end_time: data.fixedEndTime || null,
+          organizer_id: data.organizerId,
         }
       };
 
@@ -267,12 +268,52 @@ const CreateMeetingPage = () => {
   // Client mount: isReady true -> isMocking might be true.
   // Auto-login effect (Moved to top)
 
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen p-4">
+        <div className="glass-panel p-8 rounded-2xl flex flex-col items-center gap-6 text-center max-w-sm border border-red-500/10">
+          <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center text-3xl text-red-400">
+            ⚠️
+          </div>
+          <div>
+            <h2 className="text-xl font-bold mb-2">LINE Init Failed</h2>
+            <p className="text-muted-foreground text-xs leading-relaxed mb-4">{error}</p>
+            <p className="text-[10px] text-muted-foreground italic text-left">If you are testing locally or via a tunnel, you can bypass LINE validation to continue.</p>
+          </div>
+          <div className="flex flex-col gap-2 w-full">
+            <button
+              onClick={() => bypassLiff()}
+              className="bg-primary hover:bg-primary/95 text-white font-bold py-3 px-6 rounded-xl text-sm transition-all active:scale-95 shadow-lg shadow-primary/20"
+            >
+              🧪 Bypass LINE (Use Mock Profile)
+            </button>
+            <button
+              onClick={() => window.location.reload()}
+              className="bg-white/5 hover:bg-white/10 text-foreground font-semibold py-2 px-6 rounded-xl text-xs transition-all"
+            >
+              Retry Connection
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!isReady || !liffObject) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="glass-panel p-8 rounded-2xl flex flex-col items-center gap-4">
+      <div className="flex items-center justify-center min-h-screen p-4">
+        <div className="glass-panel p-8 rounded-2xl flex flex-col items-center gap-6 text-center max-w-sm">
           <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-gray-300">Initializing...</p>
+          <div>
+            <p className="text-gray-300 font-bold mb-1">Initializing LINE Client...</p>
+            <p className="text-[10px] text-muted-foreground">Waiting for LINE SDK to sync.</p>
+          </div>
+          <button
+            onClick={() => bypassLiff()}
+            className="text-[10px] font-bold text-primary/70 hover:text-primary transition-all border border-dashed border-primary/30 px-3 py-1.5 rounded-lg bg-primary/5 hover:bg-primary/10"
+          >
+            Bypass Initialization (Mock)
+          </button>
         </div>
       </div>
     )
@@ -280,21 +321,29 @@ const CreateMeetingPage = () => {
 
   if (!isLoggedIn) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="glass-panel p-8 rounded-2xl flex flex-col items-center gap-6 text-center">
-          <div className="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center text-3xl">
+      <div className="flex items-center justify-center min-h-screen p-4">
+        <div className="glass-panel p-8 rounded-2xl flex flex-col items-center gap-6 text-center max-w-sm">
+          <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center text-3xl">
             🔒
           </div>
           <div>
             <h2 className="text-xl font-bold mb-2">Login Required</h2>
             <p className="text-muted-foreground text-sm">Please login with LINE to create a meeting.</p>
           </div>
-          <button
-            onClick={() => login()}
-            className="bg-[#06C755] hover:bg-[#05b34c] text-white font-bold py-3 px-8 rounded-full transition-all active:scale-95"
-          >
-            Login with LINE
-          </button>
+          <div className="flex flex-col gap-2.5 w-full">
+            <button
+              onClick={() => login()}
+              className="bg-[#06C755] hover:bg-[#05b34c] text-white font-bold py-3 px-8 rounded-xl text-sm transition-all active:scale-95 flex items-center justify-center gap-2"
+            >
+              <span>LINE Login</span>
+            </button>
+            <button
+              onClick={() => bypassLiff()}
+              className="bg-white/5 hover:bg-white/10 text-foreground font-semibold py-2.5 px-6 rounded-xl text-xs transition-all border border-white/5"
+            >
+              Bypass LINE (Mock)
+            </button>
+          </div>
         </div>
       </div>
     );

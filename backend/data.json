@@ -1,4 +1,27 @@
 {
     "destination": "U2063284ed62121830e8ae85f42765a91",
-    "events": []
+    "events": [
+        {
+            "type": "message",
+            "message": {
+                "type": "text",
+                "id": "615889425116955391",
+                "quoteToken": "qa-eIkmPKlzfCKY7mbJui-C4xYYb49vbfBjZmNDB6jIHnb8gnppiMVLflGhN15o3psPlIlPPMI9zN14USHKA8ugoLf1u4xm0vCHVmtyIU1JfIrsh_u5RNeksocjJISL2TABbDcZ78qWZz3O-AJzKWw",
+                "markAsReadToken": "SKKAA-xQkj8-OLWT4rZ9ZCQtJJNklWodJ3Mx164bP81lc6v0MYKOlVQ6WCndpM6FjOSux7TsXOAUnEAySlACGNxn794q8ilWbpa87oFCYiPdksET1rkOgWFBwLjZKNrtUhK3cRWC3JdS7h7lya6b2FKCp7MKf0yOrmKMhisR5LhvxSI7bdStUY6_Beepmg2zysqxVtkmzsuVO34VFFWibA",
+                "text": "#create-meeting"
+            },
+            "webhookEventId": "01KSP1H2YY49CDBFVW8PNCBAJA",
+            "deliveryContext": {
+                "isRedelivery": false
+            },
+            "timestamp": 1779930008080,
+            "source": {
+                "type": "group",
+                "groupId": "Cd3274d055bf75c6c094e64809cdb31d3",
+                "userId": "Ua13d6f01cec7bfd3906825255dffaf89"
+            },
+            "replyToken": "c06e8d0170a5499d8fb3a217d71f33fc",
+            "mode": "active"
+        }
+    ]
 }

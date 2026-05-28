@@ -9,6 +9,7 @@ class MeetingBase(BaseModel):
     initial_data: dict[str, Any]
     group_id: str
     suggestion_detail: Optional[dict[str, Any]] = None
+    voting_state: Optional[dict[str, Any]] = None
 
 class MeetingCreate(MeetingBase):
     # Optional in case you want to provide one, 
@@ -21,6 +22,7 @@ class MeetingUpdate(BaseModel):
     initial_data: Optional[dict[str, Any]] = None
     group_id: Optional[str] = None
     suggestion_detail: Optional[dict[str, Any]] = None
+    voting_state: Optional[dict[str, Any]] = None
 
 class MeetingResponse(MeetingBase):
     meeting_id: UUID

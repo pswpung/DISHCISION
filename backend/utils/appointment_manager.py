@@ -1151,7 +1151,7 @@ class Appointment_Manager(object):
                         valid_restaurants = valid_restaurants.sort_values(by="score", ascending=False)
                         top_5 = valid_restaurants.head(5)
                     else:
-                        top_5 = pd.DataFrame()
+                        top_5 = valid_restaurants.head(5)
 
                     # Convert to dict
                     suggestions_map[date_str][time_key] = {

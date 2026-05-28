@@ -16,6 +16,15 @@ interface VotingFormProps {
     onVoteSubmit: (data: any) => void;
 }
 
+const getRankLabel = (index: number): string => {
+    const suffixes = ["st", "nd", "rd"];
+    const v = index + 1;
+    if (v >= 11 && v <= 13) return `${v}th`;
+    const lastDigit = v % 10;
+    const suffix = suffixes[lastDigit - 1] || "th";
+    return `${v}${suffix}`;
+};
+
 const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormProps) => {
     const { profile } = useLiff();
     const [currentStep, setCurrentStep] = useState(1);
@@ -49,15 +58,7 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
     const [cuisineFocused, setCuisineFocused] = useState(false);
     const [avoidCuisineFocused, setAvoidCuisineFocused] = useState(false);
     const [prioritiesMode, setPrioritiesMode] = useState<'normal' | 'advanced'>('normal');
-    const [normalPriorities, setNormalPriorities] = useState<Record<string, 'high' | 'medium' | 'none'>>({
-        'Price': 'none',
-        'Category': 'none',
-        'Vibe/Good For': 'none',
-        'Distance from BTS': 'none',
-        'Rating': 'none',
-        'Parking': 'none',
-        'Alcohol': 'none',
-    });
+    const [normalPriorities, setNormalPriorities] = useState<string[]>([]);
     const [advancedPriorities, setAdvancedPriorities] = useState<string[][]>([]);
     const [maxWalkDistance, setMaxWalkDistance] = useState<number>(1000);
     const priorityFactors = ['Price', 'Category', 'Vibe/Good For', 'Distance from BTS', 'Rating', 'Parking', 'Alcohol'];
@@ -288,19 +289,7 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
 
     const getSerializedPriorities = (): string[][] => {
         if (prioritiesMode === 'normal') {
-            const high: string[] = [];
-            const medium: string[] = [];
-            Object.entries(normalPriorities).forEach(([factor, level]) => {
-                if (level === 'high') {
-                    high.push(factor);
-                } else if (level === 'medium') {
-                    medium.push(factor);
-                }
-            });
-            const result: string[][] = [];
-            if (high.length > 0) result.push(high);
-            if (medium.length > 0) result.push(medium);
-            return result;
+            return normalPriorities.map(factor => [factor]);
         } else {
             return advancedPriorities.filter(group => group.length > 0);
         }
@@ -308,7 +297,7 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
 
     const isFactorActive = (factor: string): boolean => {
         if (prioritiesMode === 'normal') {
-            return normalPriorities[factor] === 'high' || normalPriorities[factor] === 'medium';
+            return normalPriorities.includes(factor);
         } else {
             return advancedPriorities.some(group => group.includes(factor));
         }
@@ -316,7 +305,7 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
 
     const getActivePrioritiesCount = (): number => {
         if (prioritiesMode === 'normal') {
-            return Object.values(normalPriorities).filter(val => val !== 'none').length;
+            return normalPriorities.length;
         } else {
             return advancedPriorities.reduce((acc, group) => acc + group.length, 0);
         }
@@ -324,12 +313,11 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
 
     const toggleNormalPriority = (factor: string) => {
         setNormalPriorities(prev => {
-            const current = prev[factor] || 'none';
-            let next: 'high' | 'medium' | 'none' = 'none';
-            if (current === 'none') next = 'high';
-            else if (current === 'high') next = 'medium';
-            else next = 'none';
-            return { ...prev, [factor]: next };
+            if (prev.includes(factor)) {
+                return prev.filter(f => f !== factor);
+            } else {
+                return [...prev, factor];
+            }
         });
     };
 
@@ -665,25 +653,27 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
                 {prioritiesMode === 'normal' ? (
                     /* Normal Mode UI */
                     <div className="space-y-3">
-                        <p className="text-[10px] text-muted-foreground/80 italic">Tap chips to cycle: Unselected ➔ ⭐ High Priority ➔ 👍 Medium Priority</p>
+                        <p className="text-[10px] text-muted-foreground/80 italic">Tap factors in order of preference to rank them 1st, 2nd, 3rd, etc.</p>
                         <div className="flex flex-wrap gap-2">
                             {priorityFactors.map((factor) => {
-                                const level = normalPriorities[factor] || 'none';
+                                const rankIndex = normalPriorities.indexOf(factor);
+                                const isSelected = rankIndex !== -1;
                                 return (
                                     <button
                                         key={factor}
                                         type="button"
                                         onClick={() => toggleNormalPriority(factor)}
                                         className={`relative px-4 py-2.5 rounded-xl text-xs font-bold border transition-all duration-300 flex items-center gap-1.5 ${
-                                            level === 'high'
-                                                ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg scale-105'
-                                                : level === 'medium'
-                                                ? 'bg-teal-600 border-teal-600 text-white shadow-md'
+                                            isSelected
+                                                ? 'bg-primary border-primary text-white shadow-lg scale-105'
                                                 : 'bg-black/5 dark:bg-white/5 border-black/10 dark:border-white/10 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10 hover:border-black/20'
                                         }`}
                                     >
-                                        {level === 'high' && <span>⭐ High:</span>}
-                                        {level === 'medium' && <span>👍 Med:</span>}
+                                        {isSelected && (
+                                            <span className="flex items-center justify-center px-1.5 py-0.5 rounded bg-white/20 text-[9px] font-black mr-0.5">
+                                                {getRankLabel(rankIndex)}
+                                            </span>
+                                        )}
                                         {factor}
                                     </button>
                                 );

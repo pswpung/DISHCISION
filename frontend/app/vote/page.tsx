@@ -8,7 +8,7 @@ import { TimeSlotSelector } from '@/app/components/time-slot-selector/time-slot-
 import { parseAvailabilityText } from '@/app/utils/availability-parser';
 
 const InviteeVotePage = () => {
-    const { isLoggedIn, profile, liffObject } = useLiff();
+    const { isLoggedIn, profile, liffObject, error, bypassLiff } = useLiff();
     const router = useRouter();
 
     const [groupId, setGroupId] = useState<string | null>(null);
@@ -30,6 +30,8 @@ const InviteeVotePage = () => {
     const [isInvited, setIsInvited] = useState(false);
     const [checkingInvite, setCheckingInvite] = useState(true);
     const [hasVoted, setHasVoted] = useState(false);
+    const [allAttendees, setAllAttendees] = useState<any[]>([]);
+    const [simulatedUserId, setSimulatedUserId] = useState<string | null>(null);
 
     useEffect(() => {
         const fetchMeeting = async () => {
@@ -63,9 +65,10 @@ const InviteeVotePage = () => {
                 };
                 setMeetingData(uiData);
 
+                setAllAttendees(attendees);
+
                 // Check Invitation
-                const effectiveUserId = paramUserId || profile?.userId;
-                // const effectiveUserId = "U9f823928c4e73e51da6aae67fe93827a";
+                const effectiveUserId = simulatedUserId || paramUserId || profile?.userId;
                 if (effectiveUserId) {
                     console.log("Effective User ID : ", effectiveUserId);
                     const attendee = attendees.find((a: any) => a.user_id === effectiveUserId);
@@ -73,8 +76,10 @@ const InviteeVotePage = () => {
                     if (attendee) {
                         setIsInvited(true);
                         // Check if already voted (preference exists and not empty)
-                        if (attendee.preference) {
+                        if (attendee.preference && Object.keys(attendee.preference).length > 0) {
                             setHasVoted(true);
+                        } else {
+                            setHasVoted(false);
                         }
                     } else {
                         setIsInvited(false);
@@ -92,7 +97,7 @@ const InviteeVotePage = () => {
             }
         };
 
-        if (meetingId && (paramUserId || profile?.userId)) {
+        if (meetingId && (simulatedUserId || paramUserId || profile?.userId)) {
             fetchMeeting();
         } else if (meetingId && !paramUserId && !isLoggedIn) {
             // Wait for login or param?
@@ -138,25 +143,97 @@ const InviteeVotePage = () => {
             setCheckingInvite(false);
             setIsInvited(false);
         }
-    }, [meetingId, paramUserId, profile, isLoggedIn]); // Add deps
+    }, [meetingId, paramUserId, profile, isLoggedIn, simulatedUserId]);
 
     // Re-check invited if profile/attendees update?
     // Simplified: Just one effect that depends on ID too.
 
+    if (error) {
+        return (
+            <div className="flex items-center justify-center min-h-screen p-4">
+                <div className="glass-panel p-8 rounded-2xl flex flex-col items-center gap-6 text-center max-w-sm border border-red-500/10">
+                    <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center text-3xl text-red-400">
+                        ⚠️
+                    </div>
+                    <div>
+                        <h2 className="text-xl font-bold mb-2">LINE Init Failed</h2>
+                        <p className="text-muted-foreground text-xs leading-relaxed mb-4">{error}</p>
+                        <p className="text-[10px] text-muted-foreground italic text-left">If you are testing locally or via a tunnel, you can bypass LINE validation to continue.</p>
+                    </div>
+                    <div className="flex flex-col gap-2 w-full">
+                        <button
+                            onClick={() => bypassLiff()}
+                            className="bg-primary hover:bg-primary/95 text-white font-bold py-3 px-6 rounded-xl text-sm transition-all active:scale-95 shadow-lg shadow-primary/20"
+                        >
+                            🧪 Bypass LINE (Use Mock Profile)
+                        </button>
+                        <button
+                            onClick={() => window.location.reload()}
+                            className="bg-white/5 hover:bg-white/10 text-foreground font-semibold py-2 px-6 rounded-xl text-xs transition-all"
+                        >
+                            Retry Connection
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     if (loading || checkingInvite) return (
-        <div className="flex items-center justify-center min-h-screen">
-            <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+        <div className="flex items-center justify-center min-h-screen p-4">
+            <div className="glass-panel p-8 rounded-2xl flex flex-col items-center gap-6 text-center max-w-sm">
+                <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+                <div>
+                    <p className="text-gray-300 font-bold mb-1">Initializing LINE Client...</p>
+                    <p className="text-[10px] text-muted-foreground">Waiting for LINE SDK to sync.</p>
+                </div>
+                <button
+                    onClick={() => bypassLiff()}
+                    className="text-[10px] font-bold text-primary/70 hover:text-primary transition-all border border-dashed border-primary/30 px-3 py-1.5 rounded-lg bg-primary/5 hover:bg-primary/10"
+                >
+                    Bypass Initialization (Mock)
+                </button>
+            </div>
         </div>
     );
 
+    const effectiveUserId = simulatedUserId || paramUserId || profile?.userId;
+
     if (!isInvited) return (
-        <div className="flex flex-col items-center justify-center min-h-screen p-4 text-center space-y-4">
+        <div className="flex flex-col items-center justify-center min-h-screen p-4 text-center space-y-6 max-w-sm mx-auto">
             <div className="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center text-3xl">
                 🔒
             </div>
-            <h1 className="text-2xl font-bold text-foreground">Access Denied</h1>
-            <p className="text-muted-foreground">{meetingData ? `You are not invited to "${meetingData.name}"` : "You are not invited to this meeting."}</p>
-            <p className="text-xs text-white/30">User ID: {paramUserId || profile?.userId || 'Unknown'}</p>
+            <div>
+                <h1 className="text-2xl font-bold text-foreground">Access Denied</h1>
+                <p className="text-muted-foreground text-sm mt-1">
+                    {meetingData ? `You are not invited to "${meetingData.name}"` : "You are not invited to this meeting."}
+                </p>
+                <p className="text-xs text-white/30 mt-2">Active User ID: {effectiveUserId || 'Unknown'}</p>
+            </div>
+            
+            {/* Simulation/Bypass Helper */}
+            <div className="glass-panel p-5 rounded-2xl border border-white/5 space-y-3 w-full text-left">
+                <span className="text-[10px] font-black text-primary uppercase tracking-wider block">🧪 Developer simulation tool</span>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    Select a registered meeting attendee from the list below to vote on their behalf (bypassing LIFF validation):
+                </p>
+                <select
+                    value={simulatedUserId || ""}
+                    onChange={(e) => {
+                        const val = e.target.value;
+                        setSimulatedUserId(val || null);
+                    }}
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-semibold text-foreground focus:outline-none focus:border-primary"
+                >
+                    <option value="">-- Choose Attendee --</option>
+                    {allAttendees.map((att: any) => (
+                        <option key={att.user_id} value={att.user_id}>
+                            {att.display_name || att.user_name || att.user_id} ({att.is_key_person ? 'Key' : 'General'})
+                        </option>
+                    ))}
+                </select>
+            </div>
         </div>
     );
 
@@ -200,7 +277,6 @@ const InviteeVotePage = () => {
 
     const handleFinalSubmit = async (data: any) => {
         const { status, availability: avail, preferences: prefs } = data;
-        const effectiveUserId = paramUserId || profile?.userId;
 
         if (!effectiveUserId) {
             alert("User ID missing. Please login.");

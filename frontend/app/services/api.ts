@@ -113,8 +113,9 @@ export const apiService = {
         }
     },
 
-    getMeeting: async (meetingId: string) => {
-        const response = await apiClient.get<MeetingResponse>(`/meetings/${meetingId}`);
+    getMeeting: async (meetingId: string, userId?: string) => {
+        const url = userId ? `/meetings/${meetingId}?user_id=${userId}` : `/meetings/${meetingId}`;
+        const response = await apiClient.get<MeetingResponse>(url);
         return response.data;
     },
 
@@ -155,5 +156,53 @@ export const apiService = {
             console.error("Reverse geocode failed", error);
             return null;
         }
+    },
+
+    voteTimeSlot: async (meetingId: string, userId: string, slotKey: string) => {
+        const response = await apiClient.post(`/meetings/${meetingId}/vote-time`, { user_id: userId, slot_key: slotKey });
+        return response.data;
+    },
+
+    toggleTailIn: async (meetingId: string, userId: string, restaurantName: string) => {
+        const response = await apiClient.post(`/meetings/${meetingId}/tail-in`, { user_id: userId, restaurant_name: restaurantName });
+        return response.data;
+    },
+
+    toggleTailOut: async (meetingId: string, userId: string, restaurantName: string) => {
+        const response = await apiClient.post(`/meetings/${meetingId}/tail-out`, { user_id: userId, restaurant_name: restaurantName });
+        return response.data;
+    },
+
+    toggleReady: async (meetingId: string, userId: string) => {
+        const response = await apiClient.post(`/meetings/${meetingId}/toggle-ready`, { user_id: userId });
+        return response.data;
+    },
+
+    setDecisionMethod: async (meetingId: string, targetType: string, method: string) => {
+        const response = await apiClient.post(`/meetings/${meetingId}/set-decision-method`, { target_type: targetType, method: method });
+        return response.data;
+    },
+
+    saveSpinResult: async (meetingId: string, targetType: string, landedKey: string, stopAngle: number, selectedKeys: string[]) => {
+        const response = await apiClient.post(`/meetings/${meetingId}/spin-wheel`, {
+            target_type: targetType,
+            landed_key: landedKey,
+            stop_angle: stopAngle,
+            selected_keys: selectedKeys
+        });
+        return response.data;
+    },
+
+    selectWheelRestaurants: async (meetingId: string, restaurantNames: string[]) => {
+        const response = await apiClient.post(`/meetings/${meetingId}/select-wheel-restaurants`, { restaurant_names: restaurantNames });
+        return response.data;
+    },
+
+    confirmFinalMeetingPlan: async (meetingId: string, confirmedTimeSlot: string, confirmedRestaurant: string) => {
+        const response = await apiClient.post(`/meetings/${meetingId}/confirm-final`, {
+            confirmed_time: confirmedTimeSlot,
+            confirmed_restaurant: confirmedRestaurant
+        });
+        return response.data;
     }
 };

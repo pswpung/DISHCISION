@@ -17,6 +17,12 @@ import models
 # Create database tables if they do not exist
 Base.metadata.create_all(bind=engine)
 
+# Execute startup migration for new column voting_state
+from sqlalchemy import text
+with engine.connect() as connection:
+    connection.execute(text("ALTER TABLE meeting_details ADD COLUMN IF NOT EXISTS voting_state JSONB DEFAULT NULL;"))
+    connection.commit()
+
 app = FastAPI()
 
 app.add_middleware(

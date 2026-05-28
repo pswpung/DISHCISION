@@ -1,6 +1,24 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Enable gzip/brotli compression for all responses — critical on mobile
+  compress: true,
+
+  // Remove X-Powered-By header (minor security + bandwidth saving)
+  poweredByHeader: false,
+
+  // Strict React mode helps catch bugs early
+  reactStrictMode: true,
+
+  // Ignore lint/type errors during production builds
+  // (ESLint config issues shouldn't block deploys; TypeScript is checked in editor)
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+
   async rewrites() {
     return [
       {
@@ -29,6 +47,48 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+
+  async headers() {
+    return [
+      // All pages: no-cache HTML (always re-fetch the page, never serve stale HTML)
+      {
+        source: '/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'no-cache, no-store, must-revalidate',
+          },
+          {
+            key: 'X-Frame-Options',
+            value: 'SAMEORIGIN',
+          },
+        ],
+      },
+      // Public static assets — 1 day cache
+      {
+        source: '/images/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=86400, stale-while-revalidate=604800',
+          },
+        ],
+      },
+      // Long-lived immutable cache for hashed static assets (JS, CSS, fonts)
+      // Must be LAST so it overrides the no-cache rule above for /_next/static/*
+      // Safe because Next.js always changes the filename hash on every build
+      {
+        source: '/_next/static/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
+

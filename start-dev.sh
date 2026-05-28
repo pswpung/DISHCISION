@@ -20,8 +20,8 @@ tmux send-keys -t "$SESSION:deploy" "cd deploy && docker compose up" C-m
 # Window 2: services
 # Create the window
 tmux new-window -t "$SESSION" -n "services"
-# Run frontend dev in the active (first) pane
-tmux send-keys -t "$SESSION:services" "cd frontend && npm run dev" C-m
+# Run frontend in PRODUCTION mode (stable chunk hashes = no 404s on mobile via tunnel)
+tmux send-keys -t "$SESSION:services" "./start-prod-frontend.sh" C-m
 # Split pane horizontally (side-by-side) and select the new pane
 tmux split-window -h -t "$SESSION:services"
 # Run backend uv dev in the new active pane

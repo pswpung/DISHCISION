@@ -17,6 +17,7 @@ class MeetingDetail(Base):
     initial_data = Column(JSON, nullable=False)
     group_id = Column(String, nullable=False)
     suggestion_detail = Column(JSON, nullable=True)
+    voting_state = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=False), server_default=func.now())
     updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now())
 

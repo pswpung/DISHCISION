@@ -9,6 +9,7 @@ interface LiffContextType {
   error: string | null;
   login: () => void;
   logout: () => void;
+  bypassLiff: () => void;
 }
 
 const LiffContext = createContext<LiffContextType | undefined>(undefined);
@@ -36,6 +37,19 @@ export const LiffProvider = ({ children }: { children: ReactNode }) => {
     return () => {
       window.removeEventListener('unhandledrejection', handleUnhandledRejection);
     };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const searchParams = new URLSearchParams(window.location.search);
+      const liffState = searchParams.get('liff.state');
+      if (liffState) {
+        const decodedPath = decodeURIComponent(liffState);
+        if (decodedPath.startsWith('/')) {
+          window.location.replace(window.location.origin + decodedPath);
+        }
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -83,8 +97,32 @@ export const LiffProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const bypassLiff = () => {
+    console.log("Bypassing LIFF validation - using mock profile");
+    setIsLoggedIn(true);
+    setProfile({
+      userId: 'mock-user-id',
+      displayName: 'Mock User',
+      pictureUrl: 'https://via.placeholder.com/150'
+    });
+    setError(null);
+    setLiffObject({
+      closeWindow: () => {
+        if (typeof window !== 'undefined') window.close();
+      },
+      login: () => {},
+      logout: () => {},
+      isLoggedIn: () => true,
+      getProfile: () => Promise.resolve({
+        userId: 'mock-user-id',
+        displayName: 'Mock User',
+        pictureUrl: 'https://via.placeholder.com/150'
+      }),
+    } as any);
+  };
+
   return (
-    <LiffContext.Provider value={{ liffObject, isLoggedIn, profile, error, login, logout }}>
+    <LiffContext.Provider value={{ liffObject, isLoggedIn, profile, error, login, logout, bypassLiff }}>
       {children}
     </LiffContext.Provider>
   );
