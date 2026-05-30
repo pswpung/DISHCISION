@@ -315,7 +315,8 @@ const AvailabilityPage = () => {
             lat: prefs.lat,
             lng: prefs.lng,
             preferred_restaurant: prefs.preferredRestaurant,
-            priorities: prefs.priorities
+            priorities: prefs.priorities,
+            free_text: prefs.free_text
         } : {};
 
         try {

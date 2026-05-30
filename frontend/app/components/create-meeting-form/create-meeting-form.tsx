@@ -196,6 +196,8 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
     const [normalPriorities, setNormalPriorities] = useState<string[]>([]);
     const [advancedPriorities, setAdvancedPriorities] = useState<string[][]>([]);
     const [maxWalkDistance, setMaxWalkDistance] = useState<number>(1000);
+    const [preferenceInputMode, setPreferenceInputMode] = useState<'ai' | 'manual'>('manual');
+    const [freeText, setFreeText] = useState('');
     const priorityFactors = ['Price', 'Category', 'Vibe/Good For', 'Distance from BTS', 'Rating', 'Parking', 'Alcohol'];
 
     const [isDragging, setIsDragging] = useState<string | null>(null);
@@ -320,8 +322,8 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
             setIsSearching(true);
             try {
                 const { apiService } = await import('@/app/services/api');
-                // Pass priceRange for filtering
-                const results = await apiService.searchRestaurants(keyword, priceRange);
+                // Pass priceRange and 'name' mode
+                const results = await apiService.searchRestaurants(keyword, priceRange, "name");
                 setSearchResults(results);
             } catch (e) {
                 console.error(e);
@@ -351,7 +353,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
         if (keyword.length > 2) {
             try {
                 const { apiService } = await import('@/app/services/api');
-                const results = await apiService.searchRestaurants(keyword, priceRange);
+                const results = await apiService.searchRestaurants(keyword, priceRange, "name");
                 setSearchResultsFixed(results);
             } catch (e) {
                 console.error(e);
@@ -679,14 +681,15 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
         // Construct Data matching valid JSON for "preference" as requested
         const organizerPreferences = {
             meal_time: organizerMealTime,
-            price: priceRange || "Any", // Default or validation needed
+            price: priceRange || "Any",
             category: selectedCategories,
             avoid_categories: avoidCategories,
             good_fors: selectedGoodFors,
             alcohols: selectedAlcohols,
             parking: selectedParking,
             priorities: getSerializedPriorities(),
-            max_walk_distance: maxWalkDistance
+            max_walk_distance: maxWalkDistance,
+            free_text: ''
         };
 
         const meetingData: MeetingData = {

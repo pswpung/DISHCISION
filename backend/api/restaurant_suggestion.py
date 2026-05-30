@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Request, HTTPException, status
 from typing import List
 from uuid import UUID
 from services.postgres_services import get_db
-from models import MeetingDetail, MeetingAttendee
+from models import MeetingDetail, MeetingAttendee, Restaurant, UserDetail
 from workflows.suggestion_workflow import SuggestionWorkflows
 from schemas import MeetingBase, MeetingCreate, MeetingUpdate, MeetingResponse, AttendeeBase, AttendeeCreate, AttendeeUpdate, AttendeeResponse
 from sqlalchemy.orm import Session
@@ -109,6 +109,8 @@ def get_restaurant_config():
 
 # REFACTORED: Standalone function to be used by API and other triggers
 def generate_and_send_suggestion(meeting_id: UUID, db: Session):
+    from models import UserDetail # Import UserDetail
+
     # SECTION: QUERY DATA
     meeting_detail = db.query(MeetingDetail).filter(MeetingDetail.meeting_id == meeting_id).first()
     if not meeting_detail:
@@ -117,6 +119,12 @@ def generate_and_send_suggestion(meeting_id: UUID, db: Session):
     attendee_details = db.query(MeetingAttendee).filter(MeetingAttendee.meeting_id == meeting_id).all()
     if not attendee_details:
         raise HTTPException(status_code=404, detail="Attendees not found")
+
+    # Fetch all user profiles for these attendees
+    attendee_ids = [a.user_id for a in attendee_details]
+    users = db.query(UserDetail).filter(UserDetail.user_id.in_(attendee_ids)).all()
+    user_map = {u.user_id: {"picture": u.pictureurl, "name": u.display_name} for u in users}
+    user_details = {u.user_id: u for u in users}
 
     # Check if all attendees have provided availability and preferences
     for attendee in attendee_details:
@@ -130,7 +138,8 @@ def generate_and_send_suggestion(meeting_id: UUID, db: Session):
     result = suggestion_workflow.get_suggestion(
         meeting_detail = meeting_detail,
         attendance_details = attendee_details,
-        restaurant_data = restaurant_lists
+        restaurant_data = restaurant_lists,
+        user_details = user_details
     )
 
     # Save suggestions to DB for caching
@@ -140,12 +149,6 @@ def generate_and_send_suggestion(meeting_id: UUID, db: Session):
     # Send Notification to LINE Group
     try:
         from services.line_services import push_message_result_flex
-        from models import UserDetail # Import UserDetail
-
-        # Fetch all user profiles for these attendees
-        attendee_ids = [a.user_id for a in attendee_details]
-        users = db.query(UserDetail).filter(UserDetail.user_id.in_(attendee_ids)).all()
-        user_map = {u.user_id: {"picture": u.pictureurl, "name": u.display_name} for u in users}
 
         # Preferred Restaurants
         preferred_restaurants = result.get("preferred_restaurants", [])
@@ -257,26 +260,20 @@ def suggestions(meeting_id: UUID, refresh: bool = False, db: Session = Depends(g
     return generate_and_send_suggestion(meeting_id, db)
 
 @router.get("/search")
-def search_restaurants(keyword: str, price: str = None):
+def search_restaurants(keyword: str, mode: str = "hybrid", price: str = None, db: Session = Depends(get_db)):
     if not keyword:
         return []
     
-    keyword = keyword.lower()
-    
-    # Filter function
-    def match_restaurant(row):
-        # 1. Check Keyword (Name or Breadcrumbs)
-        # Check name
-        if keyword in str(row['name']).lower():
-            return True
-        # Check breadcrumbs (list of strings)
-        if isinstance(row['breadcrumbs'], list):
-             if any(keyword in str(crumb).lower() for crumb in row['breadcrumbs']):
-                 return True
-        return False
-
-    filtered_df = restaurant_lists[restaurant_lists.apply(match_restaurant, axis=1)]
-    
-    # Limit results for performance
-    results = filtered_df.head(10).to_dict(orient="records")
-    return results
+    if mode == "name":
+        # Simple name lookup to make it super fast
+        query = db.query(Restaurant).filter(
+            Restaurant.name.ilike(f"%{keyword.strip()}%")
+        )
+        if price and price != "Any":
+            query = query.filter(Restaurant.price == price)
+        results = query.order_by(Restaurant.rating.desc()).limit(10).all()
+        return [r.to_dict() for r in results]
+        
+    from services.search_service import hybrid_search
+    results = hybrid_search(db, keyword, limit=10)
+    return [r.to_dict() for r in results]

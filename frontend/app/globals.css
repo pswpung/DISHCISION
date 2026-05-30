@@ -42,7 +42,7 @@
   --glass-border: rgba(255, 255, 255, 0.4);
   --glass-input-bg: rgba(0, 0, 0, 0.03);
   --glass-input-active: rgba(0, 0, 0, 0.05);
-  --glass-text: var(--foreground);
+  --glass-text: hsl(var(--foreground));
   
   /* Dropdown (Light) */
   --dropdown-bg: rgba(255, 255, 255, 0.95);

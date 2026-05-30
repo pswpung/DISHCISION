@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLiff } from '@/app/context/LiffContext';
 import dynamic from 'next/dynamic';
 import { TimeSlotSelector } from '@/app/components/time-slot-selector/time-slot-selector';
@@ -68,6 +68,7 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
 
     const priceRef = useRef<HTMLDivElement>(null);
     const cuisineSearchRef = useRef<HTMLDivElement>(null);
+    const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const avoidCuisineSearchRef = useRef<HTMLDivElement>(null);
 
     // Search Terms
@@ -207,23 +208,32 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
         }
     };
 
-    // --- Restaurant Search ---
-    const handleSearch = async (keyword: string) => {
+    // --- Restaurant Search (AI-powered hybrid search) ---
+    const handleSearch = useCallback((keyword: string) => {
         setSearchTerm(keyword);
-        if (keyword.length > 2) {
-            setIsSearching(true);
+        // Clear any pending debounce
+        if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+
+        if (keyword.trim().length <= 2) {
+            setSearchResults([]);
+            setIsSearching(false);
+            return;
+        }
+
+        setIsSearching(true);
+        searchDebounceRef.current = setTimeout(async () => {
             try {
                 const { apiService } = await import('@/app/services/api');
-                const results = await apiService.searchRestaurants(keyword);
+                const results = await apiService.searchRestaurants(keyword.trim());
                 setSearchResults(results);
             } catch (e) {
-                console.error(e);
+                console.error('Restaurant search failed:', e);
+                setSearchResults([]);
+            } finally {
+                setIsSearching(false);
             }
-            setIsSearching(false);
-        } else {
-            setSearchResults([]);
-        }
-    };
+        }, 400);
+    }, []);
 
     const selectRestaurant = (place: any) => {
         if (!preferredRestaurant.some(r => r.name === place.name)) {
@@ -435,7 +445,8 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
             lng: locationCoords?.lng || null,
             preferredRestaurant,
             priorities: getSerializedPriorities(),
-            max_walk_distance: maxWalkDistance
+            max_walk_distance: maxWalkDistance,
+            free_text: ''
         };
 
         onVoteSubmit({

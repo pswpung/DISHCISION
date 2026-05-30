@@ -543,7 +543,7 @@ def push_message_result_flex(group_id, meeting_id, meeting_name, top_slots, pref
                 "contents": [
                     {"type": "text", "text": f"{i+1}.", "size": "sm", "color": "#2B303B", "flex": 1, "weight": "bold"},
                     {"type": "text", "text": r.get('name', 'N/A'), "size": "sm", "color": "#555555", "flex": 6, "wrap": True},
-                    {"type": "text", "text": f"({r.get('suggestion_count', 0)} 🙋)", "size": "xs", "color": "#F58357", "flex": 3, "align": "end", "weight": "bold"}
+                    {"type": "text", "text": f"({r.get('suggestion_count', 0)} votes)", "size": "xs", "color": "#F58357", "flex": 3, "align": "end", "weight": "bold"}
                 ],
                 "margin": "sm"
             })
@@ -929,15 +929,91 @@ from services.postgres_services import SessionLocal
 
 # ... (existing imports)
 
+def sync_group_members(api_client, group_id):
+    if not group_id:
+        return
+    try:
+        line_bot_api = MessagingApi(api_client)
+        print(f"Syncing members for group: {group_id}")
+        
+        # 1. Get member IDs
+        try:
+            response = line_bot_api.get_group_members_ids(group_id)
+            member_ids = response.member_ids
+            # Handle pagination
+            while response.next_:
+                response = line_bot_api.get_group_members_ids(group_id, start=response.next_)
+                member_ids.extend(response.member_ids)
+        except Exception as e:
+            print(f"Failed to get group member IDs for {group_id}: {e}")
+            return
+            
+        print(f"Found {len(member_ids)} members in group {group_id}")
+        
+        # 2. Get profiles and register them
+        db = SessionLocal()
+        try:
+            for member_id in member_ids:
+                # Check if already registered with this group_id and details up to date
+                user = db.query(UserDetail).filter(UserDetail.user_id == member_id).first()
+                if user and user.group_id == group_id and user.display_name and user.pictureurl:
+                    continue
+                
+                try:
+                    profile = line_bot_api.get_group_member_profile(group_id, member_id)
+                    if not user:
+                        user = UserDetail(
+                            user_id=member_id,
+                            display_name=profile.display_name,
+                            pictureurl=profile.picture_url or "",
+                            group_id=group_id
+                        )
+                        db.add(user)
+                    else:
+                        user.display_name = profile.display_name
+                        user.pictureurl = profile.picture_url or ""
+                        user.group_id = group_id
+                    db.commit()
+                    print(f"Synced member: {profile.display_name}")
+                except Exception as pe:
+                    print(f"Failed to fetch profile for member {member_id} in group {group_id}: {pe}")
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"Error syncing group members: {e}")
+
+
 def register_line_user(api_client, user_id, group_id):
     try:
+        # Check if already registered first to avoid unnecessary LINE API calls
+        db = SessionLocal()
+        try:
+            user = db.query(UserDetail).filter(UserDetail.user_id == user_id).first()
+            if user and user.group_id == group_id and user.display_name and user.pictureurl:
+                # Mock a profile class to return
+                class MockProfile:
+                    def __init__(self, display_name, picture_url):
+                        self.display_name = display_name
+                        self.picture_url = picture_url
+                profile = MockProfile(user.display_name, user.pictureurl)
+                return profile, "Success"
+        finally:
+            db.close()
+
         line_bot_api = MessagingApi(api_client)
         # 1. Fetch Profile
         try:
-            profile = line_bot_api.get_profile(user_id)
+            if group_id:
+                profile = line_bot_api.get_group_member_profile(group_id, user_id)
+            else:
+                profile = line_bot_api.get_profile(user_id)
         except Exception as e:
-            print(f"Failed to fetch profile for {user_id}: {e}")
-            return None, "ไม่สามารถดึงข้อมูลโปรไฟล์ได้"
+            # Fallback to get_profile
+            try:
+                profile = line_bot_api.get_profile(user_id)
+            except Exception as e2:
+                print(f"Failed to fetch profile for {user_id}: {e2}")
+                return None, "ไม่สามารถดึงข้อมูลโปรไฟล์ได้"
 
         print("Profile:", profile)
 
@@ -973,6 +1049,7 @@ def register_line_user(api_client, user_id, group_id):
         print(f"Register Error: {e}")
         return None, "Error"
 
+
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     user_text = event.message.text
@@ -981,11 +1058,26 @@ def handle_message(event):
     user_id = event.source.user_id if hasattr(event.source, 'user_id') else None
     group_id = event.source.group_id if hasattr(event.source, 'group_id') else None
 
+    # Auto-register/update sender on any group message
+    if user_id and group_id:
+        try:
+            with ApiClient(configuration) as api_client:
+                register_line_user(api_client, user_id, group_id)
+        except Exception as e:
+            print(f"Auto-register error: {e}")
+
     # Custom Logic: Respond differently based on user input
     user_text_lower = user_text.lower()
     
     if any(cmd in user_text_lower for cmd in ["#สร้างนัด", "#create-meeting", "#create-meeing"]):
         flex_content = create_flex_message(user_id, group_id)
+        # Register user on create meeting command
+        if user_id:
+            with ApiClient(configuration) as api_client:
+                register_line_user(api_client, user_id, group_id)
+                # Also sync group members if we are in a group
+                if group_id:
+                    sync_group_members(api_client, group_id)
         messages=[
             FlexMessage(
                 alt_text="Create Meeting",
@@ -1074,6 +1166,14 @@ def handle_join(event):
     if user_id:
         with ApiClient(configuration) as api_client:
              register_line_user(api_client, user_id, group_id)
+             
+    # Sync all group members when bot joins a group
+    if group_id:
+        try:
+            with ApiClient(configuration) as api_client:
+                sync_group_members(api_client, group_id)
+        except Exception as e:
+            print(f"Error syncing group members on join: {e}")
     
     flex_content = create_flex_message(user_id=user_id, group_id=group_id)
 

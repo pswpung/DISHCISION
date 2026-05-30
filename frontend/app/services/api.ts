@@ -125,9 +125,9 @@ export const apiService = {
         return response.data;
     },
 
-    searchRestaurants: async (keyword: string, price?: number | string) => {
+    searchRestaurants: async (keyword: string, price?: number | string, mode: string = "hybrid") => {
         try {
-            let url = `/restaurant/search?keyword=${encodeURIComponent(keyword)}`;
+            let url = `/restaurant/search?keyword=${encodeURIComponent(keyword)}&mode=${mode}`;
             if (price) {
                 url += `&price=${price}`;
             }

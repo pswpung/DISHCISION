@@ -145,8 +145,7 @@ const GroupDashboardView = ({ groupId }: { groupId: string }) => {
                                     <p className="text-sm text-muted-foreground">📅 {meeting.date}</p>
                                 </div>
                                 <div className="text-right">
-                                    <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${
-                                        meeting.status === 'open'
+                                    <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${meeting.status === 'open'
                                             ? 'bg-green-500/20 text-green-400'
                                             : 'bg-white/10 text-muted-foreground'
                                         }`}>
@@ -337,8 +336,8 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
     const [preferredRestaurants, setPreferredRestaurants] = useState<any[]>([]);
     const [discoveryRestaurants, setDiscoveryRestaurants] = useState<any[]>([]);
     const [viewMode, setViewMode] = useState<'slots' | 'restaurants' | 'decision'>('decision');
-    // Sub-tab inside the Restaurants tab: 'friends' (suggested by attendees) | 'suggested' (by system)
-    const [restaurantSubTab, setRestaurantSubTab] = useState<'friends' | 'suggested'>('friends');
+    // Sub-tab inside the Restaurants tab: 'friends' (suggested by attendees) | 'suggested' (by system) | 'all' (all scored, when suggest_per_time=false)
+    const [restaurantSubTab, setRestaurantSubTab] = useState<'friends' | 'suggested' | 'all'>('friends');
     const [meetingData, setMeetingData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [status, setStatus] = useState('open'); // 'open' | 'closed'
@@ -346,6 +345,25 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
 
     const [confirmedTimeSlot, setConfirmedTimeSlot] = useState<string>("");
     const [confirmedRestaurant, setConfirmedRestaurant] = useState<string>("");
+
+    const [searchTerm, setSearchTerm] = useState('');
+    const [searchResults, setSearchResults] = useState<any[]>([]);
+    const [isSearching, setIsSearching] = useState(false);
+    const searchWrapperRef = useRef<HTMLDivElement>(null);
+
+    // Close search dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (searchWrapperRef.current && !searchWrapperRef.current.contains(event.target as Node)) {
+                setSearchResults([]);
+                setSearchTerm('');
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [searchWrapperRef]);
 
     const searchParams = useSearchParams();
 
@@ -372,9 +390,13 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
     const liveVenueCandidates = useMemo(() => {
         let list = [...preferredRestaurants];
 
-        const votedNames = new Set(Object.keys(votingState.restaurant_preferences || {}).filter(name => {
-            return (votingState.restaurant_preferences[name]?.length || 0) > 0;
-        }));
+        const votedNames = new Set([
+            ...Object.keys(votingState.restaurant_preferences || {}).filter(name => (votingState.restaurant_preferences[name]?.length || 0) > 0),
+            ...Object.keys(votingState.restaurant_vetoes || {}).filter(name => {
+                const val = votingState.restaurant_vetoes[name];
+                return typeof val === 'number' ? val > 0 : (val?.length || 0) > 0;
+            })
+        ]);
 
         votedNames.forEach(name => {
             if (!list.some(r => r.name === name)) {
@@ -394,7 +416,8 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
 
         return list.map(place => {
             const prefCount = votingState.restaurant_preferences?.[place.name]?.length || 0;
-            const vetoCount = votingState.restaurant_vetoes?.[place.name]?.length || 0;
+            const rawVeto = votingState.restaurant_vetoes?.[place.name];
+            const vetoCount = typeof rawVeto === 'number' ? rawVeto : (rawVeto?.length || 0);
             const netVotes = prefCount - vetoCount;
             return {
                 ...place,
@@ -430,17 +453,45 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
         }
     }, [votingState.wheel_state, votingState.final_decision]);
 
+    // Whether suggest_per_time is enabled (per-time-slot custom restaurant lists)
+    const suggestPerTime = meetingData?.initial_data?.suggest_per_time === true;
+
     // Auto-switch view mode for fixed timing
     useEffect(() => {
         const mode = meetingData?.initial_data?.timing_mode?.toLowerCase() || 'period';
         const allowSuggest = meetingData?.initial_data?.allow_system_suggest !== false;
 
         if (mode === 'fixed' && viewMode === 'slots') {
-            setViewMode(allowSuggest ? 'discovery' : 'favorites');
+            setViewMode('restaurants');
+            if (!suggestPerTime && discoveryRestaurants.length > 0) {
+                setRestaurantSubTab('all');
+            } else {
+                setRestaurantSubTab(allowSuggest ? 'suggested' : 'friends');
+            }
         }
-    }, [meetingData]);
+    }, [meetingData, suggestPerTime, discoveryRestaurants]);
+
+    // Handle default sub-tab selection based on suggest_per_time and available data
+    useEffect(() => {
+        if (viewMode === 'restaurants') {
+            if (!suggestPerTime) {
+                if (restaurantSubTab === 'suggested') {
+                    setRestaurantSubTab('all');
+                } else if (restaurantSubTab === 'friends' && preferredRestaurants.length === 0 && discoveryRestaurants.length > 0) {
+                    setRestaurantSubTab('all');
+                }
+            } else {
+                // When suggest_per_time is true, if we are on 'friends' but have no friend suggestions
+                // and we do have suggested (discovery) restaurants, switch to 'suggested'.
+                if (restaurantSubTab === 'friends' && preferredRestaurants.length === 0 && discoveryRestaurants.length > 0) {
+                    setRestaurantSubTab('suggested');
+                }
+            }
+        }
+    }, [viewMode, suggestPerTime, restaurantSubTab, preferredRestaurants.length, discoveryRestaurants.length]);
 
     const [selectedCategory, setSelectedCategory] = useState<string>('All');
+    const [selectedVibe, setSelectedVibe] = useState<string>('All');
     const [activeFilters, setActiveFilters] = useState<Record<string, number>>({});
     const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
 
@@ -453,6 +504,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
     const fetchingRef = useRef(false);
 
     const [expandedReasonIds, setExpandedReasonIds] = useState<Set<string>>(new Set());
+    const [expandedTabs, setExpandedTabs] = useState<Record<string, 'factor' | 'attendee'>>({});
 
     const [visibleDiscoveryCount, setVisibleDiscoveryCount] = useState(10);
     const [error, setError] = useState<string | null>(null);
@@ -464,6 +516,11 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                 ? JSON.parse(p.category.replace(/'/g, '"'))
                 : (Array.isArray(p.category) ? p.category : []);
             const categoryMatch = selectedCategory === 'All' || cats.includes(selectedCategory);
+
+            const vibes = typeof p.good_fors === 'string'
+                ? JSON.parse(p.good_fors.replace(/'/g, '"'))
+                : (Array.isArray(p.good_fors) ? p.good_fors : []);
+            const vibeMatch = selectedVibe === 'All' || vibes.includes(selectedVibe);
 
             const allCriteriaMatch = Object.entries(activeFilters).every(([criterion, threshold]) => {
                 let scoreToFilter = 0;
@@ -491,16 +548,16 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                 return scoreToFilter >= threshold;
             });
 
-            return allCriteriaMatch && categoryMatch;
+            return allCriteriaMatch && categoryMatch && vibeMatch;
         });
-    }, [selectedCategory, activeFilters, meetingData]);
+    }, [selectedCategory, selectedVibe, activeFilters, meetingData]);
 
     const filteredSuggestions = useMemo(() => {
         return filterRestaurants(suggestions);
     }, [suggestions, filterRestaurants]);
 
     const visibleSuggestions = useMemo(() => {
-        return viewMode === 'restaurants' && restaurantSubTab === 'suggested'
+        return viewMode === 'restaurants' && (restaurantSubTab === 'suggested' || restaurantSubTab === 'all')
             ? filteredSuggestions.slice(0, visibleDiscoveryCount)
             : filteredSuggestions;
     }, [filteredSuggestions, viewMode, restaurantSubTab, visibleDiscoveryCount]);
@@ -586,6 +643,29 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
         return Array.from(cats);
     }, [suggestionsMap, preferredRestaurants, discoveryRestaurants]);
 
+    const availableVibes = useMemo(() => {
+        const vibes = new Set<string>();
+        vibes.add('All');
+
+        const allSources = [
+            ...(suggestionsMap ? Object.values(suggestionsMap).flatMap((times: any) =>
+                Object.values(times).flatMap((slot: any) => Array.isArray(slot) ? slot : (slot.restaurants || []))
+            ) : []),
+            ...preferredRestaurants,
+            ...discoveryRestaurants
+        ];
+
+        allSources.forEach((p: any) => {
+            try {
+                const pVibes = typeof p.good_fors === 'string'
+                    ? JSON.parse(p.good_fors.replace(/'/g, '"'))
+                    : (Array.isArray(p.good_fors) ? p.good_fors : []);
+                pVibes.forEach((v: string) => vibes.add(v));
+            } catch (e) { }
+        });
+        return Array.from(vibes);
+    }, [suggestionsMap, preferredRestaurants, discoveryRestaurants]);
+
     const availableCriteria = useMemo(() => {
         const criteria = new Set<string>();
         criteria.add('Overall');
@@ -663,6 +743,8 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
         } else if (viewMode === 'restaurants') {
             if (restaurantSubTab === 'friends') {
                 setSuggestions(preferredRestaurants);
+            } else if (restaurantSubTab === 'all') {
+                setSuggestions(discoveryRestaurants);
             } else {
                 setSuggestions(discoveryRestaurants);
             }
@@ -793,12 +875,30 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
         }
     };
 
+    // --- Restaurant Search ---
+    const handleSearch = async (keyword: string) => {
+        setSearchTerm(keyword);
+        if (keyword.length > 2) {
+            setIsSearching(true);
+            try {
+                const results = await apiService.searchRestaurants(keyword);
+                setSearchResults(results);
+            } catch (e) {
+                console.error(e);
+            }
+            setIsSearching(false);
+        } else {
+            setSearchResults([]);
+        }
+    };
+
     const handleToggleTailIn = async (restaurantName: string, e: React.MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
         try {
             const updated = await apiService.toggleTailIn(meetingId, currentUserId, restaurantName);
             setMeetingData(updated);
+            await loadResultData();
         } catch (err) {
             console.error("Toggle prefer failed:", err);
         }
@@ -810,6 +910,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
         try {
             const updated = await apiService.toggleTailOut(meetingId, currentUserId, restaurantName);
             setMeetingData(updated);
+            await loadResultData();
         } catch (err) {
             console.error("Toggle veto failed:", err);
         }
@@ -1014,7 +1115,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
 
     return (
         <div className="h-[100dvh] flex flex-col bg-background overflow-hidden">
-        <div className="flex-none p-4 pb-2 z-10 bg-background/95 backdrop-blur-md border-b border-white/5 shadow-sm">
+            <div className="flex-none p-4 pb-2 z-10 bg-background/95 backdrop-blur-md border-b border-white/5 shadow-sm">
                 <header className="space-y-4 mb-4">
                     <div className="flex items-center justify-between">
                         <h1 className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">
@@ -1082,7 +1183,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                         const mode = meetingData?.initial_data?.timing_mode?.toLowerCase() || 'period';
                         const allowSuggest = meetingData?.initial_data?.allow_system_suggest !== false;
                         const isFixedRestaurant = (meetingData?.initial_data?.fixed_restaurants?.length || 0) > 0;
-                        const hasRestaurants = (preferredRestaurants.length > 0) || (allowSuggest && discoveryRestaurants.length > 0);
+                        const hasRestaurants = (preferredRestaurants.length > 0) || (allowSuggest && discoveryRestaurants.length > 0) || (!suggestPerTime && discoveryRestaurants.length > 0);
 
                         const tabs: { id: string; label: string }[] = [];
                         if (mode !== 'fixed') tabs.push({ id: 'slots', label: 'Slots' });
@@ -1302,6 +1403,38 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
 
             {/* Restaurants sub-tab switcher */}
             {viewMode === 'restaurants' && (() => {
+                // When suggest_per_time is false, show 'All Restaurants' tab directly (no Suggested sub-tab)
+                if (!suggestPerTime) {
+                    const hasFriends = preferredRestaurants.length > 0;
+                    const hasAll = discoveryRestaurants.length > 0;
+                    const showSubTabs = hasFriends && hasAll;
+                    return showSubTabs ? (
+                        <div className="flex-none px-4 pt-3">
+                            <div className="flex p-0.5 bg-white/5 rounded-xl border border-white/5">
+                                <button
+                                    onClick={() => setRestaurantSubTab('friends')}
+                                    className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${restaurantSubTab === 'friends'
+                                            ? 'bg-white/10 text-foreground'
+                                            : 'text-muted-foreground hover:text-foreground'
+                                        }`}
+                                >
+                                    Friends ({preferredRestaurants.length})
+                                </button>
+                                <button
+                                    onClick={() => setRestaurantSubTab('all')}
+                                    className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${restaurantSubTab === 'all'
+                                            ? 'bg-white/10 text-foreground'
+                                            : 'text-muted-foreground hover:text-foreground'
+                                        }`}
+                                >
+                                    All Restaurants ({discoveryRestaurants.length})
+                                </button>
+                            </div>
+                        </div>
+                    ) : null;
+                }
+
+                // When suggest_per_time is true, show Friends / Suggested sub-tabs as before
                 const hasFriends = preferredRestaurants.length > 0;
                 const hasSuggested = (meetingData?.initial_data?.allow_system_suggest !== false) && discoveryRestaurants.length > 0;
                 const showSubTabs = hasFriends && hasSuggested;
@@ -1310,21 +1443,19 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                         <div className="flex p-0.5 bg-white/5 rounded-xl border border-white/5">
                             <button
                                 onClick={() => setRestaurantSubTab('friends')}
-                                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
-                                    restaurantSubTab === 'friends'
+                                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${restaurantSubTab === 'friends'
                                         ? 'bg-white/10 text-foreground'
                                         : 'text-muted-foreground hover:text-foreground'
-                                }`}
+                                    }`}
                             >
                                 Friends ({preferredRestaurants.length})
                             </button>
                             <button
                                 onClick={() => setRestaurantSubTab('suggested')}
-                                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
-                                    restaurantSubTab === 'suggested'
+                                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${restaurantSubTab === 'suggested'
                                         ? 'bg-white/10 text-foreground'
                                         : 'text-muted-foreground hover:text-foreground'
-                                }`}
+                                    }`}
                             >
                                 Suggested ({discoveryRestaurants.length})
                             </button>
@@ -1332,6 +1463,138 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                     </div>
                 ) : null;
             })()}
+
+            {viewMode === 'restaurants' && (
+                <div className="flex-none px-4 pt-3 pb-2 border-b border-white/5 bg-background space-y-3">
+                    {(suggestPerTime || restaurantSubTab === 'friends') && (
+                        <div className="relative space-y-2" ref={searchWrapperRef}>
+                            {/* <div className="flex items-center justify-between">
+                                <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Search & Prefer/Veto Restaurants</label>
+                                <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-violet-500/10 border border-violet-500/30 text-violet-400">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-2.5 h-2.5"><path d="M10 1a1 1 0 011 1v1.323l3.954 1.582 1.599-.8a1 1 0 01.894 1.79l-1.233.616 1.738 5.42a1 1 0 01-.285 1.05A3.989 3.989 0 0115 14a3.989 3.989 0 01-2.667-1.019 1 1 0 01-.285-1.05l1.715-5.349-4.063-1.628V17h2a1 1 0 110 2H7a1 1 0 110-2h2V5.273L4.952 6.898l1.715 5.35a1 1 0 01-.285 1.049A3.989 3.989 0 014 14a3.989 3.989 0 01-2.667-1.019 1 1 0 01-.285-1.05l1.738-5.42-1.233-.617a1 1 0 01.894-1.788l1.599.799L8 3.323V2a1 1 0 011-1h1z"/></svg>
+                                    AI Search
+                                </span>
+                            </div>
+                            <div className="relative">
+                                <input
+                                    type="text"
+                                    placeholder="พิมพ์ชื่อร้าน หรืออธิบายสิ่งที่อยากกิน เช่น ปลาทอด รามอินทรา..."
+                                    value={searchTerm}
+                                    onChange={(e) => handleSearch(e.target.value)}
+                                    className="glass-input w-full p-3 pr-9 rounded-xl text-sm font-medium"
+                                />
+                                {isSearching && (
+                                    <span className="absolute right-3 top-1/2 -translate-y-1/2">
+                                        <svg className="animate-spin h-4 w-4 text-violet-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                                        </svg>
+                                    </span>
+                                )}
+                            </div> */}
+
+                            {searchResults.length > 0 && (
+                                <div className="absolute left-0 right-0 z-50 mt-2 bg-zinc-900/95 border border-white/10 rounded-2xl shadow-2xl max-h-72 overflow-y-auto backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200 divide-y divide-white/5">
+                                    {searchResults.map((place, idx) => {
+                                        const isPreferredByMe = votingState.restaurant_preferences?.[place.name]?.includes(currentUserId) || false;
+                                        const isVetoedByMe = votingState.user_vetoed?.includes(place.name) || false;
+                                        const prefCount = votingState.restaurant_preferences?.[place.name]?.length || 0;
+                                        const vetoCount = votingState.restaurant_vetoes?.[place.name] || 0;
+
+                                        return (
+                                            <div
+                                                key={idx}
+                                                className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-colors"
+                                            >
+                                                <div className="flex-1 min-w-0 pr-2">
+                                                    <p className="font-bold text-sm text-primary dark:text-white truncate">{place.name}</p>
+                                                    <p className="text-[10px] text-muted-foreground truncate">
+                                                        {place.category ? (Array.isArray(place.category) ? place.category[0] : place.category) : ''}
+                                                        {place.price ? ` • ${place.price}` : ''}
+                                                        {place.address ? ` • ${place.address.split(' ').slice(-3).join(' ')}` : ''}
+                                                    </p>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleToggleTailIn(place.name, e);
+                                                        }}
+                                                        className={`flex items-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-black uppercase tracking-wider transition-all active:scale-95 duration-200 ${isPreferredByMe
+                                                            ? 'bg-rose-500/20 text-rose-400 border-rose-500/40 shadow-md shadow-rose-500/10'
+                                                            : 'bg-white/5 text-muted-foreground border-white/5 hover:border-white/10 hover:text-foreground'
+                                                            }`}
+                                                    >
+                                                        <span>❤️</span>
+                                                        <span>{isPreferredByMe ? 'Preferred' : 'Prefer'}</span>
+                                                        {prefCount > 0 && <span className="text-[9px] bg-rose-500/30 text-rose-200 px-1.5 py-0.5 rounded-full">{prefCount}</span>}
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleToggleTailOut(place.name, e);
+                                                        }}
+                                                        className={`flex items-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-black uppercase tracking-wider transition-all active:scale-95 duration-200 ${isVetoedByMe
+                                                            ? 'bg-red-500/20 text-red-400 border-red-500/40 shadow-md shadow-red-500/10'
+                                                            : 'bg-white/5 text-muted-foreground border-white/5 hover:border-white/10 hover:text-foreground'
+                                                            }`}
+                                                    >
+                                                        <span>🚫</span>
+                                                        <span>{isVetoedByMe ? 'Vetoed' : 'Veto'}</span>
+                                                        {vetoCount > 0 && <span className="text-[9px] bg-red-500/30 text-red-200 px-1.5 py-0.5 rounded-full">{vetoCount}</span>}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Cuisine selector */}
+                    {availableCategories.length > 1 && (
+                        <div className="space-y-1">
+                            <span className="block text-[9px] font-bold text-muted-foreground uppercase tracking-wider">Cuisine / Category</span>
+                            <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                                {availableCategories.map((cat) => (
+                                    <button
+                                        key={cat}
+                                        onClick={() => setSelectedCategory(cat)}
+                                        className={`px-3 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition-all ${selectedCategory === cat
+                                                ? 'bg-primary text-white shadow-md shadow-primary/20 scale-[1.02]'
+                                                : 'bg-white/5 text-muted-foreground hover:bg-white/10 border border-white/5'
+                                            }`}
+                                    >
+                                        {cat}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Vibe selector */}
+                    {availableVibes.length > 1 && (
+                        <div className="space-y-1">
+                            <span className="block text-[9px] font-bold text-muted-foreground uppercase tracking-wider">Vibe / Environment</span>
+                            <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                                {availableVibes.map((vibe) => (
+                                    <button
+                                        key={vibe}
+                                        onClick={() => setSelectedVibe(vibe)}
+                                        className={`px-3 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition-all ${selectedVibe === vibe
+                                                ? 'bg-primary text-white shadow-md shadow-primary/20 scale-[1.02]'
+                                                : 'bg-white/5 text-muted-foreground hover:bg-white/10 border border-white/5'
+                                            }`}
+                                    >
+                                        {vibe}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
 
             <div ref={scrollRef} className="flex-1 overflow-y-auto pb-8 no-scrollbar scroll-smooth">
                 {/* Sticky Results Header */}
@@ -1360,12 +1623,16 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                             <h3 className="text-lg font-bold text-foreground mb-2">
                                 {restaurantSubTab === 'friends'
                                     ? 'No Friend Suggestions'
-                                    : 'No Suggested Restaurants'}
+                                    : restaurantSubTab === 'all'
+                                        ? 'No Restaurants Found'
+                                        : 'No Suggested Restaurants'}
                             </h3>
                             <p className="text-sm text-muted-foreground leading-relaxed">
                                 {restaurantSubTab === 'friends'
                                     ? 'No one has suggested a specific restaurant yet.'
-                                    : 'System recommendations are still being generated. Check back soon.'}
+                                    : restaurantSubTab === 'all'
+                                        ? 'No restaurants have been scored yet. Check back soon.'
+                                        : 'System recommendations are still being generated. Check back soon.'}
                             </p>
                             <button
                                 onClick={() => setViewMode('decision')}
@@ -1382,13 +1649,13 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                 {/* Guidance banner — shown when user hasn't voted on anything yet */}
                                 {status === 'open' && (() => {
                                     const hasVotedTime = Object.values(votingState.time_votes || {}).some(
-                                        (voters: any) => voters.includes(currentUserId)
+                                        (voters: any) => Array.isArray(voters) && voters.includes(currentUserId)
                                     );
                                     const hasVotedRestaurant =
-                                        (votingState.restaurant_preferences?.[currentUserId]?.length || 0) > 0 ||
-                                        Object.values(votingState.restaurant_vetoes || {}).some(
-                                            (voters: any) => voters.includes(currentUserId)
-                                        );
+                                        Object.values(votingState.restaurant_preferences || {}).some(
+                                            (voters: any) => Array.isArray(voters) && voters.includes(currentUserId)
+                                        ) ||
+                                        (votingState.user_vetoed && votingState.user_vetoed.length > 0);
                                     const showBanner = !hasVotedTime && !hasVotedRestaurant;
                                     return showBanner ? (
                                         <div className="bg-primary/10 border border-primary/20 rounded-2xl p-4 space-y-1">
@@ -1974,6 +2241,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                         onClick={() => {
                                             setActiveFilters({});
                                             setSelectedCategory('All');
+                                            setSelectedVibe('All');
                                         }}
                                         className="mt-4 text-[11px] font-bold text-primary hover:underline"
                                     >
@@ -2006,7 +2274,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                 style={{ animationDelay: `${index * 100}ms` }}
                                             >
                                                 <div className="h-32 w-full relative bg-gradient-to-r from-gray-700 to-gray-600">
-                                                    {viewMode === 'restaurants' && restaurantSubTab === 'suggested' && index < 3 && (
+                                                    {viewMode === 'restaurants' && (restaurantSubTab === 'suggested' || restaurantSubTab === 'all') && index < 3 && (
                                                         <div className="absolute top-2 left-2 w-10 h-10 flex items-center justify-center bg-black/40 backdrop-blur-md rounded-full border border-white/10 z-20 shadow-xl overflow-hidden group/medal">
                                                             <div className={`text-2xl ${index === 0 ? 'animate-bounce-slow' : ''}`}>
                                                                 {index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}
@@ -2074,11 +2342,6 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                                 const cats = typeof place.category === 'string'
                                                                     ? JSON.parse(place.category.replace(/'/g, '"'))
                                                                     : (Array.isArray(place.category) ? place.category : []);
-                                                                return cats.slice(0, 3).map((c: string) => (
-                                                                    <span key={c} className="px-2 py-0.5 rounded-md bg-white/5 text-[9px] font-bold text-muted-foreground">
-                                                                        {c}
-                                                                    </span>
-                                                                ));
                                                             } catch (e) {
                                                                 return null;
                                                             }
@@ -2094,37 +2357,107 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                                 }
                                                                 if (!reasonObj || typeof reasonObj !== 'object' || Array.isArray(reasonObj)) return null;
 
+                                                                const activeTab = expandedTabs[place.id] || 'factor';
+
                                                                 return (
-                                                                    <div className="grid grid-cols-2 gap-2 mb-3 animate-in fade-in slide-in-from-top-2 duration-300">
-                                                                        {Object.entries(reasonObj)
-                                                                            .filter(([key]) => key !== 'Fixed')
-                                                                            .sort(([keyA, detailsA]: [any, any], [keyB, detailsB]: [any, any]) => {
-                                                                                const maxA = detailsA.max_score || 0;
-                                                                                const maxB = detailsB.max_score || 0;
-                                                                                if (maxB !== maxA) return maxB - maxA;
-                                                                                return keyA.localeCompare(keyB);
-                                                                            })
-                                                                            .map(([key, details]: [string, any], i: number) => {
-                                                                                const score = details.weighted_score
-                                                                                const max = details.max_score || 1;
-                                                                                return (
-                                                                                    <div key={i} className="bg-white/5 rounded-xl p-2 border border-white/10 hover:bg-white/5 transition-colors">
-                                                                                        <div className="flex justify-between items-center mb-1.5">
-                                                                                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider line-clamp-1">{key}</span>
-                                                                                            <span className="text-[10px] font-black text-primary shrink-0">
-                                                                                                {typeof score === 'number' ? parseFloat(score.toFixed(1)) : score}/{max}
-                                                                                            </span>
+                                                                    <div className="flex flex-col gap-2">
+                                                                        {/* Tab Header */}
+                                                                        <div className="flex border-b border-white/5 mb-2 relative z-30">
+                                                                            <button
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    setExpandedTabs(prev => ({ ...prev, [place.id]: 'factor' }));
+                                                                                }}
+                                                                                className={`flex-1 py-1.5 text-xs font-black uppercase tracking-wider border-b-2 transition-all ${activeTab === 'factor' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+                                                                            >
+                                                                                Factor
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    setExpandedTabs(prev => ({ ...prev, [place.id]: 'attendee' }));
+                                                                                }}
+                                                                                className={`flex-1 py-1.5 text-xs font-black uppercase tracking-wider border-b-2 transition-all ${activeTab === 'attendee' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+                                                                            >
+                                                                                Attendee
+                                                                            </button>
+                                                                        </div>
+
+                                                                        {/* Tab Content */}
+                                                                        {activeTab === 'factor' ? (
+                                                                            <div className="grid grid-cols-2 gap-2 mb-3 animate-in fade-in duration-200">
+                                                                                {Object.entries(reasonObj)
+                                                                                    .filter(([key]) => key !== 'Fixed' && key !== '_attendee_scores')
+                                                                                    .sort(([keyA, detailsA]: [any, any], [keyB, detailsB]: [any, any]) => {
+                                                                                        const maxA = detailsA.max_score || 0;
+                                                                                        const maxB = detailsB.max_score || 0;
+                                                                                        if (maxB !== maxA) return maxB - maxA;
+                                                                                        return keyA.localeCompare(keyB);
+                                                                                    })
+                                                                                    .map(([key, details]: [string, any], i: number) => {
+                                                                                        const score = details.weighted_score;
+                                                                                        const max = details.max_score || 1;
+                                                                                        const percentage = max > 0 ? Math.round((score / max) * 100) : 0;
+                                                                                        return (
+                                                                                            <div key={i} className="bg-white/5 rounded-xl p-2 border border-white/10 hover:bg-white/5 transition-colors">
+                                                                                                <div className="flex justify-between items-center mb-1.5">
+                                                                                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider line-clamp-1">{key}</span>
+                                                                                                    <span className="text-[10px] font-black text-primary shrink-0 flex items-center gap-1">
+                                                                                                        <span>{percentage}%</span>
+                                                                                                        <span className="text-[8px] text-muted-foreground font-medium">({typeof score === 'number' ? parseFloat(score.toFixed(1)) : score}/{parseFloat(max.toFixed(1))})</span>
+                                                                                                    </span>
+                                                                                                </div>
+                                                                                                <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                                                                                                    <div
+                                                                                                        className="h-full bg-primary/60"
+                                                                                                        style={{ width: `${(score / max) * 100}%` }}
+                                                                                                    />
+                                                                                                </div>
+                                                                                            </div>
+                                                                                        );
+                                                                                    })
+                                                                                }
+                                                                            </div>
+                                                                        ) : (
+                                                                            <div className="space-y-1.5 mb-3 animate-in fade-in duration-200">
+                                                                                {(() => {
+                                                                                    const attendeeScores = (reasonObj as any)._attendee_scores || {};
+                                                                                    const sortedAttendees = Object.values(attendeeScores).sort((a: any, b: any) => b.score - a.score);
+
+                                                                                    if (sortedAttendees.length === 0) {
+                                                                                        return (
+                                                                                            <div className="text-center py-4 text-xs text-muted-foreground">
+                                                                                                No attendee scores available
+                                                                                            </div>
+                                                                                        );
+                                                                                    }
+
+                                                                                    return sortedAttendees.map((att: any, idx: number) => (
+                                                                                        <div key={idx} className="flex items-center justify-between bg-white/5 rounded-xl p-2 border border-white/10">
+                                                                                            <div className="flex items-center gap-2">
+                                                                                                {att.pictureUrl ? (
+                                                                                                    <img
+                                                                                                        src={att.pictureUrl}
+                                                                                                        alt={att.name}
+                                                                                                        className="w-5 h-5 rounded-full border border-white/10 object-cover"
+                                                                                                    />
+                                                                                                ) : (
+                                                                                                    <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold text-primary border border-primary/20">
+                                                                                                        {att.name ? att.name.charAt(0).toUpperCase() : '?'}
+                                                                                                    </div>
+                                                                                                )}
+                                                                                                <span className="text-[11px] font-bold text-foreground line-clamp-1">{att.name}</span>
+                                                                                            </div>
+                                                                                            <div className="flex items-center gap-1.5 shrink-0">
+                                                                                                <div className="text-[9px] font-black text-primary bg-primary/10 px-1.5 py-0.5 rounded-full border border-primary/20">
+                                                                                                    {att.score}%
+                                                                                                </div>
+                                                                                            </div>
                                                                                         </div>
-                                                                                        <div className="h-1 bg-white/5 rounded-full overflow-hidden">
-                                                                                            <div
-                                                                                                className="h-full bg-primary/60"
-                                                                                                style={{ width: `${(score / max) * 100}%` }}
-                                                                                            />
-                                                                                        </div>
-                                                                                    </div>
-                                                                                );
-                                                                            })
-                                                                        }
+                                                                                    ));
+                                                                                })()}
+                                                                            </div>
+                                                                        )}
                                                                     </div>
                                                                 );
                                                             })()}
@@ -2182,7 +2515,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                         );
                                     })}
 
-                                    {viewMode === 'restaurants' && restaurantSubTab === 'suggested' && filteredSuggestions.length > visibleDiscoveryCount && (
+                                    {viewMode === 'restaurants' && (restaurantSubTab === 'suggested' || restaurantSubTab === 'all') && filteredSuggestions.length > visibleDiscoveryCount && (
                                         <div className="pt-2 pb-6 flex justify-center">
                                             <button
                                                 onClick={() => setVisibleDiscoveryCount(prev => prev + 10)}

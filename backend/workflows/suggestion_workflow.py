@@ -6,7 +6,7 @@ import pandas as pd
 from datetime import datetime
 
 class SuggestionWorkflows:
-    def get_suggestion(self, meeting_detail: dict, attendance_details, restaurant_data: list):
+    def get_suggestion(self, meeting_detail: dict, attendance_details, restaurant_data: list, user_details: list):
         meeting_detail = meeting_detail.to_dict()
         initial_data = meeting_detail.get("initial_data", None)
         if initial_data:
@@ -113,7 +113,8 @@ class SuggestionWorkflows:
             attendees_availiability=attendees_availiability,
             suggestion_config = suggestion_config,
             fixed_restaurants=initial_data.get("fixed_restaurants", None),
-            fixed_location=initial_data.get("fix_location_coords", None)
+            fixed_location=initial_data.get("fix_location_coords", None),
+            user_details=user_details
         )
         
         result = {
