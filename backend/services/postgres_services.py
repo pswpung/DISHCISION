@@ -7,7 +7,8 @@ from sqlalchemy.orm import sessionmaker
 load_dotenv()
 
 # If using the Docker Compose setup from earlier:
-SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:P%40ssw0rd@localhost:54321/postgres")
+# SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:P%40ssw0rd@localhost:54321/postgres")
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:P%40ssw0rd@192.168.0.62:54321/postgres")
 
 # Create the engine
 engine = create_engine(SQLALCHEMY_DATABASE_URL)

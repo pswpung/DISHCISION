@@ -84,3 +84,106 @@ This route handles two layout modes:
 - **B. Group Dashboard View** (when loaded with `group_id` parameter only):
   - Lists all meetings created within that LINE group.
   - Displays dates, status badges (**Vote Now** / **Closed**), and provides direct links to the meeting result pages.
+
+---
+
+## 3. Setup & Environment Variables
+
+Copy `.env.local.example` or create a `.env.local` file inside the `frontend` folder with the following variables:
+
+```env
+NEXT_PUBLIC_LIFF_ID=your-liff-id
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
+NEXT_PUBLIC_GOOGLE_AUTH_PROXY_URL=https://your-username.github.io/dishcision-auth/
+```
+
+### 🔑 Google Calendar Client ID Setup:
+To enable the **Sync Calendar** feature on the availability page, you must register a Web OAuth Client ID:
+1. Open the [Google Cloud Console](https://console.cloud.google.com/).
+2. Select your project or click **New Project** to create one.
+3. Configure the **OAuth Consent Screen** (under **APIs & Services > OAuth consent screen**):
+   - Choose **External** user type.
+   - Fill in app metadata (Name, User support email, developer contact email).
+   - In the **Scopes** section, add the `.../auth/calendar.readonly` (Google Calendar API Read-Only) scope.
+4. Create **Credentials** (under **APIs & Services > Credentials**):
+   - Click **+ Create Credentials** > **OAuth client ID**.
+   - Set the Application type to **Web application**.
+   - Under **Authorized JavaScript origins**, click **+ Add URI** and register your domain URL. *Crucial for security; Google blocks requests from unregistered origins.* Add:
+     - `http://localhost:3000` (Local dev)
+     - `http://localhost:3001` (Production frontend port)
+     - The custom domain of your free OAuth Proxy page (e.g., `https://your-username.github.io` if using GitHub Pages, or `https://*.vercel.app` if using Vercel).
+     - *Note*: If you are testing on localhost, you do not need the proxy. If you are testing inside LINE on Android/iOS via a Cloudflare Tunnel (`*.trycloudflare.com`), Google blocks the direct origin, so registering the proxy URL is required.
+    - Under **Authorized redirect URIs**, click **+ Add URI** and add:
+      - `https://your-username.github.io/dishcision-auth/` (Your exact GitHub Pages URL)
+5. Click **Create** and copy your **Client ID** string.
+6. Paste the string as the value for `NEXT_PUBLIC_GOOGLE_CLIENT_ID` in your `frontend/.env.local` file.
+7. Restart your Next.js server to register the environment variable.
+
+### 🌐 Google OAuth Proxy Setup (For Cloudflare Tunnels & LINE webview):
+Since Google OAuth blocks JavaScript origins using shared tunnel domains like `trycloudflare.com`, and Android's LINE webview doesn't render Ngrok's interstitial warning page, we use a lightweight static HTML proxy hosted on a free provider (GitHub Pages or Vercel) which Google fully trusts.
+
+#### Step 1: Create a GitHub Pages Repository
+1. Create a new public repository on GitHub called `dishcision-auth`.
+2. Add an `index.html` file to the root of the repository with the following code:
+   ```html
+   <!DOCTYPE html>
+   <html>
+   <head>
+     <title>Google Authentication</title>
+   </head>
+   <body>
+     <div style="text-align: center; margin-top: 50px; font-family: sans-serif;">
+       <h3>Connecting to Google...</h3>
+       <p>Please wait while we redirect you to the Google consent screen.</p>
+     </div>
+     <script>
+       // 1. Check if we just loaded or if we are returning from Google redirect
+       const hash = window.location.hash;
+       const searchParams = new URLSearchParams(window.location.search);
+       
+       if (hash && hash.includes('access_token')) {
+         // Returning from Google redirect!
+         const hashParams = new URLSearchParams(hash.substring(1)); // strip '#'
+         const accessToken = hashParams.get('access_token');
+         const targetOrigin = searchParams.get('state');
+         
+         if (window.opener) {
+           window.opener.postMessage({ access_token: accessToken }, targetOrigin);
+         } else {
+           document.body.innerHTML = "<h3>Authentication completed. You can close this window.</h3>";
+         }
+         window.close();
+       } else {
+         // First load: Redirect to Google OAuth!
+         const origin = searchParams.get('origin');
+         const clientId = searchParams.get('client_id');
+         
+         if (!origin || !clientId) {
+           document.body.innerHTML = "<h3>Error: Missing origin or client_id parameters.</h3>";
+         } else {
+           const redirectUri = window.location.origin + window.location.pathname;
+           const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+             `client_id=${encodeURIComponent(clientId)}&` +
+             `redirect_uri=${encodeURIComponent(redirectUri)}&` +
+             `response_type=token&` +
+             `scope=https://www.googleapis.com/auth/calendar.readonly&` +
+             `state=${encodeURIComponent(origin)}`;
+             
+           window.location.href = googleAuthUrl;
+         }
+       }
+     </script>
+   </body>
+   </html>
+   ```
+3. Enable **GitHub Pages** under **Settings > Pages** in your repository, selecting the `main` branch root as the source.
+4. Note your GitHub Pages URL (e.g. `https://your-username.github.io/dishcision-auth/`).
+
+#### Step 2: Configure your Environment
+1. Add your Pages URL to your `frontend/.env.local` file:
+   ```env
+   NEXT_PUBLIC_GOOGLE_AUTH_PROXY_URL=https://your-username.github.io/dishcision-auth/
+   ```
+2. Restart your Next.js frontend server. Now, when running on external tunnels, the app will automatically route calendar sync requests through this secure proxy, allowing your friends on mobile devices (Android & iOS) to sync their Google Calendars cleanly inside the LINE app.
+
+

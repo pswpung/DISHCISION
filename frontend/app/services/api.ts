@@ -198,6 +198,11 @@ export const apiService = {
         return response.data;
     },
 
+    selectWheelTimeSlots: async (meetingId: string, slotKeys: string[]) => {
+        const response = await apiClient.post(`/meetings/${meetingId}/select-wheel-time-slots`, { slot_keys: slotKeys });
+        return response.data;
+    },
+
     confirmFinalMeetingPlan: async (meetingId: string, confirmedTimeSlot: string, confirmedRestaurant: string) => {
         const response = await apiClient.post(`/meetings/${meetingId}/confirm-final`, {
             confirmed_time: confirmedTimeSlot,

@@ -42,6 +42,8 @@ def get_initialized_voting_state(meeting: MeetingDetail):
         }
     if "selected_restaurants" not in state:
         state["selected_restaurants"] = []
+    if "selected_time_slots" not in state:
+        state["selected_time_slots"] = []
     
     return state
 
@@ -90,6 +92,9 @@ class SpinWheelRequest(BaseModel):
 
 class SelectWheelRestaurantsRequest(BaseModel):
     restaurant_names: List[str]
+
+class SelectWheelTimeSlotsRequest(BaseModel):
+    slot_keys: List[str]
 
 class ConfirmFinalRequest(BaseModel):
     confirmed_time: str
@@ -322,6 +327,20 @@ def select_wheel_restaurants(meeting_id: UUID, req: SelectWheelRestaurantsReques
     
     state = copy.deepcopy(get_initialized_voting_state(meeting))
     state["selected_restaurants"] = req.restaurant_names
+    
+    meeting.voting_state = state
+    db.commit()
+    db.refresh(meeting)
+    return sanitize_meeting_response(meeting)
+
+@router.post("/{meeting_id}/select-wheel-time-slots", response_model=MeetingResponse)
+def select_wheel_time_slots(meeting_id: UUID, req: SelectWheelTimeSlotsRequest, db: Session = Depends(get_db)):
+    meeting = db.query(MeetingDetail).filter(MeetingDetail.meeting_id == meeting_id).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    
+    state = copy.deepcopy(get_initialized_voting_state(meeting))
+    state["selected_time_slots"] = req.slot_keys
     
     meeting.voting_state = state
     db.commit()

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { LiffProvider } from "./context/LiffContext";
+import Script from "next/script";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -37,7 +38,13 @@ export default function RootLayout({
             {children}
           </LiffProvider>
         </ThemeProvider>
+        {/* Load Google Identity Services client */}
+        <Script 
+          src="https://accounts.google.com/gsi/client" 
+          strategy="afterInteractive"
+        />
       </body>
     </html>
   );
 }
+

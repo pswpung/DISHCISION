@@ -379,6 +379,36 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
         return meetingData?.initial_data?.organizer_id === currentUserId;
     }, [meetingData, currentUserId]);
 
+    const isFixedTime = useMemo(() => {
+        return (meetingData?.initial_data?.timing_mode || 'period') === 'fixed';
+    }, [meetingData]);
+
+    const isFixedRestaurant = useMemo(() => {
+        return (meetingData?.initial_data?.fixed_restaurants?.length || 0) > 0;
+    }, [meetingData]);
+
+    const hasVotedTime = useMemo(() => {
+        return Object.values(votingState.time_votes || {}).some(
+            (voters: any) => Array.isArray(voters) && voters.includes(currentUserId)
+        );
+    }, [votingState, currentUserId]);
+
+    const hasVotedRestaurant = useMemo(() => {
+        return Object.values(votingState.restaurant_preferences || {}).some(
+            (voters: any) => Array.isArray(voters) && voters.includes(currentUserId)
+        ) || (votingState.user_vetoed && votingState.user_vetoed.length > 0);
+    }, [votingState, currentUserId]);
+
+    const canToggleReady = useMemo(() => {
+        const timeCheck = isFixedTime || hasVotedTime;
+        const restaurantCheck = isFixedRestaurant || hasVotedRestaurant;
+        return timeCheck && restaurantCheck;
+    }, [isFixedTime, hasVotedTime, isFixedRestaurant, hasVotedRestaurant]);
+
+    const isCurrentUserReady = useMemo(() => {
+        return votingState.ready_users?.includes(currentUserId) || false;
+    }, [votingState.ready_users, currentUserId]);
+
     const isSpinningTime = useMemo(() => {
         return votingState.wheel_state?.status === 'spinning' && votingState.wheel_state?.target_type === 'time';
     }, [votingState]);
@@ -866,6 +896,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
     const handleToggleTimeVote = async (date: string, time: string, e: React.MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
+        if (isCurrentUserReady) return;
         try {
             const slotKey = `${date}_${time}`;
             const updated = await apiService.voteTimeSlot(meetingId, currentUserId, slotKey);
@@ -895,6 +926,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
     const handleToggleTailIn = async (restaurantName: string, e: React.MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
+        if (isCurrentUserReady) return;
         try {
             const updated = await apiService.toggleTailIn(meetingId, currentUserId, restaurantName);
             setMeetingData(updated);
@@ -907,6 +939,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
     const handleToggleTailOut = async (restaurantName: string, e: React.MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
+        if (isCurrentUserReady) return;
         try {
             const updated = await apiService.toggleTailOut(meetingId, currentUserId, restaurantName);
             setMeetingData(updated);
@@ -951,6 +984,23 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
         await handleSelectWheelRestaurants(updatedList);
     };
 
+    const handleSelectWheelTimeSlots = async (keys: string[]) => {
+        try {
+            const updated = await apiService.selectWheelTimeSlots(meetingId, keys);
+            setMeetingData(updated);
+        } catch (err) {
+            console.error("Failed to select wheel time slots:", err);
+        }
+    };
+
+    const handleToggleTimeSlotForWheel = async (key: string) => {
+        const currentList = votingState.selected_time_slots || [];
+        const updatedList = currentList.includes(key)
+            ? currentList.filter((k: string) => k !== key)
+            : [...currentList, key];
+        await handleSelectWheelTimeSlots(updatedList);
+    };
+
     const handleConfirmFinal = async () => {
         const timeVal = ((meetingData?.initial_data?.timing_mode || 'period') === 'fixed')
             ? `${meetingData?.initial_data?.fixed_date}_${meetingData?.initial_data?.fixed_start_time}`
@@ -976,7 +1026,11 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
     const handleTriggerSpin = async (targetType: 'time' | 'restaurant') => {
         let candidates: Array<{ key: string; label: string; weight: number }> = [];
         if (targetType === 'time') {
-            sortedSlots.forEach(slot => {
+            const selectedKeys = votingState.selected_time_slots || [];
+            const slotsToUse = selectedKeys.length > 0
+                ? sortedSlots.filter(slot => selectedKeys.includes(`${slot.date}_${slot.time}`))
+                : sortedSlots;
+            slotsToUse.forEach(slot => {
                 const key = `${slot.date}_${slot.time}`;
                 const votes = votingState.time_votes?.[key]?.length || 0;
                 candidates.push({
@@ -1516,28 +1570,30 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                 </div>
                                                 <div className="flex items-center gap-1.5 shrink-0">
                                                     <button
+                                                        disabled={isCurrentUserReady}
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             handleToggleTailIn(place.name, e);
                                                         }}
-                                                        className={`flex items-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-black uppercase tracking-wider transition-all active:scale-95 duration-200 ${isPreferredByMe
+                                                        className={`flex items-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-black uppercase tracking-wider transition-all duration-200 ${isPreferredByMe
                                                             ? 'bg-rose-500/20 text-rose-400 border-rose-500/40 shadow-md shadow-rose-500/10'
                                                             : 'bg-white/5 text-muted-foreground border-white/5 hover:border-white/10 hover:text-foreground'
-                                                            }`}
+                                                            } ${isCurrentUserReady ? 'opacity-40 cursor-not-allowed pointer-events-none' : 'active:scale-95'}`}
                                                     >
                                                         <span>❤️</span>
                                                         <span>{isPreferredByMe ? 'Preferred' : 'Prefer'}</span>
                                                         {prefCount > 0 && <span className="text-[9px] bg-rose-500/30 text-rose-200 px-1.5 py-0.5 rounded-full">{prefCount}</span>}
                                                     </button>
                                                     <button
+                                                        disabled={isCurrentUserReady}
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             handleToggleTailOut(place.name, e);
                                                         }}
-                                                        className={`flex items-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-black uppercase tracking-wider transition-all active:scale-95 duration-200 ${isVetoedByMe
+                                                        className={`flex items-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-black uppercase tracking-wider transition-all duration-200 ${isVetoedByMe
                                                             ? 'bg-red-500/20 text-red-400 border-red-500/40 shadow-md shadow-red-500/10'
                                                             : 'bg-white/5 text-muted-foreground border-white/5 hover:border-white/10 hover:text-foreground'
-                                                            }`}
+                                                            } ${isCurrentUserReady ? 'opacity-40 cursor-not-allowed pointer-events-none' : 'active:scale-95'}`}
                                                     >
                                                         <span>🚫</span>
                                                         <span>{isVetoedByMe ? 'Vetoed' : 'Veto'}</span>
@@ -1717,13 +1773,16 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                     </p>
                                                 </div>
                                                 <button
+                                                    disabled={!canToggleReady && !isCurrentUserReady}
                                                     onClick={handleToggleReady}
-                                                    className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 duration-200 ${votingState.ready_users?.includes(currentUserId)
-                                                        ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                                                        : 'bg-primary text-white shadow-lg shadow-primary/20'
+                                                    className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 ${isCurrentUserReady
+                                                        ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30 active:scale-95 hover:bg-purple-500/30'
+                                                        : !canToggleReady
+                                                            ? 'bg-zinc-800 text-zinc-500 border border-white/5 opacity-40 cursor-not-allowed'
+                                                            : 'bg-primary text-white shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98]'
                                                         }`}
                                                 >
-                                                    {votingState.ready_users?.includes(currentUserId) ? '✓ Ready' : 'I\'m Ready'}
+                                                    {isCurrentUserReady ? 'Edit' : 'I\'m Ready'}
                                                 </button>
                                             </div>
 
@@ -1802,16 +1861,74 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
 
                                                 {votingState.time_decision_method === 'wheel' ? (
                                                     <div className="space-y-4 pt-2">
+                                                        {isOrganizer && (
+                                                            <div className="space-y-3">
+                                                                <div className="space-y-2">
+                                                                    <h4 className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Include in Spin Wheel</h4>
+                                                                    <div className="max-h-32 overflow-y-auto bg-black/10 rounded-2xl p-2.5 border border-white/5 space-y-1.5 custom-scrollbar">
+                                                                        {(() => {
+                                                                            const sorted = [...sortedSlots].sort((a, b) => {
+                                                                                const keyA = `${a.date}_${a.time}`;
+                                                                                const keyB = `${b.date}_${b.time}`;
+                                                                                const votesA = votingState.time_votes?.[keyA]?.length || 0;
+                                                                                const votesB = votingState.time_votes?.[keyB]?.length || 0;
+                                                                                return votesB - votesA;
+                                                                            });
+                                                                            return sorted.map(slot => {
+                                                                                const key = `${slot.date}_${slot.time}`;
+                                                                                const isChecked = votingState.selected_time_slots?.includes(key) || false;
+                                                                                const votes = votingState.time_votes?.[key]?.length || 0;
+                                                                                return (
+                                                                                    <label key={key} className="flex items-center gap-2 text-[11px] font-semibold text-foreground/80 cursor-pointer">
+                                                                                        <input
+                                                                                            type="checkbox"
+                                                                                            checked={isChecked}
+                                                                                            onChange={() => handleToggleTimeSlotForWheel(key)}
+                                                                                            className="rounded border-white/10 accent-primary"
+                                                                                        />
+                                                                                        <span className="truncate flex-1">{slot.date.slice(5)} • {slot.time}</span>
+                                                                                        <span className="text-[10px] text-primary font-black shrink-0">👍 {votes}</span>
+                                                                                    </label>
+                                                                                );
+                                                                            });
+                                                                        })()}
+                                                                    </div>
+                                                                </div>
+                                                                <div className="bg-primary/5 border border-dashed border-primary/20 rounded-2xl p-4 text-[11px] text-muted-foreground space-y-1.5">
+                                                                    <span className="font-bold text-primary block">🎡 Organizer Guide: Time Slot Spin Wheel</span>
+                                                                    <ul className="list-disc pl-4 space-y-1">
+                                                                        <li>Use the checkboxes above to choose which time slots to include.</li>
+                                                                        <li>Slice sizes are dynamically weighted by matches/votes from friends.</li>
+                                                                        <li>Tap <strong>Spin Time Slot Wheel</strong> to let fortune decide!</li>
+                                                                        <li>Locks in the choice and notifies the LINE group upon confirmation.</li>
+                                                                    </ul>
+                                                                </div>
+                                                            </div>
+                                                        )}
+
                                                         <SpinWheel
-                                                            options={sortedSlots.map(slot => {
-                                                                const key = `${slot.date}_${slot.time}`;
-                                                                const votes = votingState.time_votes?.[key]?.length || 0;
-                                                                return {
-                                                                    key,
-                                                                    label: `${slot.date.slice(5)} ${slot.time}`,
-                                                                    weight: Math.max(1, votes)
-                                                                };
-                                                            })}
+                                                            options={(() => {
+                                                                const selectedKeys = votingState.selected_time_slots || [];
+                                                                const slotsToUse = selectedKeys.length > 0
+                                                                    ? sortedSlots.filter(slot => selectedKeys.includes(`${slot.date}_${slot.time}`))
+                                                                    : sortedSlots;
+                                                                const sorted = [...slotsToUse].sort((a, b) => {
+                                                                    const keyA = `${a.date}_${a.time}`;
+                                                                    const keyB = `${b.date}_${b.time}`;
+                                                                    const votesA = votingState.time_votes?.[keyA]?.length || 0;
+                                                                    const votesB = votingState.time_votes?.[keyB]?.length || 0;
+                                                                    return votesB - votesA;
+                                                                });
+                                                                return sorted.map(slot => {
+                                                                    const key = `${slot.date}_${slot.time}`;
+                                                                    const votes = votingState.time_votes?.[key]?.length || 0;
+                                                                    return {
+                                                                        key,
+                                                                        label: `${slot.date.slice(5)} ${slot.time} (${votes} ${votes === 1 ? 'vote' : 'votes'})`,
+                                                                        weight: Math.max(1, votes)
+                                                                    };
+                                                                });
+                                                            })()}
                                                             targetAngle={votingState.wheel_state?.target_type === 'time' ? votingState.wheel_state.stop_angle : null}
                                                             spinAt={votingState.wheel_state?.target_type === 'time' ? votingState.wheel_state.spin_at : null}
                                                             isSpinning={isSpinningTime}
@@ -1835,11 +1952,14 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                                 {isSpinningTime ? '🎡 The wheel is spinning!' : 'Waiting for organizer to spin...'}
                                                             </div>
                                                         )}
-                                                        {confirmedTimeSlot && (
-                                                            <div className="p-3 bg-purple-500/10 border border-purple-500/25 rounded-2xl text-center text-xs font-semibold text-purple-400">
-                                                                Selected Time Slot: <span className="font-bold text-foreground">{confirmedTimeSlot.replace('_', ' • ')}</span>
-                                                            </div>
-                                                        )}
+                                                        {confirmedTimeSlot && (() => {
+                                                            const votes = votingState.time_votes?.[confirmedTimeSlot]?.length || 0;
+                                                            return (
+                                                                <div className="p-3 bg-purple-500/10 border border-purple-500/25 rounded-2xl text-center text-xs font-semibold text-purple-400">
+                                                                    Selected Time Slot: <span className="font-bold text-foreground">{confirmedTimeSlot.replace('_', ' • ')}</span> <span className="text-[10px] text-purple-300 ml-1.5">(👍 {votes} {votes === 1 ? 'vote' : 'votes'})</span>
+                                                                </div>
+                                                            );
+                                                        })()}
                                                     </div>
                                                 ) : (
                                                     <div className="space-y-2 pt-2">
@@ -1937,22 +2057,27 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                             <div className="space-y-2">
                                                                 <h4 className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Include in Spin Wheel</h4>
                                                                 <div className="max-h-32 overflow-y-auto bg-black/10 rounded-2xl p-2.5 border border-white/5 space-y-1.5 custom-scrollbar">
-                                                                    {liveVenueCandidates.map(place => {
-                                                                        const isChecked = votingState.selected_restaurants?.includes(place.name) || false;
-                                                                        const vetoCount = place.vetoCount;
-                                                                        return (
-                                                                            <label key={place.name} className="flex items-center gap-2 text-[11px] font-semibold text-foreground/80 cursor-pointer">
-                                                                                <input
-                                                                                    type="checkbox"
-                                                                                    checked={isChecked}
-                                                                                    onChange={() => handleToggleRestaurantForWheel(place.name)}
-                                                                                    className="rounded border-white/10 accent-primary"
-                                                                                />
-                                                                                <span className="truncate flex-1">{place.name}</span>
-                                                                                {vetoCount > 0 && <span className="text-[9px] text-red-400 font-bold shrink-0">⚠️ {vetoCount} veto</span>}
-                                                                            </label>
-                                                                        );
-                                                                    })}
+                                                                    {(() => {
+                                                                        const sorted = [...liveVenueCandidates].sort((a, b) => {
+                                                                            return (b.prefCount || 0) - (a.prefCount || 0);
+                                                                        });
+                                                                        return sorted.map(place => {
+                                                                            const isChecked = votingState.selected_restaurants?.includes(place.name) || false;
+                                                                            const vetoCount = place.vetoCount;
+                                                                            return (
+                                                                                <label key={place.name} className="flex items-center gap-2 text-[11px] font-semibold text-foreground/80 cursor-pointer">
+                                                                                    <input
+                                                                                        type="checkbox"
+                                                                                        checked={isChecked}
+                                                                                        onChange={() => handleToggleRestaurantForWheel(place.name)}
+                                                                                        className="rounded border-white/10 accent-primary"
+                                                                                    />
+                                                                                    <span className="truncate flex-1">{place.name}</span>
+                                                                                    {vetoCount > 0 && <span className="text-[9px] text-red-400 font-bold shrink-0">⚠️ {vetoCount} veto</span>}
+                                                                                </label>
+                                                                            );
+                                                                        });
+                                                                    })()}
                                                                 </div>
                                                             </div>
                                                             <div className="bg-primary/5 border border-dashed border-primary/20 rounded-2xl p-4 text-[11px] text-muted-foreground space-y-1.5">
@@ -1968,13 +2093,17 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                     )}
 
                                                     <SpinWheel
-                                                        options={liveVenueCandidates.filter(r => (votingState.selected_restaurants || []).length === 0 || votingState.selected_restaurants.includes(r.name)).map(place => {
-                                                            return {
-                                                                key: place.name,
-                                                                label: place.name,
-                                                                weight: Math.max(1, Math.round((place.score || 50) / 10 + (place.prefCount || 0) * 5))
-                                                            };
-                                                        })}
+                                                        options={(() => {
+                                                            const filtered = liveVenueCandidates.filter(r => (votingState.selected_restaurants || []).length === 0 || votingState.selected_restaurants.includes(r.name));
+                                                            const sorted = [...filtered].sort((a, b) => (b.prefCount || 0) - (a.prefCount || 0));
+                                                            return sorted.map(place => {
+                                                                return {
+                                                                    key: place.name,
+                                                                    label: place.name,
+                                                                    weight: Math.max(1, Math.round((place.score || 50) / 10 + (place.prefCount || 0) * 5))
+                                                                };
+                                                            });
+                                                        })()}
                                                         targetAngle={votingState.wheel_state?.target_type === 'restaurant' ? votingState.wheel_state.stop_angle : null}
                                                         spinAt={votingState.wheel_state?.target_type === 'restaurant' ? votingState.wheel_state.spin_at : null}
                                                         isSpinning={isSpinningRestaurant}
@@ -2031,7 +2160,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                                     </div>
                                                                     <div className="flex items-center gap-3 shrink-0 ml-2">
                                                                         <span className="font-black text-primary" title={`Match Score: ${place.score}`}>
-                                                                            👍 {place.prefCount} {place.vetoCount > 0 ? `• 👎 ${place.vetoCount}` : ''}
+                                                                            👍 {place.prefCount}
                                                                         </span>
                                                                         {isOrganizer && confirmedRestaurant === place.name && (
                                                                             <span className="text-[9px] bg-purple-500/30 text-purple-200 px-1.5 py-0.5 rounded font-black uppercase">Confirmed</span>
@@ -2097,11 +2226,12 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                 <div className="flex items-center gap-2">
                                                     {status === 'open' && (
                                                         <button
+                                                            disabled={isCurrentUserReady}
                                                             onClick={(e) => handleToggleTimeVote(slot.date, slot.time, e)}
-                                                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[9px] font-black uppercase tracking-wider transition-all active:scale-95 duration-200 ${votingState.time_votes?.[`${slot.date}_${slot.time}`]?.includes(currentUserId)
+                                                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[9px] font-black uppercase tracking-wider transition-all duration-200 ${votingState.time_votes?.[`${slot.date}_${slot.time}`]?.includes(currentUserId)
                                                                 ? 'bg-purple-500/20 text-purple-400 border-purple-500/40 shadow-sm'
                                                                 : 'bg-white/5 text-muted-foreground border-white/10 hover:border-white/20'
-                                                                }`}
+                                                                } ${isCurrentUserReady ? 'opacity-40 cursor-not-allowed pointer-events-none' : 'active:scale-95'}`}
                                                         >
                                                             <span>👍 {votingState.time_votes?.[`${slot.date}_${slot.time}`]?.includes(currentUserId) ? 'Voted' : 'Vote'}</span>
                                                             {(votingState.time_votes?.[`${slot.date}_${slot.time}`]?.length || 0) > 0 && (
@@ -2471,14 +2601,15 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                     {status === 'open' && (
                                                         <div className="grid grid-cols-2 gap-2 mt-4 pt-4 border-t border-white/5 relative z-30">
                                                             <button
+                                                                disabled={isCurrentUserReady}
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
                                                                     handleToggleTailIn(place.name, e);
                                                                 }}
-                                                                className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-black uppercase tracking-wider transition-all active:scale-95 duration-200 ${isPreferredByMe
+                                                                className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-black uppercase tracking-wider transition-all duration-200 ${isPreferredByMe
                                                                     ? 'bg-rose-500/20 text-rose-400 border-rose-500/40 shadow-md shadow-rose-500/10'
                                                                     : 'bg-white/5 text-muted-foreground border-white/5 hover:border-white/10 hover:text-foreground'
-                                                                    }`}
+                                                                    } ${isCurrentUserReady ? 'opacity-40 cursor-not-allowed pointer-events-none' : 'active:scale-95'}`}
                                                             >
                                                                 <span>❤️</span>
                                                                 <span>{isPreferredByMe ? 'Preferred' : 'Prefer'}</span>
@@ -2490,14 +2621,15 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                                 )}
                                                             </button>
                                                             <button
+                                                                disabled={isCurrentUserReady}
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
                                                                     handleToggleTailOut(place.name, e);
                                                                 }}
-                                                                className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-black uppercase tracking-wider transition-all active:scale-95 duration-200 ${isVetoedByMe
+                                                                className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-black uppercase tracking-wider transition-all duration-200 ${isVetoedByMe
                                                                     ? 'bg-red-500/20 text-red-400 border-red-500/40 shadow-md shadow-red-500/10'
                                                                     : 'bg-white/5 text-muted-foreground border-white/5 hover:border-white/10 hover:text-foreground'
-                                                                    }`}
+                                                                    } ${isCurrentUserReady ? 'opacity-40 cursor-not-allowed pointer-events-none' : 'active:scale-95'}`}
                                                             >
                                                                 <span>🚫</span>
                                                                 <span>{isVetoedByMe ? 'Vetoed' : 'Veto'}</span>
