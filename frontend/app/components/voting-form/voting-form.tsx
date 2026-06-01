@@ -14,6 +14,8 @@ interface VotingFormProps {
     meetingData: any;
     restaurantConfig?: any;
     onVoteSubmit: (data: any) => void;
+    userId?: string;
+    allAttendees?: any[];
 }
 
 const getRankLabel = (index: number): string => {
@@ -25,11 +27,71 @@ const getRankLabel = (index: number): string => {
     return `${v}${suffix}`;
 };
 
-const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormProps) => {
+const timeToMinutes = (t: string): number => {
+    const [h, m] = t.split(':').map(Number);
+    return h * 60 + m;
+};
+
+const minutesToTime = (min: number): string => {
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+};
+
+const addSlotToDate = (dateStr: string, startStr: string, endStr: string, currentAvailability: any) => {
+    const startMin = timeToMinutes(startStr);
+    const endMin = timeToMinutes(endStr);
+    if (startMin >= endMin) return currentAvailability[dateStr] || [];
+    
+    const daySlots = currentAvailability[dateStr] || [];
+    const intervals = daySlots.map((s: any) => ({
+        start: timeToMinutes(s.start),
+        end: timeToMinutes(s.end)
+    }));
+    intervals.push({ start: startMin, end: endMin });
+    
+    intervals.sort((a: any, b: any) => a.start - b.start);
+    const merged: { start: number; end: number }[] = [];
+    intervals.forEach((i: any) => {
+        if (merged.length === 0) {
+            merged.push(i);
+        } else {
+            const last = merged[merged.length - 1];
+            if (i.start <= last.end) {
+                last.end = Math.max(last.end, i.end);
+            } else {
+                merged.push(i);
+            }
+        }
+    });
+    
+    return merged.map(i => ({
+        start: minutesToTime(i.start),
+        end: minutesToTime(i.end)
+    }));
+};
+
+const getDaysArray = (start: string, end: string) => {
+    let arr = [];
+    try {
+        for (let dt = new Date(start); dt <= new Date(end); dt.setDate(dt.getDate() + 1)) {
+            arr.push(new Date(dt).toISOString().slice(0, 10)); // YYYY-MM-DD
+        }
+    } catch (e) {
+        console.error("Invalid dates passed to getDaysArray", e);
+    }
+    return arr;
+};
+
+const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit, userId, allAttendees }: VotingFormProps) => {
     const { profile } = useLiff();
     const [currentStep, setCurrentStep] = useState(1);
     const [rsvp, setRsvp] = useState<'yes' | 'no' | null>(null);
     const [availability, setAvailability] = useState<any>({}); // { date: [ {start, end} ] }
+    const [showBulkPresets, setShowBulkPresets] = useState(false);
+    const [customStart, setCustomStart] = useState('18:00');
+    const [customEnd, setCustomEnd] = useState('21:00');
+    const [customScope, setCustomScope] = useState<'weekdays' | 'weekends' | 'all'>('weekdays');
 
     // Preferences State
     const [priceRange, setPriceRange] = useState<string>('');
@@ -62,6 +124,103 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
     const [advancedPriorities, setAdvancedPriorities] = useState<string[][]>([]);
     const [maxWalkDistance, setMaxWalkDistance] = useState<number>(1000);
     const priorityFactors = ['Price', 'Category', 'Vibe/Good For', 'Distance from BTS', 'Rating', 'Parking', 'Alcohol'];
+
+    const [isCopying, setIsCopying] = useState(false);
+
+    const handleCopyPreviousPreferences = async () => {
+        const activeUserId = userId || profile?.userId;
+        if (!activeUserId) {
+            alert("User ID not found. Please log in or select a simulated attendee.");
+            return;
+        }
+
+        setIsCopying(true);
+        try {
+            const data = await apiService.getLastAttendeePreference(activeUserId);
+            if (!data || !data.preference) {
+                alert("No previous preference found for this user.");
+                return;
+            }
+
+            const { preference, avaliable_at } = data;
+
+            if (preference.price) setPriceRange(preference.price);
+            if (preference.meal_time) setPreferredMealTime(preference.meal_time);
+            if (preference.category) setSelectedCategories(preference.category);
+            if (preference.avoid_categories) setAvoidCategories(preference.avoid_categories);
+            if (preference.good_fors) setSelectedGoodFors(preference.good_fors);
+            setSelectedAlcohols(!!preference.alcohols);
+            setSelectedParking(!!preference.parking);
+            if (preference.departure_location) setDepartureLocation(preference.departure_location);
+            if (preference.lat && preference.lng) {
+                setLocationCoords({ lat: preference.lat, lng: preference.lng });
+            }
+            if (preference.preferred_restaurant) setPreferredRestaurant(preference.preferred_restaurant);
+            if (preference.max_walk_distance) setMaxWalkDistance(preference.max_walk_distance);
+
+            const savedPriorities = preference.priorities || [];
+            if (savedPriorities.length > 0) {
+                const isAdvanced = savedPriorities.some((group: any) => group.length > 1);
+                if (isAdvanced) {
+                    setPrioritiesMode('advanced');
+                    setAdvancedPriorities(savedPriorities);
+                } else {
+                    setPrioritiesMode('normal');
+                    setNormalPriorities(savedPriorities.map((group: any) => group[0]));
+                }
+            }
+
+            const parsedAvail: any = {};
+            if (avaliable_at && Array.isArray(avaliable_at)) {
+                avaliable_at.forEach((item: any) => {
+                    if (!item.start?.dateTime || !item.end?.dateTime) return;
+                    const dateStr = item.start.dateTime.slice(0, 10);
+                    const startTime = item.start.dateTime.slice(11, 16);
+                    const endTime = item.end.dateTime.slice(11, 16);
+                    
+                    if (!parsedAvail[dateStr]) {
+                        parsedAvail[dateStr] = [];
+                    }
+                    parsedAvail[dateStr].push({ start: startTime, end: endTime });
+                });
+            }
+            setAvailability(parsedAvail);
+
+            alert("Successfully copied preferences and availability from your last meeting!");
+            setRsvp('yes');
+            setCurrentStep(meetingData?.timingMode === 'fixed' ? 3 : 2);
+        } catch (err) {
+            console.error("Failed to copy previous preferences:", err);
+            alert("Error copying preferences.");
+        } finally {
+            setIsCopying(false);
+        }
+    };
+
+    const handleApplyCustomPreset = () => {
+        if (!meetingData?.startDate || !meetingData?.endDate) return;
+        const dates = getDaysArray(meetingData.startDate, meetingData.endDate);
+        const updatedAvailability = { ...availability };
+        
+        dates.forEach(dateStr => {
+            const dateObj = new Date(dateStr);
+            const dayOfWeek = dateObj.getDay(); 
+            const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
+            const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+            
+            let matches = false;
+            if (customScope === 'all') matches = true;
+            else if (customScope === 'weekdays' && isWeekday) matches = true;
+            else if (customScope === 'weekends' && isWeekend) matches = true;
+            
+            if (matches) {
+                updatedAvailability[dateStr] = addSlotToDate(dateStr, customStart, customEnd, updatedAvailability);
+            }
+        });
+        
+        setAvailability(updatedAvailability);
+        setShowBulkPresets(false);
+    };
 
     const [isDragging, setIsDragging] = useState<string | null>(null);
     const [dragOverIndex, setDragOverIndex] = useState<{ index: number; type: 'tie' | 'insert' | 'pool' } | null>(null);
@@ -904,21 +1063,31 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
                             )}
                         </div>
 
-                        <div className="flex gap-4 pt-2">
+                        <div className="flex flex-col gap-3 pt-2">
                             <button
                                 type="button"
-                                onClick={() => handleRSVP('no')}
-                                className="flex-1 py-4 rounded-xl border border-black/10 dark:border-white/10 text-muted-foreground font-bold text-sm hover:bg-black/5 dark:bg-white/5 hover:text-foreground transition-all active:scale-[0.98]"
+                                onClick={handleCopyPreviousPreferences}
+                                disabled={isCopying}
+                                className="w-full py-3.5 px-4 rounded-xl border border-dashed border-primary/40 bg-primary/5 hover:bg-primary/10 text-primary font-bold text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
                             >
-                                Decline
+                                📋 {isCopying ? "Copying previous preferences..." : "Copy Previous Preferences"}
                             </button>
-                            <button
-                                type="button"
-                                onClick={() => handleRSVP('yes')}
-                                className="flex-[1.5] py-4 rounded-xl bg-primary text-white font-bold text-sm shadow-lg shadow-primary/20 hover:shadow-primary/30 hover:scale-[1.02] transition-all active:scale-[0.98]"
-                            >
-                                I'm Joining
-                            </button>
+                            <div className="flex gap-4">
+                                <button
+                                    type="button"
+                                    onClick={() => handleRSVP('no')}
+                                    className="flex-1 py-4 rounded-xl border border-black/10 dark:border-white/10 text-muted-foreground font-bold text-sm hover:bg-black/5 dark:bg-white/5 hover:text-foreground transition-all active:scale-[0.98]"
+                                >
+                                    Decline
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleRSVP('yes')}
+                                    className="flex-[1.5] py-4 rounded-xl bg-primary text-white font-bold text-sm shadow-lg shadow-primary/20 hover:shadow-primary/30 hover:scale-[1.02] transition-all active:scale-[0.98]"
+                                >
+                                    I'm Joining
+                                </button>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -934,9 +1103,70 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
                             ← Back
                         </button>
 
-                        <div className="space-y-2 pb-4 border-b border-black/10 dark:border-white/10">
-                            <h2 className="text-xl font-bold text-foreground tracking-tight">Availability</h2>
-                            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Select the times you're free</p>
+                        <div className="flex justify-between items-center pb-4 border-b border-black/10 dark:border-white/10 relative">
+                            <div className="space-y-1">
+                                <h2 className="text-xl font-bold text-foreground tracking-tight">Availability</h2>
+                                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Select the times you're free</p>
+                            </div>
+                            <div className="relative">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowBulkPresets(!showBulkPresets)}
+                                    className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1 active:scale-95 transition-all ${
+                                        showBulkPresets
+                                            ? 'bg-primary border-primary text-white shadow-md shadow-primary/20'
+                                            : 'border-primary/20 bg-primary/5 hover:bg-primary/10 text-primary'
+                                    }`}
+                                >
+                                    ⚡ {showBulkPresets ? "Close Presets" : "Bulk Apply"}
+                                </button>
+                                {showBulkPresets && (
+                                    <div className="absolute right-0 top-full mt-2 z-50 w-72 p-4 rounded-xl bg-dropdown-bg border border-dropdown-border shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200 space-y-3">
+                                        <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">📅 Custom Preset Bulk Apply</span>
+                                        <div className="space-y-3">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className="text-xs font-medium text-foreground">Time Range:</span>
+                                                <div className="flex items-center gap-1 bg-white/5 rounded-lg border border-white/10 px-2 py-1">
+                                                    <input
+                                                        type="time"
+                                                        value={customStart}
+                                                        onChange={(e) => setCustomStart(e.target.value)}
+                                                        className="bg-transparent text-xs text-foreground focus:outline-none w-14"
+                                                    />
+                                                    <span className="text-muted-foreground text-xs font-bold">-</span>
+                                                    <input
+                                                        type="time"
+                                                        value={customEnd}
+                                                        onChange={(e) => setCustomEnd(e.target.value)}
+                                                        className="bg-transparent text-xs text-foreground focus:outline-none w-14"
+                                                    />
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className="text-xs font-medium text-foreground">Scope:</span>
+                                                <select
+                                                    value={customScope}
+                                                    onChange={(e) => setCustomScope(e.target.value as any)}
+                                                    className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-foreground focus:outline-none w-36"
+                                                >
+                                                    <option value="weekdays" className="bg-background text-foreground">Weekdays (Mon-Fri)</option>
+                                                    <option value="weekends" className="bg-background text-foreground">Weekends (Sat-Sun)</option>
+                                                    <option value="all" className="bg-background text-foreground">All Days</option>
+                                                </select>
+                                            </div>
+
+                                            <button
+                                                type="button"
+                                                onClick={handleApplyCustomPreset}
+                                                className="w-full py-2 rounded-lg bg-primary hover:bg-primary/90 text-xs font-semibold text-white shadow-md active:scale-95 transition-all"
+                                            >
+                                                Apply Preset
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         <div className="bg-black/5 dark:bg-white/5 rounded-2xl overflow-hidden border border-black/5 dark:border-white/5">
@@ -945,6 +1175,7 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit }: VotingFormP
                                 endDate={meetingData?.endDate}
                                 value={availability}
                                 onChange={setAvailability}
+                                allAttendees={allAttendees}
                             />
                         </div>
 

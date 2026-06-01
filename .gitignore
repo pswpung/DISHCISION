@@ -38,3 +38,9 @@ lerna-debug.log
 
 # Documents folder
 documents/
+
+# Graphify
+graphify-out/
+.agents/
+
+

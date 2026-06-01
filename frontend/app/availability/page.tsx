@@ -348,6 +348,8 @@ const AvailabilityPage = () => {
                     meetingData={meetingData}
                     restaurantConfig={restaurantConfig}
                     onVoteSubmit={handleFinalSubmit}
+                    userId={effectiveUserId}
+                    allAttendees={allAttendees}
                 />
             </div>
         </div>

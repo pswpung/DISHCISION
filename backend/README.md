@@ -31,6 +31,27 @@ The backend is modularized into FastAPI routers. The following is a detailed cat
     - **Description**: Creates a new group dining meeting. If attendees contain other members, it pushes an invite card (Flex Message) to the LINE group chat.
 *   `GET /meetings/{meeting_id}`
     - **Description**: Fetches meeting metadata (name, config) and sanitized real-time voting states.
+    - **Voting State JSON Structure**:
+      ```json
+      {
+        "exclude_vetoed": false,
+        "selected_restaurants": [],
+        "selected_time_slots": [],
+        "restaurant_preferences": {
+          "Restaurant Name": ["user_id_1", "user_id_2"]
+        },
+        "restaurant_vetoes": {
+          "Restaurant Name": 2
+        },
+        "restaurant_vetoes_users": {
+          "Restaurant Name": ["user_id_3", "user_id_4"]
+        },
+        "time_slot_votes": {
+          "2026-05-28_18:00": ["user_id_1"]
+        },
+        "ready_attendees": ["user_id_1"]
+      }
+      ```
 *   `GET /meetings/group/{group_id}`
     - **Description**: Lists all active and closed meetings created in a specific LINE group.
 *   `PATCH /meetings/{meeting_id}`
@@ -51,8 +72,11 @@ The backend is modularized into FastAPI routers. The following is a detailed cat
     - **Description**: Commits spin wheel animations, landed result, and stop angle values to sync UI states for all group members in real-time.
 *   `POST /meetings/{meeting_id}/select-wheel-restaurants`
     - **Description**: Logs a subset of user-selected restaurants to populate the tie-breaker wheel.
+*   `POST /meetings/{meeting_id}/toggle-exclude-vetoed`
+    - **Description**: Toggles whether restaurants containing any vetoes (Tail Out) should be excluded from the results list for this meeting.
 *   `POST /meetings/{meeting_id}/confirm-final`
     - **Description**: Locks confirmed time slot and venue selections, marks meeting status as `"closed"`, and pushes the final ticket Flex Message to the LINE group.
+
 
 ### 🙋 Meeting Attendees Router (`/attendee`)
 *   `POST /attendee`

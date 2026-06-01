@@ -64,6 +64,15 @@ export const apiService = {
         }
     },
 
+    getLastAttendeePreference: async (userId: string) => {
+        try {
+            const response = await apiClient.get(`/users/${userId}/last-preference`);
+            return response.data;
+        } catch (error) {
+            return null;
+        }
+    },
+
     getUsersByGroup: async (groupId: string) => {
         try {
             const response = await apiClient.get(`/users/group/${groupId}`);
@@ -200,6 +209,11 @@ export const apiService = {
 
     selectWheelTimeSlots: async (meetingId: string, slotKeys: string[]) => {
         const response = await apiClient.post(`/meetings/${meetingId}/select-wheel-time-slots`, { slot_keys: slotKeys });
+        return response.data;
+    },
+
+    toggleExcludeVetoed: async (meetingId: string, userId: string) => {
+        const response = await apiClient.post(`/meetings/${meetingId}/toggle-exclude-vetoed`, { user_id: userId });
         return response.data;
     },
 

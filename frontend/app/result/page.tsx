@@ -444,7 +444,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
             }
         });
 
-        return list.map(place => {
+        let mappedList = list.map(place => {
             const prefCount = votingState.restaurant_preferences?.[place.name]?.length || 0;
             const rawVeto = votingState.restaurant_vetoes?.[place.name];
             const vetoCount = typeof rawVeto === 'number' ? rawVeto : (rawVeto?.length || 0);
@@ -455,7 +455,13 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                 vetoCount,
                 netVotes
             };
-        }).sort((a, b) => {
+        });
+
+        if (votingState.exclude_vetoed) {
+            mappedList = mappedList.filter(place => (place.vetoCount || 0) === 0);
+        }
+
+        return mappedList.sort((a, b) => {
             if (b.netVotes !== a.netVotes) {
                 return b.netVotes - a.netVotes;
             }
@@ -463,7 +469,124 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
         });
     }, [preferredRestaurants, discoveryRestaurants, votingState]);
 
+    const getVetoingUserNames = (restaurantName: string): string[] => {
+        const userIds = votingState.restaurant_vetoes_users?.[restaurantName] || [];
+        return userIds.map((uid: string) => {
+            const att = allAttendees.find(a => a.user_id === uid);
+            return att ? att.displayName : "Someone";
+        });
+    };
 
+    const getHighlights = (place: any) => {
+        let reasonObj = place.reason;
+        if (typeof reasonObj === 'string') {
+            try { reasonObj = JSON.parse(reasonObj.replace(/'/g, '"')); } catch (e) { }
+        }
+        if (!reasonObj || typeof reasonObj !== 'object' || Array.isArray(reasonObj)) return [];
+
+        const badges: Array<{ text: string; type: 'success' | 'warning' | 'info' | 'purple' | 'gold' }> = [];
+
+        const attendeeScores = reasonObj._attendee_scores || {};
+        const keyScores: number[] = [];
+        Object.entries(attendeeScores).forEach(([uid, uData]: [string, any]) => {
+            const att = allAttendees.find(a => a.user_id === uid);
+            if (att?.is_key_person) {
+                keyScores.push(uData.score || 0);
+            }
+        });
+        if (keyScores.length > 0) {
+            const avgKeyScore = keyScores.reduce((a, b) => a + b, 0) / keyScores.length;
+            if (avgKeyScore >= 85) {
+                badges.push({ text: '👑 Key Choice', type: 'gold' });
+            }
+        }
+
+        const isFactorMatch = (factor: any) => {
+            if (!factor) return false;
+            const max = factor.max_score || 0;
+            if (max <= 0) return false;
+            const score = factor.weighted_score || 0;
+            return Math.round((score / max) * 100) >= 100;
+        };
+
+        if (reasonObj.Price && isFactorMatch(reasonObj.Price)) {
+            badges.push({ text: '💰 Budget Match', type: 'success' });
+        }
+
+        if (reasonObj.Category && isFactorMatch(reasonObj.Category)) {
+            badges.push({ text: '🍽️ Cuisine Match', type: 'success' });
+        }
+
+        if (reasonObj.Station && reasonObj.Station.base_score >= 80) {
+            badges.push({ text: '🚇 Transit Friendly', type: 'info' });
+        }
+
+        if (reasonObj.Parking && isFactorMatch(reasonObj.Parking)) {
+            badges.push({ text: '🚗 Parking', type: 'success' });
+        }
+
+        if (reasonObj.Alcohol && isFactorMatch(reasonObj.Alcohol)) {
+            badges.push({ text: '🍻 Drinks', type: 'purple' });
+        }
+
+        if (reasonObj.Vibe && isFactorMatch(reasonObj.Vibe)) {
+            badges.push({ text: '✨ Good Vibe', type: 'purple' });
+        }
+
+        return badges;
+    };
+
+    const getBestMatchSummary = (place: any): string => {
+        let reasonObj = place.reason;
+        if (typeof reasonObj === 'string') {
+            try { reasonObj = JSON.parse(reasonObj.replace(/'/g, '"')); } catch (e) { }
+        }
+        if (!reasonObj || typeof reasonObj !== 'object' || Array.isArray(reasonObj)) return "";
+
+        const reasons: string[] = [];
+
+        const isFactorMatch = (factor: any) => {
+            if (!factor) return false;
+            const max = factor.max_score || 0;
+            if (max <= 0) return false;
+            const score = factor.weighted_score || 0;
+            return Math.round((score / max) * 100) >= 100;
+        };
+
+        if (reasonObj.Price && isFactorMatch(reasonObj.Price)) {
+            reasons.push("fits the price budget of attendees");
+        }
+        if (reasonObj.Category && isFactorMatch(reasonObj.Category)) {
+            reasons.push("matches the cuisine preferences");
+        }
+        if (reasonObj.Vibe && isFactorMatch(reasonObj.Vibe)) {
+            reasons.push("matches the group's desired vibe");
+        }
+        if (reasonObj.Station && reasonObj.Station.base_score >= 80) {
+            reasons.push("is highly convenient via public transit");
+        }
+        if (reasonObj.Parking && isFactorMatch(reasonObj.Parking)) {
+            reasons.push("has parking space");
+        }
+        if (reasonObj.Alcohol && isFactorMatch(reasonObj.Alcohol)) {
+            reasons.push("serves alcohol/drinks");
+        }
+        if (place.rating && place.rating >= 4.0) {
+            reasons.push(`has a great rating of ${place.rating.toFixed(1)}`);
+        }
+
+        if (reasons.length === 0) {
+            return "Ranked highly based on overall criteria matching.";
+        }
+
+        const firstTwo = reasons.slice(0, 2);
+        let summaryText = "Recommended because it " + firstTwo.join(" and ");
+        if (reasons.length > 2) {
+            summaryText += `, and ${reasons[2]}`;
+        }
+        summaryText += ".";
+        return summaryText;
+    };
 
     // Pre-fill confirmed options from spin results or database
     useEffect(() => {
@@ -2014,25 +2137,49 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                             </div>
 
                                             {isOrganizer && (
-                                                <div className="flex gap-2 p-1 bg-white/5 rounded-xl border border-white/5 text-[11px]">
-                                                    <button
-                                                        onClick={() => handleSetDecisionMethod('restaurant', 'list')}
-                                                        className={`flex-1 py-1.5 rounded-lg font-bold transition-all ${votingState.restaurant_decision_method !== 'wheel'
-                                                            ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-[1.02]'
-                                                            : 'text-muted-foreground hover:text-foreground'
-                                                            }`}
-                                                    >
-                                                        Scoring List
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleSetDecisionMethod('restaurant', 'wheel')}
-                                                        className={`flex-1 py-1.5 rounded-lg font-bold transition-all ${votingState.restaurant_decision_method === 'wheel'
-                                                            ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-[1.02]'
-                                                            : 'text-muted-foreground hover:text-foreground'
-                                                            }`}
-                                                    >
-                                                        Spin Wheel
-                                                    </button>
+                                                <div className="space-y-3">
+                                                    <div className="flex gap-2 p-1 bg-white/5 rounded-xl border border-white/5 text-[11px]">
+                                                        <button
+                                                            onClick={() => handleSetDecisionMethod('restaurant', 'list')}
+                                                            className={`flex-1 py-1.5 rounded-lg font-bold transition-all ${votingState.restaurant_decision_method !== 'wheel'
+                                                                ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-[1.02]'
+                                                                : 'text-muted-foreground hover:text-foreground'
+                                                                }`}
+                                                        >
+                                                            Scoring List
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleSetDecisionMethod('restaurant', 'wheel')}
+                                                            className={`flex-1 py-1.5 rounded-lg font-bold transition-all ${votingState.restaurant_decision_method === 'wheel'
+                                                                ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-[1.02]'
+                                                                : 'text-muted-foreground hover:text-foreground'
+                                                                }`}
+                                                        >
+                                                            Spin Wheel
+                                                        </button>
+                                                    </div>
+                                                    <label className="flex items-center gap-2 text-xs font-semibold text-foreground/80 cursor-pointer pt-1 px-1">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={votingState.exclude_vetoed || false}
+                                                            onChange={async () => {
+                                                                    try {
+                                                                        const updated = await apiService.toggleExcludeVetoed(meetingId, currentUserId);
+                                                                        setMeetingData(updated);
+                                                                    } catch (e) {
+                                                                        console.error("Failed to toggle exclude vetoed", e);
+                                                                    }
+                                                            }}
+                                                            className="rounded border-white/10 accent-primary"
+                                                        />
+                                                        <span>Exclude Vetoed Restaurants (Tail Out)</span>
+                                                    </label>
+                                                </div>
+                                            )}
+
+                                            {!isOrganizer && votingState.exclude_vetoed && (
+                                                <div className="px-1 text-[11px] text-amber-400 font-medium pt-1">
+                                                    ℹ️ Organizer has excluded vetoed restaurants.
                                                 </div>
                                             )}
 
@@ -2146,26 +2293,37 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                                     onClick={() => {
                                                                         if (isOrganizer) setConfirmedRestaurant(place.name);
                                                                     }}
-                                                                    className={`flex justify-between items-center p-3 rounded-2xl border text-xs cursor-pointer transition-all ${confirmedRestaurant === place.name
+                                                                    className={`flex flex-col p-3 rounded-2xl border text-xs cursor-pointer transition-all ${confirmedRestaurant === place.name
                                                                         ? 'bg-purple-500/20 border-purple-500/40 text-purple-400'
                                                                         : 'bg-white/5 border-white/5 hover:border-white/10'
                                                                         }`}
                                                                 >
-                                                                    <div className="flex items-center gap-2 min-w-0">
-                                                                        <span>{isTop ? '🥇' : i === 1 ? '🥈' : '🥉'}</span>
-                                                                        <div className="truncate">
-                                                                            <p className="font-bold text-foreground truncate">{place.name}</p>
-                                                                            {vetoCount > 0 && <p className="text-[9px] text-red-400 font-semibold">⚠️ {vetoCount} vetoes</p>}
+                                                                    <div className="flex justify-between items-center w-full">
+                                                                        <div className="flex items-center gap-2 min-w-0">
+                                                                            <span>{isTop ? '🥇' : i === 1 ? '🥈' : '🥉'}</span>
+                                                                            <div className="truncate">
+                                                                                <p className="font-bold text-foreground truncate">{place.name}</p>
+                                                                                {vetoCount > 0 && (
+                                                                                    <p className="text-[9px] text-red-400 font-semibold truncate max-w-[200px]" title={`Vetoed by: ${getVetoingUserNames(place.name).join(', ')}`}>
+                                                                                        ⚠️ Vetoed by: {getVetoingUserNames(place.name).join(', ')}
+                                                                                    </p>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-3 shrink-0 ml-2">
+                                                                            <span className="font-black text-primary" title={`Match Score: ${place.score}`}>
+                                                                                👍 {place.prefCount}
+                                                                            </span>
+                                                                            {isOrganizer && confirmedRestaurant === place.name && (
+                                                                                <span className="text-[9px] bg-purple-500/30 text-purple-200 px-1.5 py-0.5 rounded font-black uppercase">Confirmed</span>
+                                                                            )}
                                                                         </div>
                                                                     </div>
-                                                                    <div className="flex items-center gap-3 shrink-0 ml-2">
-                                                                        <span className="font-black text-primary" title={`Match Score: ${place.score}`}>
-                                                                            👍 {place.prefCount}
-                                                                        </span>
-                                                                        {isOrganizer && confirmedRestaurant === place.name && (
-                                                                            <span className="text-[9px] bg-purple-500/30 text-purple-200 px-1.5 py-0.5 rounded font-black uppercase">Confirmed</span>
-                                                                        )}
-                                                                    </div>
+                                                                    {isTop && (
+                                                                        <div className="mt-2 text-[10px] text-primary/80 leading-relaxed bg-primary/5 p-2 rounded-xl border border-primary/10 w-full">
+                                                                            💡 {getBestMatchSummary(place)}
+                                                                        </div>
+                                                                    )}
                                                                 </div>
                                                             );
                                                         })}
@@ -2445,20 +2603,32 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                     <div className="flex justify-between items-start mb-2">
                                                         <div>
                                                             <h3 className="text-lg font-bold text-foreground line-clamp-1 group-hover:text-primary transition-colors">{place.name}</h3>
-                                                            <p className="text-xs text-muted-foreground">
-                                                                {(() => {
-                                                                    try {
-                                                                        const categories = typeof place.category === 'string'
-                                                                            ? JSON.parse(place.category.replace(/'/g, '"'))
-                                                                            : (Array.isArray(place.category) ? place.category : []);
-                                                                        return categories.length > 0
-                                                                            ? `${categories.join(' • ')} • ${locationName}`
-                                                                            : locationName;
-                                                                    } catch {
-                                                                        return `${place.category?.[0] || ''} • ${locationName}`;
-                                                                    }
-                                                                })()}
+                                                            <p className="text-xs text-muted-foreground flex items-center gap-1 flex-wrap">
+                                                                <span>
+                                                                    {(() => {
+                                                                        try {
+                                                                            const categories = typeof place.category === 'string'
+                                                                                ? JSON.parse(place.category.replace(/'/g, '"'))
+                                                                                : (Array.isArray(place.category) ? place.category : []);
+                                                                            return categories.length > 0
+                                                                                ? `${categories.join(' • ')} • ${locationName}`
+                                                                                : locationName;
+                                                                        } catch {
+                                                                            return `${place.category?.[0] || ''} • ${locationName}`;
+                                                                        }
+                                                                    })()}
+                                                                </span>
+                                                                {typeof place.distance_km === 'number' && (
+                                                                    <span className="text-[10px] text-primary/70 font-semibold">
+                                                                        • 📍 {place.distance_km.toFixed(1)} km from center
+                                                                    </span>
+                                                                )}
                                                             </p>
+                                                            {vetoCount > 0 && (
+                                                                <p className="text-[10px] text-red-400 font-medium mt-1">
+                                                                    🚫 Vetoed by: {getVetoingUserNames(place.name).join(', ')}
+                                                                </p>
+                                                            )}
                                                         </div>
                                                         <div className="text-right shrink-0 ml-2">
                                                             <p className="text-sm font-medium text-primary">{place.price}</p>
@@ -2466,16 +2636,22 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                         </div>
                                                     </div>
 
-                                                    <div className="flex flex-wrap gap-1 mb-3">
-                                                        {(() => {
-                                                            try {
-                                                                const cats = typeof place.category === 'string'
-                                                                    ? JSON.parse(place.category.replace(/'/g, '"'))
-                                                                    : (Array.isArray(place.category) ? place.category : []);
-                                                            } catch (e) {
-                                                                return null;
-                                                            }
-                                                        })()}
+                                                    <div className="flex flex-wrap gap-1.5 mb-3">
+                                                        {getHighlights(place).map((badge, bIdx) => {
+                                                            const colorClasses = 
+                                                                badge.type === 'gold' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
+                                                                badge.type === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                                                                badge.type === 'info' ? 'bg-sky-500/10 text-sky-400 border border-sky-500/20' :
+                                                                'bg-purple-500/10 text-purple-400 border border-purple-500/20';
+                                                            return (
+                                                                <span
+                                                                    key={bIdx}
+                                                                    className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${colorClasses}`}
+                                                                >
+                                                                    {badge.text}
+                                                                </span>
+                                                            );
+                                                        })}
                                                     </div>
 
                                                     {expandedReasonIds.has(place.id) && (

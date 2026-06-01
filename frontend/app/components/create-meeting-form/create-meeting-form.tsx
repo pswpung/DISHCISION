@@ -71,6 +71,62 @@ const getRankLabel = (index: number): string => {
     return `${v}${suffix}`;
 };
 
+const timeToMinutes = (t: string): number => {
+    const [h, m] = t.split(':').map(Number);
+    return h * 60 + m;
+};
+
+const minutesToTime = (min: number): string => {
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+};
+
+const addSlotToDate = (dateStr: string, startStr: string, endStr: string, currentAvailability: any) => {
+    const startMin = timeToMinutes(startStr);
+    const endMin = timeToMinutes(endStr);
+    if (startMin >= endMin) return currentAvailability[dateStr] || [];
+    
+    const daySlots = currentAvailability[dateStr] || [];
+    const intervals = daySlots.map((s: any) => ({
+        start: timeToMinutes(s.start),
+        end: timeToMinutes(s.end)
+    }));
+    intervals.push({ start: startMin, end: endMin });
+    
+    intervals.sort((a: any, b: any) => a.start - b.start);
+    const merged: { start: number; end: number }[] = [];
+    intervals.forEach((i: any) => {
+        if (merged.length === 0) {
+            merged.push(i);
+        } else {
+            const last = merged[merged.length - 1];
+            if (i.start <= last.end) {
+                last.end = Math.max(last.end, i.end);
+            } else {
+                merged.push(i);
+            }
+        }
+    });
+    
+    return merged.map(i => ({
+        start: minutesToTime(i.start),
+        end: minutesToTime(i.end)
+    }));
+};
+
+const getDaysArray = (start: string, end: string) => {
+    let arr = [];
+    try {
+        for (let dt = new Date(start); dt <= new Date(end); dt.setDate(dt.getDate() + 1)) {
+            arr.push(new Date(dt).toISOString().slice(0, 10)); // YYYY-MM-DD
+        }
+    } catch (e) {
+        console.error("Invalid dates passed to getDaysArray", e);
+    }
+    return arr;
+};
+
 const CreateMeetingForm = (props: CreateMeetingFormProps) => {
     const { attendeeList, onDataSubmit, initialGroupId, initialUserId } = props;
     
@@ -258,6 +314,35 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
 
     // Availability
     const [availability, setAvailability] = useState<any>({});
+    const [showBulkPresets, setShowBulkPresets] = useState(false);
+    const [customStart, setCustomStart] = useState('18:00');
+    const [customEnd, setCustomEnd] = useState('21:00');
+    const [customScope, setCustomScope] = useState<'weekdays' | 'weekends' | 'all'>('weekdays');
+
+    const handleApplyCustomPreset = () => {
+        if (!startDate || !endDate) return;
+        const dates = getDaysArray(startDate, endDate);
+        const updatedAvailability = { ...availability };
+        
+        dates.forEach(dateStr => {
+            const dateObj = new Date(dateStr);
+            const dayOfWeek = dateObj.getDay(); 
+            const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
+            const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+            
+            let matches = false;
+            if (customScope === 'all') matches = true;
+            else if (customScope === 'weekdays' && isWeekday) matches = true;
+            else if (customScope === 'weekends' && isWeekend) matches = true;
+            
+            if (matches) {
+                updatedAvailability[dateStr] = addSlotToDate(dateStr, customStart, customEnd, updatedAvailability);
+            }
+        });
+        
+        setAvailability(updatedAvailability);
+        setShowBulkPresets(false);
+    };
 
     // Auto-fetch Current Location
     useEffect(() => {
@@ -1489,18 +1574,81 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                             ← Back
                         </button>
 
-                        <div className="space-y-2 pb-4 border-b border-white/10">
-                            <h2 className="text-xl font-bold text-foreground tracking-tight">Availability</h2>
-                            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Select the times you're free</p>
+                        <div className="flex justify-between items-center pb-4 border-b border-black/10 dark:border-white/10 relative">
+                            <div className="space-y-1">
+                                <h2 className="text-xl font-bold text-foreground tracking-tight">Availability</h2>
+                                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Select the times you're free</p>
+                            </div>
+                            <div className="relative">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowBulkPresets(!showBulkPresets)}
+                                    className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1 active:scale-95 transition-all ${
+                                        showBulkPresets
+                                            ? 'bg-primary border-primary text-white shadow-md shadow-primary/20'
+                                            : 'border-primary/20 bg-primary/5 hover:bg-primary/10 text-primary'
+                                    }`}
+                                >
+                                    ⚡ {showBulkPresets ? "Close Presets" : "Bulk Apply"}
+                                </button>
+                                {showBulkPresets && (
+                                    <div className="absolute right-0 top-full mt-2 z-50 w-72 p-4 rounded-xl bg-dropdown-bg border border-dropdown-border shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200 space-y-3">
+                                        <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">📅 Custom Preset Bulk Apply</span>
+                                        <div className="space-y-3">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className="text-xs font-medium text-foreground">Time Range:</span>
+                                                <div className="flex items-center gap-1 bg-white/5 rounded-lg border border-white/10 px-2 py-1">
+                                                    <input
+                                                        type="time"
+                                                        value={customStart}
+                                                        onChange={(e) => setCustomStart(e.target.value)}
+                                                        className="bg-transparent text-xs text-foreground focus:outline-none w-14"
+                                                    />
+                                                    <span className="text-muted-foreground text-xs font-bold">-</span>
+                                                    <input
+                                                        type="time"
+                                                        value={customEnd}
+                                                        onChange={(e) => setCustomEnd(e.target.value)}
+                                                        className="bg-transparent text-xs text-foreground focus:outline-none w-14"
+                                                    />
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className="text-xs font-medium text-foreground">Scope:</span>
+                                                <select
+                                                    value={customScope}
+                                                    onChange={(e) => setCustomScope(e.target.value as any)}
+                                                    className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-foreground focus:outline-none w-36"
+                                                >
+                                                    <option value="weekdays" className="bg-background text-foreground">Weekdays (Mon-Fri)</option>
+                                                    <option value="weekends" className="bg-background text-foreground">Weekends (Sat-Sun)</option>
+                                                    <option value="all" className="bg-background text-foreground">All Days</option>
+                                                </select>
+                                            </div>
+
+                                            <button
+                                                type="button"
+                                                onClick={handleApplyCustomPreset}
+                                                className="w-full py-2 rounded-lg bg-primary hover:bg-primary/90 text-xs font-semibold text-white shadow-md active:scale-95 transition-all"
+                                            >
+                                                Apply Preset
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         {startDate && endDate ? (
-                            <TimeSlotSelector
-                                startDate={startDate}
-                                endDate={endDate}
-                                value={availability}
-                                onChange={setAvailability}
-                            />
+                            <div className="bg-black/5 dark:bg-white/5 rounded-2xl overflow-hidden border border-black/5 dark:border-white/5">
+                                <TimeSlotSelector
+                                    startDate={startDate}
+                                    endDate={endDate}
+                                    value={availability}
+                                    onChange={setAvailability}
+                                />
+                            </div>
                         ) : (
                             <div className="text-sm font-bold text-amber-400 bg-amber-400/10 p-5 rounded-xl border border-amber-400/20 text-center">
                                 Please select dates in Step 0 first!

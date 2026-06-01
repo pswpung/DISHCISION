@@ -36,6 +36,26 @@ def read_user(user_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="User not found")
     return db_user
 
+# READ: Get user's last attendee preference
+@router.get("/{user_id}/last-preference")
+def read_last_preference(user_id: str, db: Session = Depends(get_db)):
+    from models import MeetingAttendee, MeetingDetail
+    last_attendee = db.query(MeetingAttendee)\
+        .join(MeetingDetail, MeetingAttendee.meeting_id == MeetingDetail.meeting_id)\
+        .filter(MeetingAttendee.user_id == user_id)\
+        .filter(MeetingAttendee.preference.isnot(None))\
+        .order_by(MeetingDetail.created_at.desc())\
+        .first()
+    
+    if not last_attendee:
+        raise HTTPException(status_code=404, detail="No previous preference found for this user")
+    
+    return {
+        "preference": last_attendee.preference,
+        "avaliable_at": last_attendee.avaliable_at
+    }
+
+
 # READ: Get users by group
 @router.get("/group/{group_id}", response_model=List[UserResponse])
 def read_users_by_group(group_id: str, db: Session = Depends(get_db)):

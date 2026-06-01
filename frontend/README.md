@@ -74,16 +74,22 @@ The frontend application consists of **5 main pages or view contexts**:
 This route handles two layout modes:
 - **A. Meeting Results View** (when loaded with `meeting_id` parameter):
   - **Slots Tab**: Lists time slots sorted by scoring. Highlights full joins, partial joins (with overlap minutes), and allows toggling personal votes.
-  - **Restaurants Tab**: Displays matching restaurants. It features a sub-tab bar showing **Friends** (manually recommended by attendees) and **Suggested** (system-ranked venues nearby) with full address, price scale, ratings, and tag summaries.
+  - **Restaurants Tab**: Displays matching restaurants (both **Friends** recommendations and system-ranked **Suggested** venues nearby) with the following features:
+    - **Geodistance Metric**: Displays the precise distance (in km) of the restaurant from the meeting's coordinates.
+    - **Veto Auditing**: Lists the exact display names of all attendees who placed a veto (`Tail Out`) on each restaurant.
+    - **Algorithmic Highlight Badges**: Displays tags (e.g. `👑 Key Choice`, `💰 Budget Match`, `🚇 Transit Friendly`, `🚗 Parking`, `🍻 Drinks`, `✨ Good Vibe`) calculated from the MCDM scores.
+    - **Recommendation Summary**: Formulates a natural language explanation (for the top venue candidate) outlining which group criteria matched.
   - **Decision Tab**:
     - Displays a **Guidance Banner** prompting users to vote in Slots/Restaurants if they haven't yet.
     - Lists real-time time/restaurant voting tallies.
     - Shows list of attendees and their "Ready" state checks.
+    - **Veto Filtering Toggle**: Organizer can check *"Exclude Vetoed Restaurants (Tail Out)"* to filter out all vetoed venues from the active selections. Non-organizers receive an information indicator warning them that vetoes have been excluded.
     - **Spin Wheel Panel**: Allows the organizer to choose a tie-breaker wheel for slots or restaurants, select candidates, spin, and automatically populate the winner.
     - **Lock Decision Action**: For organizers to submit confirmed parameters and close voting.
 - **B. Group Dashboard View** (when loaded with `group_id` parameter only):
   - Lists all meetings created within that LINE group.
   - Displays dates, status badges (**Vote Now** / **Closed**), and provides direct links to the meeting result pages.
+
 
 ---
 

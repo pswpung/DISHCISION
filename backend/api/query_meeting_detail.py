@@ -44,6 +44,8 @@ def get_initialized_voting_state(meeting: MeetingDetail):
         state["selected_restaurants"] = []
     if "selected_time_slots" not in state:
         state["selected_time_slots"] = []
+    if "exclude_vetoed" not in state:
+        state["exclude_vetoed"] = False
     
     return state
 
@@ -55,14 +57,18 @@ def sanitize_meeting_response(meeting: MeetingDetail, user_id: Optional[str] = N
         user_vetoed = []
         if "restaurant_vetoes" in v_state and isinstance(v_state["restaurant_vetoes"], dict):
             sanitized_vetoes = {}
+            veto_users = {}
             for r_name, u_ids in v_state["restaurant_vetoes"].items():
                 if isinstance(u_ids, list):
                     if user_id and user_id in u_ids:
                         user_vetoed.append(r_name)
                     sanitized_vetoes[r_name] = len(u_ids)
+                    veto_users[r_name] = u_ids
                 else:
                     sanitized_vetoes[r_name] = u_ids
+                    veto_users[r_name] = []
             v_state["restaurant_vetoes"] = sanitized_vetoes
+            v_state["restaurant_vetoes_users"] = veto_users
         v_state["user_vetoed"] = user_vetoed
         meeting_dict["voting_state"] = v_state
     return meeting_dict
@@ -95,6 +101,9 @@ class SelectWheelRestaurantsRequest(BaseModel):
 
 class SelectWheelTimeSlotsRequest(BaseModel):
     slot_keys: List[str]
+
+class ToggleExcludeVetoedRequest(BaseModel):
+    user_id: str
 
 class ConfirmFinalRequest(BaseModel):
     confirmed_time: str
@@ -346,6 +355,20 @@ def select_wheel_time_slots(meeting_id: UUID, req: SelectWheelTimeSlotsRequest, 
     db.commit()
     db.refresh(meeting)
     return sanitize_meeting_response(meeting)
+
+@router.post("/{meeting_id}/toggle-exclude-vetoed", response_model=MeetingResponse)
+def toggle_exclude_vetoed(meeting_id: UUID, req: ToggleExcludeVetoedRequest, db: Session = Depends(get_db)):
+    meeting = db.query(MeetingDetail).filter(MeetingDetail.meeting_id == meeting_id).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    
+    state = copy.deepcopy(get_initialized_voting_state(meeting))
+    state["exclude_vetoed"] = not state.get("exclude_vetoed", False)
+    
+    meeting.voting_state = state
+    db.commit()
+    db.refresh(meeting)
+    return sanitize_meeting_response(meeting, req.user_id)
 
 @router.post("/{meeting_id}/confirm-final", response_model=MeetingResponse)
 def confirm_final(meeting_id: UUID, req: ConfirmFinalRequest, db: Session = Depends(get_db)):

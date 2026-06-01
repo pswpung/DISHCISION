@@ -16,6 +16,7 @@ interface TimeSlotSelectorProps {
     endDate: string;
     value: Availability;
     onChange: (availability: Availability) => void;
+    allAttendees?: any[];
 }
 
 const GoogleIcon = () => (
@@ -27,7 +28,7 @@ const GoogleIcon = () => (
     </svg>
 );
 
-export const TimeSlotSelector = ({ startDate, endDate, value, onChange }: TimeSlotSelectorProps) => {
+export const TimeSlotSelector = ({ startDate, endDate, value, onChange, allAttendees }: TimeSlotSelectorProps) => {
     const [isSyncing, setIsSyncing] = useState(false);
     const [syncStatus, setSyncStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -500,6 +501,8 @@ export const TimeSlotSelector = ({ startDate, endDate, value, onChange }: TimeSl
                     );
                 })}
             </div>
+
+
 
             {/* Selected Date Editor */}
             <div className="glass-panel p-4 rounded-xl border border-white/5 min-h-[200px] animate-in fade-in slide-in-from-bottom-2">
