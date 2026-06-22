@@ -67,7 +67,8 @@ The frontend application consists of **5 main pages or view contexts**:
   - **Status Switcher**: Toggle between "Join Meeting" and "Cannot Join".
   - **Interactive Schedule Grid**: Desktop/mobile responsive scheduler that lets users tap/drag 30-minute time intervals to indicate availability.
   - **Preferences & Vetoes**: Sets price scale, preferred cuisines, vibes, parking/alcohol criteria.
-  - **Priorities Booster Interface**: A drag-and-drop or select interface where users rank their top 3 priorities out of Price, Category, Vibe, BTS Station, Rating, Parking, and Alcohol.
+  - **Priorities Booster Interface**: A drag-and-drop or select interface where users rank their focus factors (Price, Category, Vibe, BTS Station, Rating, Parking, and Alcohol) using either **Normal Mode** (strict ranking) or **Advanced Mode** (tied/grouped ranking).
+  - **Priorities Validation**: Both organizers and attendees are strictly required to select at least one priority focus factor before submitting their forms to prevent unranked fallback states.
   - **Bypass simulation console**: A dev tool to choose an attendee and fill preferences on their behalf, bypassing LIFF authentication.
 
 ### 5. Results & Group Dashboard (`/result`)

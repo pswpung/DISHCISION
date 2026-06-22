@@ -30,17 +30,6 @@ export default function Home() {
             Let the group decide your next meal.
           </p>
         </div>
-
-        <div className="flex flex-col gap-4 animate-in fade-in zoom-in duration-500 delay-500">
-          <a
-            href="/playground"
-            className="glass-button px-8 py-3 rounded-full font-bold text-lg flex items-center justify-center gap-2 group"
-          >
-            🧪 Algorithm Playground
-            <span className="group-hover:translate-x-1 transition-transform">→</span>
-          </a>
-          <p className="text-[10px] uppercase font-black tracking-widest opacity-30">Developer Only</p>
-        </div>
       </main>
 
       {/* Footer / Copyright */}

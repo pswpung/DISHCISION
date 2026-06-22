@@ -94,6 +94,10 @@ The backend is modularized into FastAPI routers. The following is a detailed cat
 *   `POST /restaurant/suggest/{meeting_id}`
     - **Description**: Generates schedule slots and restaurant recommendations, caching them in the database.
 
+### 🧪 Playground Router (`/playground`)
+*   `POST /playground/calculate`
+    - **Description**: Accepts a simulated list of attendees (each with custom priorities, price, categories, vibes, parking, alcohol, location coords, and max walk distance) and a candidate restaurant, returning overall score, individual match score details, dynamic weights, and criteria summaries.
+
 ### 📍 Location Proxy Router (`/location`)
 *   `GET /location/search`
     - **Description**: Queries OpenStreetMap's Nominatim search service for coordinates matching the keyword.
@@ -106,97 +110,249 @@ The backend is modularized into FastAPI routers. The following is a detailed cat
 
 DISHCISION runs two recommendation pipelines: a scheduling engine to locate optimal times, and a Multi-Criteria Decision-Making (MCDM) model to rank dining venues.
 
-### A. Time Slot Recommendation Algorithm (`get_suggested_slots`)
+## Algorithm I : Time Suggestion
+---
+The system evaluates every possible 30-minute slot within the meeting date range and assigns a **Final Score (1-10)** based on three weighted components.
 
-This model divides the requested meeting duration into 30-minute intervals and evaluates availability for each participant.
+> **Note:** All component scores are first calculated on a 0-10 scale and then mapped to a 1-10 scale using linear scaling: 
+>
+> $$S_{\text{scaled}} = 1 + \left( \frac{S_{\text{raw}}}{10} \times 9 \right)$$
+>
+> Where:
+> - $S_{\text{scaled}}$: The scaled component score mapped to the final 1–10 rating.
+> - $S_{\text{raw}}$: The raw component score calculated on a 0–10 scale.
 
-#### 1. Overlap Weighting
-For each evaluated slot $s$, the engine calculates the overlap duration in minutes $OM_{i,s}$ for each attendee $i$. The individual overlap weight $O_{i,s}$ is defined as:
+### Formula
+---
+$$S_{\text{final}} = (S_{\text{avail}} \times 0.5) + (S_{\text{meal}} \times 0.3) + (S_{\text{quality}} \times 0.2)$$
 
-$$O_{i,s} = \frac{OM_{i,s}}{\text{Duration}_s}$$
+Where:
+- $S_{\text{final}}$: The final score of the time slot (1–10).
+- $S_{\text{avail}}$: The Availability Score of the group (0–10).
+- $S_{\text{meal}}$: The Meal Preference Score (0–10).
+- $S_{\text{quality}}$: The Time Quality Score (0–10).
 
-where $\text{Duration}_s$ is the total length of the meeting slot in minutes. 
-- If $O_{i,s} \ge 1.0$, the attendee is classified as **Fully Free** (Full Join).
-- If $0.0 < O_{i,s} < 1.0$, the attendee is classified as **Partially Free** (Partial Join).
+### Components
+---
+#### A. Availability Score (50%)
+Measures how many people can attend, prioritizing Key Persons over General Attendees.
 
-#### 2. Adjusted Attendee Counts and Ratios
-Ratios are computed to account for partial joins.
-The Adjusted Count ($AC$) for Key Persons ($kp$) and General Attendees ($at$) are:
+$$S_{\text{avail}} = \left( (R_{\text{kp}} \times W_{\text{kp}}) + (R_{\text{gen}} \times W_{\text{gen}}) \right) \times 10$$
 
-$$AC_{kp} = \sum_{i \in \text{KP}} \mathbb{I}[O_{i,s} \ge 1.0] + \sum_{i \in \text{KP}} O_{i,s} \cdot \mathbb{I}[0.0 < O_{i,s} < 1.0]$$
+Where:
+- $S_{\text{avail}}$: The calculated availability score (0–10).
+- $R_{\text{kp}}$: The ratio of available Key Persons, defined as $\frac{\text{Available Key Persons}}{\text{Total Key Persons}}$.
+- $R_{\text{gen}}$: The ratio of available General Attendees, defined as $\frac{\text{Available General Attendees}}{\text{Total General Attendees}}$.
+- $W_{\text{kp}}$: The weight assigned to Key Persons (default is $0.7$).
+- $W_{\text{gen}}$: The weight assigned to General Attendees (default is $0.3$).
 
-$$AC_{at} = \sum_{i \in \text{AT}} \mathbb{I}[O_{i,s} \ge 1.0] + \sum_{i \in \text{AT}} O_{i,s} \cdot \mathbb{I}[0.0 < O_{i,s} < 1.0]$$
+*Example: If all Key Persons are available ($R_{\text{kp}} = 1.0$) and 50% of others are available ($R_{\text{gen}} = 0.5$), the score is $((1.0 \times 0.7) + (0.5 \times 0.3)) \times 10 = 8.5$.*
 
-where $\mathbb{I}$ is the indicator function. The adjusted ratio percentage metrics ($R_{kp}$ and $R_{at}$) are:
+#### B. Meal Preference Score (30%)
+Measures if the slot duration matches the group's meal preferences (e.g., Lunch or Dinner).
+- **Goal:** Suggest a slot long enough for a proper meal.
+- **Max Score:** Based on total attendee count multiplied by ideal duration steps (e.g., 2 hours = 4 steps).
 
-$$R_{kp} = \left( \frac{AC_{kp}}{|\text{KP}|} \right) \times 100$$
+$$S_{\text{meal}} = \frac{P_{\text{accumulated}}}{P_{\text{max}}} \times 10$$
 
-$$R_{at} = \left( \frac{AC_{at}}{|\text{AT}|} \right) \times 100$$
+Where:
+- $S_{\text{meal}}$: The meal preference score (0–10).
+- $P_{\text{accumulated}}$: Total accumulated points based on overlap with the ideal meal hours requested by attendees.
+- $P_{\text{max}}$: The maximum possible points for the slot duration (total attendee count $\times$ ideal duration steps).
 
-#### 3. Scoring Components (0 to 10 Scale)
-- **Availability Score ($N_{avail}$)**: 
-  Weighted combination of Key Persons (70%) vs General Attendees (30%):
-  $$\text{Raw Availability} = \frac{R_{kp} \times 0.7 + R_{at} \times 0.3}{10}$$
-  $$N_{avail} = 1.0 + \left( \frac{\text{Raw Availability}}{10.0} \right) \times 9.0$$
+#### C. Time Quality Score (20%)
+Measures the "quality" of the time based on standard eating habits.
 
-- **Meal Preference Alignment ($N_{meal}$)**:
-  Measures slot alignment with the dining types (Lunch/Dinner) selected by attendees:
-  $$N_{meal} = 1.0 + \left( \frac{\text{Meal Score}}{\text{Max Meal Score}} \right) \times 9.0$$
-
-- **Time Quality ($N_{quality}$)**:
-  Scores the slot based on dining hour preferences (e.g. 12:00 and 18:30 get maximum points):
-  $$N_{quality} = 1.0 + \left( \frac{\text{Points}}{\text{Max Points}} \right) \times 9.0$$
-
-#### 4. Final Weighted Time Slot Score
-$$\text{Final Score} = (0.7 \times N_{avail}) + (0.2 \times N_{meal}) + (0.1 \times N_{quality})$$
-
-Any time slots with a score greater than 0 are stored, sorted descending, and returned.
+| Time Range | Points | Meal Type |
+| :--- | :--- | :--- |
+| **11:00 - 13:00** | **2** (High) | Lunch |
+| 10:00 - 11:00 | 1 | Lunch |
+| 13:00 - 15:00 | 1 | Lunch |
+| **18:00 - 20:00** | **2** (Medium) | Dinner |
+| 15:00 - 18:00 | 1 | Dinner |
+| 20:00 - 23:00 | 1 | Dinner |
 
 ---
+## Algorithm II : Restaurant Suggestion
+---
+The system ranks restaurants using a **Weighted Decision-Making System** that prioritizes Key Decision Makers.
 
-### B. MCDM Restaurant Scoring Algorithm (`get_suggesested_restaurants`)
+### High-Level Logic
+---
+1.  **Filter Candidates**:
+    *   **Distance**: Must be within **10km** of the group's meeting location center. The center coordinates $(\text{Lat}_{\text{center}}, \text{Lng}_{\text{center}})$ are calculated as:
+        1. If the organizer has fixed the meeting place/coordinates, the fixed location is used.
+        2. Otherwise, it defaults to the average coordinates of the preferred locations submitted by all attendees:
+           $$\text{Lat}_{\text{center}} = \frac{\sum_{i=1}^{N} \text{Lat}_i}{N}, \quad \text{Lng}_{\text{center}} = \frac{\sum_{i=1}^{N} \text{Lng}_i}{N}$$
+           Where $N$ is the total number of attendees, and $(\text{Lat}_i, \text{Lng}_i)$ is attendee $i$'s preferred location (which defaults to their current GPS coordinates if not customized).
+    *   **Avoid Categories (Veto List)**: The system aggregates the `avoid_categories` lists submitted by all attendees. Any restaurant whose category matches any category in this compiled group-wide avoid list is immediately filtered out of the candidate pool.
+    *   **Category/Good For**: If the candidate list is still very large (> 1000) after location and avoid filtering, it filters by the *union* of group preferences (preferred categories and vibes) to narrow down candidates.
+2.  **Calculate Base Scores (0-100)** for two groups separately:
+    *   **Key Persons Group** (Organizer + VIPs)
+    *   **General Attendees Group** (Everyone else)
+3.  **Weighted Combination**:
 
-The restaurant scoring pipeline ranks venues using a multi-criteria decision-making model combined with a social boost parameter.
+$$S_{\text{final}} = (S_{\text{key}} \times W_{\text{kp\_stakeholder}}) + (S_{\text{gen}} \times W_{\text{gen\_stakeholder}})$$
 
-#### 1. Rank Order Centroid (ROC) Weighting
-To convert attendee's priority focus factors (e.g. Price, Category, Vibe) into mathematical weights, the system uses Rank Order Centroid (ROC).
-For $k$ prioritized elements, the weight of rank position $r$ (where $r=1$ is highest priority) is defined as:
+Where:
+- $S_{\text{final}}$: The combined final decision score of the restaurant (0–100).
+- $S_{\text{key}}$: The base score of the restaurant for the Key Persons group (0–100).
+- $S_{\text{gen}}$: The base score of the restaurant for the General Attendees group (0–100).
+- $W_{\text{kp\_stakeholder}}$: Stakeholder weight for Key Persons (default is $0.7$, adjustable between $0.7 - 0.9$).
+- $W_{\text{gen\_stakeholder}}$: Stakeholder weight for General Attendees (defined as $1 - W_{\text{kp\_stakeholder}}$, default is $0.3$).
 
-$$w_r = \frac{1}{k} \sum_{j=r}^k \frac{1}{j}$$
+### Base Score Calculation (0-100)
+---
+For *each group* (Key or General), the group score is the average of the individual attendee scores in that group:
 
-For example, if a user selects exactly $k=3$ priorities:
-- **Priority 1**: $w_1 = \frac{1}{3} \cdot (1 + \frac{1}{2} + \frac{1}{3}) = 0.611$ (61.1% weight)
-- **Priority 2**: $w_2 = \frac{1}{3} \cdot (\frac{1}{2} + \frac{1}{3}) = 0.278$ (27.8% weight)
-- **Priority 3**: $w_3 = \frac{1}{3} \cdot (\frac{1}{3}) = 0.111$ (11.1% weight)
-- **Unranked attributes**: weight = $0.0$.
+$$S_{\text{group}} = \frac{\sum_{i=1}^{N_{\text{group}}} S_{\text{attendee}, i}}{N_{\text{group}}}$$
 
-If a user assigns multiple items to the same priority rank, the ROC weights for those rank slots are averaged across the items.
+Where:
+- $S_{\text{group}}$: The score for the group ($S_{\text{key}}$ or $S_{\text{gen}}$).
+- $N_{\text{group}}$: The total number of attendees in the group.
+- $S_{\text{attendee}, i}$: The individual score calculated for attendee $i$ (0–100).
 
-#### 2. Individual Preference Matching
-The individual match score $S_{i}$ for attendee $i$ and restaurant $R$ is calculated as:
+#### Individual Attendee Score ($S_{\text{attendee}}$)
+Each attendee's score is computed using their personalized Reciprocal Rank Centroid (ROC) weights:
 
-$$S_{i} = \sum_{A \in \text{Criteria}} w_{i,A} \cdot s_{i,A}$$
+$$S_{\text{attendee}} = \sum_{f \in F} w_f \times s_f$$
 
-where $s_{i,A} \in [0.0, 100.0]$ represents the match score of attribute $A$ for restaurant $R$:
-- **Price Match ($s_{i,\text{Price}}$)**: $100.0$ if the price level matches the user's preference or if preference is `"Any"`, else $0.0$.
-- **Cuisine Match ($s_{i,\text{Category}}$)**: $100.0$ if there is an intersection between restaurant categories and preferred cuisines, else $0.0$.
-- **Vibe Match ($s_{i,\text{Vibe}}$)**: $100.0$ if there is an intersection between restaurant descriptors and preferred vibes, else $0.0$.
-- **Proximity Match ($s_{i,\text{Station}}$)**: Mapped using linear decay from transit stations:
-  $$s_{i,\text{Station}} = \max\left(0.0, \, 1.0 - \frac{\text{Distance to Station}}{\text{Max Walk Distance}}\right) \times 100.0$$
-- **Rating Match ($s_{i,\text{Rating}}$)**: Mapped from the Wongnai rating (0-5 stars):
-  $$s_{i,\text{Rating}} = \left( \frac{\text{Wongnai Rating}}{5.0} \right) \times 100.0$$
-- **Parking/Alcohol ($s_{i,\text{Parking}}, s_{i,\text{Alcohol}}$)**: $100.0$ if required and present (or not required), else $0.0$.
+Where:
+- $F$: The set of criteria factors: $\{\text{Price, Category, Vibe, Station, Rating, Parking, Alcohol, AICraving}\}$.
+- $w_f$: The individual ROC weight for factor $f$, calculated based on the attendee's ranked priorities.
+- $s_f$: The match score of the restaurant for factor $f$ (0 or 100, except for continuous metrics like Station Proximity and Rating):
 
-#### 3. Group Score Integration
-The average scores for Key Persons ($Score_{kp}$) and General Attendees ($Score_{at}$) are combined using the Key Decision Weight $W_{kp}$ (defaulting to 0.7):
+##### 1. Individual ROC Weight Calculation ($w_f$):
+The software offers two modes for factor prioritization in the user interface:
+- **Normal Mode**: Allows attendees to strictly drag-and-drop or select one factor per rank level (no ties).
+- **Advanced Mode**: Allows attendees to group multiple factors together in the same rank tier (creating tied priorities).
 
-$$Score_{kp} = \frac{1}{|KP|} \sum_{i \in KP} S_i$$
+For any prioritized list of lists (where rank 1 is highest priority), the ROC weight for a factor at rank slot position $r$ out of $k$ total prioritized items is:
+$$w_r = \frac{1}{k} \sum_{j=r}^{k} \frac{1}{j}$$
 
-$$Score_{at} = \frac{1}{|AT|} \sum_{i \in AT} S_i$$
+- **Tied-Rank Weight Adjustment (Advanced Mode)**: When multiple factors share the same priority tier $T$, they share the average of the ROC weights of the rank slots they span. For a tier $T$ covering rank slots from $r_{\text{start}}$ to $r_{\text{end}}$:
+  $$w_f = \frac{1}{|T|} \sum_{i=r_{\text{start}}}^{r_{\text{end}}} w_i, \quad \forall f \in T$$
+  Where $|T| = r_{\text{end}} - r_{\text{start}} + 1$ is the number of factors in that tier.
+- **Unranked Fallback**: Factors not prioritized by the attendee receive a weight of $0.0$. If no priorities are specified at all, all standard factors share equal weight ($1/7$ or $\approx 14.3\%$).
 
-$$Score_{\text{base}} = (Score_{kp} \cdot W_{kp}) + (Score_{at} \cdot [1.0 - W_{kp}])$$
+###### **Normal Mode Example (Strict Ordering: One factor per rank)**
+Suppose a user prioritizes exactly three single factors: Rank 1 = $\text{Category}$, Rank 2 = $\text{Price}$, Rank 3 = $\text{Vibe}$.
+- Here, $k = 3$ total items.
+- **Rank 1 ($\text{Category}$)**:
+  $$w_1 = \frac{1}{3} \left( \frac{1}{1} + \frac{1}{2} + \frac{1}{3} \right) = \frac{1}{3} \left( 1 + 0.5 + 0.333 \right) \approx 0.611 \text{ (61.1\% weight)}$$
+- **Rank 2 ($\text{Price}$)**:
+  $$w_2 = \frac{1}{3} \left( \frac{1}{2} + \frac{1}{3} \right) = \frac{1}{3} \left( 0.5 + 0.333 \right) \approx 0.278 \text{ (27.8\% weight)}$$
+- **Rank 3 ($\text{Vibe}$)**:
+  $$w_3 = \frac{1}{3} \left( \frac{1}{3} \right) \approx 0.111 \text{ (11.1\% weight)}$$
+- **All other unranked factors** (Station, Rating, Parking, Alcohol, AICraving) receive $w_f = 0.0$.
 
-#### 4. Social Recommendation Boost
-If a venue was explicitly suggested/recommended by group members, the system applies a manual boost of $+15$ points:
+###### **Advanced Mode Example (Tied Ordering: Multiple factors per rank)**
+Suppose a user prioritizes three factors but groups two of them together: Rank 1 = $[\text{Price}, \text{Category}]$, Rank 2 = $[\text{Vibe}]$.
+- Total items $k = 3$. The raw ROC weights for ranks 1, 2, and 3 are calculated as $w_1 = 0.611$, $w_2 = 0.278$, and $w_3 = 0.111$ (identical to Normal Mode).
+- **Rank 1 Tier ($\text{Price}$ and $\text{Category}$)** spans slots 1 and 2. They share the average weight of these slots:
+  $$w_{\text{Price}} = w_{\text{Category}} = \frac{w_1 + w_2}{2} = \frac{0.611 + 0.278}{2} \approx 0.444 \text{ (44.4\% weight each)}$$
+- **Rank 2 Tier ($\text{Vibe}$)** spans slot 3:
+  $$w_{\text{Vibe}} = w_3 \approx 0.111 \text{ (11.1\% weight)}$$
+- **All other unranked factors** receive $w_f = 0.0$.
 
-$$Score_{\text{final}} = \min(Score_{\text{base}} + 15.0 \cdot \mathbb{I}[R \in \text{Suggested}], \, 100.0)$$
+
+##### 2. Match Scores ($s_f$):
+- **Price Match ($s_{\text{Price}}$)**:
+  $$s_{\text{Price}} = \begin{cases} 100 & \text{if preference is "Any" or matches restaurant price tier} \\ 0 & \text{otherwise} \end{cases}$$
+- **Category Match ($s_{\text{Category}}$)**:
+  $$s_{\text{Category}} = \begin{cases} 100 & \text{if any preferred category overlaps restaurant category list or if preference list is empty} \\ 0 & \text{otherwise} \end{cases}$$
+- **Vibe Match ($s_{\text{Vibe}}$)**:
+  $$s_{\text{Vibe}} = \begin{cases} 100 & \text{if preference list is empty or restaurant has no vibe tags} \\ 0 & \text{if } N_{\text{overlap}} = 0 \\ 100 & \text{if } N_{\text{preferred}} = 1 \text{ and } N_{\text{overlap}} = 1 \\ 70 + \left( \frac{N_{\text{overlap}} - 1}{N_{\text{preferred}} - 1} \right) \times 30 & \text{otherwise} \end{cases}$$
+  Where $N_{\text{overlap}}$ is the number of matching vibes between the restaurant and the attendee's preference list, and $N_{\text{preferred}}$ is the total number of preferred vibes requested. This awards a strong baseline score of $70$ for the first match, and dynamically scales the remaining $30$ points for subsequent matches.
+- **Station Proximity ($s_{\text{Station}}$)**:
+  $$s_{\text{Station}} = \begin{cases} \left( 1 - \frac{d}{d_{\text{max\_walk}}} \right) \times 100 & \text{if } d < d_{\text{max\_walk}} \\ 0 & \text{otherwise} \end{cases}$$
+  Where $d$ is geodesic distance to nearest BTS/MRT station, and $d_{\text{max\_walk}}$ is the attendee's custom walk limit in km (default $1.0\text{ km}$).
+- **Rating Match ($s_{\text{Rating}}$)**:
+  $$s_{\text{Rating}} = \frac{R}{5.0} \times 100$$
+  Where $R$ is the restaurant's rating (0.0 to 5.0).
+- **Parking Match ($s_{\text{Parking}}$)**:
+  $$s_{\text{Parking}} = \begin{cases} 100 & \text{if parking is not required or restaurant has parking} \\ 0 & \text{otherwise} \end{cases}$$
+- **Alcohol Match ($s_{\text{Alcohol}}$)**:
+  $$s_{\text{Alcohol}} = \begin{cases} 100 & \text{if alcohol is not required or restaurant has alcohol} \\ 0 & \text{otherwise} \end{cases}$$
+- **AI Craving Match ($s_{\text{AICraving}}$)**:
+  $$s_{\text{AICraving}} = \begin{cases} \max(0, \cos(\theta)) \times 100 & \text{if free-text query exists} \\ 100 & \text{otherwise} \end{cases}$$
+  Where $\cos(\theta)$ is the cosine similarity between the attendee's request embedding and the restaurant description embedding.
+
+### Example
+---
+Suppose a group has 1 Key Person (with stakeholder weight $0.7$) and 1 General Attendee (with stakeholder weight $0.3$).
+- **Key Person**: Prioritizes $\text{Category}$ (Rank 1). ROC weight $w_{\text{Category}} = 1.0$, all other weights $0.0$.
+  - Wants **Italian** category.
+- **General Attendee**: Prioritizes $\text{Category}$ (Rank 1). ROC weight $w_{\text{Category}} = 1.0$, all other weights $0.0$.
+  - Wants **Japanese** category.
+
+Scoring a candidate **Italian** restaurant:
+- **Key Person Score**: $S_{\text{KeyPerson}} = w_{\text{Category}} \times s_{\text{Category}} = 1.0 \times 100 = 100.0$.
+- **General Attendee Score**: $S_{\text{General}} = w_{\text{Category}} \times s_{\text{Category}} = 1.0 \times 0 = 0.0$.
+- **Weighted Score**: $S_{\text{final}} = (100.0 \times 0.7) + (0.0 \times 0.3) = 70.0$.
+
+Scoring a candidate **Japanese** restaurant:
+- **Key Person Score**: $S_{\text{KeyPerson}} = 1.0 \times 0 = 0.0$.
+- **General Attendee Score**: $S_{\text{General}} = 1.0 \times 100 = 100.0$.
+- **Weighted Score**: $S_{\text{final}} = (0.0 \times 0.7) + (100.0 \times 0.3) = 30.0$.
+
+Result: The **Italian** restaurant wins because the Key Person's preference dominates through the group weights.
+## Sequence Diagram
+---
+```mermaid
+sequenceDiagram
+    autonumber
+    participant API as API Handler
+    participant DB as PostgreSQL Database
+    participant SW as Suggestion Workflow
+    participant AM as Appointment Manager
+    participant DS as Scoring Logic
+    participant LINE as LINE Messaging API
+
+    API->>DB: Query MeetingDetail, MeetingAttendee preferences, & UserDetail profiles
+    DB-->>API: Return meeting & attendee metadata
+    
+    API->>SW: get_suggestion(meeting, attendees, user_details)
+    activate SW
+    SW->>AM: Initialize Appointment_Manager with config & key_weight
+
+    alt Timing Mode is "fixed"
+        SW->>SW: Construct static time slot containing all attendees
+    else Timing Mode is "period"
+        SW->>AM: get_suggested_slots(availabilities, config)
+        activate AM
+        AM->>AM: Evaluate 30-min slots (Availability, Meal preference, Time quality)
+        AM-->>SW: Return attendees_availability with slot scores
+        deactivate AM
+    end
+
+    SW->>AM: get_suggested_restaurants(attendees, availability, fixed_location)
+    activate AM
+    
+    AM->>DB: Query candidate restaurants within 11km bounding box
+    DB-->>AM: Return raw candidates
+    AM->>AM: Filter by Geodesic Distance (<= 10km) & Avoid Categories
+    
+    loop For each nearby restaurant per time slot
+        AM->>DS: _calculate_weighted_score(restaurant)
+        activate DS
+        Note right of DS: Computes individual attendee weights<br/>using ROC model. Averages scores<br/>for Key and General groups.
+        DS->>DS: S_attendee = sum(w_f * s_f)
+        DS->>DS: S_final = (S_key * W_kp) + (S_gen * W_gen)
+        DS-->>AM: Return Restaurant Score (0-100)
+        deactivate DS
+    end
+    
+    AM->>AM: Map Top 5 Restaurants per time slot (Open Hours Check)
+    AM-->>SW: Return preferred, suggested, & all scored lists
+    deactivate AM
+
+    SW-->>API: Return recommendation results dict
+    deactivate SW
+
+    API->>DB: Cache results in MeetingDetail.suggestion_detail
+    DB-->>API: Confirm database commit
+    
+    API->>LINE: push_message_result_flex(top_slots, friend_recommends, discovery)
+    API-->>User: Display Suggestions
+```

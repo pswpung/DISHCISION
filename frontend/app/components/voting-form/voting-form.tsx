@@ -586,6 +586,11 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit, userId, allAt
             return;
         }
 
+        if (getActivePrioritiesCount() === 0) {
+            alert("Please select at least one Focus Factor priority.");
+            return;
+        }
+
         if (!locationCoords) {
             alert("Could not determine coordinates for the location. Please select a valid location from the search or map.");
             return;

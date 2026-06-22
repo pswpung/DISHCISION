@@ -763,16 +763,25 @@ class Appointment_Manager(object):
                 pref_gf = attendee_preference.get('good_fors', [])
                 if not pref_gf:
                     v_score = 100.0
+                elif len(res_gf) == 0:
+                    v_score = 100.0  # Neutral fallback for missing database attributes
                 else:
-                    # check if any preferred vibe overlaps
-                    overlap = [g for g in pref_gf if g in res_gf]
-                    v_score = 100.0 if (overlap or len(res_gf) == 0) else 0.0
+                    overlap_count = len([g for g in pref_gf if g in res_gf])
+                    pref_count = len(pref_gf)
+                    
+                    if overlap_count == 0:
+                        v_score = 0.0
+                    elif pref_count == 1:
+                        v_score = 100.0
+                    else:
+                        # Base score of 70 for first match, scaling remaining 30 points for subsequent matches
+                        v_score = 70.0 + ((overlap_count - 1) / (pref_count - 1)) * 30.0
             except Exception as e:
                 logger.warning(f"Error parsing vibes: {e}")
                 v_score = 0.0
                 
             score += w_vibe * v_score
-            reason["Vibe"] = {"score": round(w_vibe * v_score, 1), "max": w_vibe * 100.0, "base": v_score}
+            reason["Vibe"] = {"score": round(w_vibe * v_score, 1), "max": w_vibe * 100.0, "base": round(v_score, 1)}
 
         # --- D. Station Proximity (Distance from BTS) ---
         w_station = weights.get('Station', 0.0)
@@ -871,7 +880,7 @@ class Appointment_Manager(object):
         summary['points_per_vote'] = points_per_vote
         return summary
 
-    def _calculate_weighted_score(self, row, key_persons_data, general_persons_data, user_details):
+    def _calculate_weighted_score(self, row, key_persons_data, general_persons_data, user_details=None):
         attendee_scores = {}
         
         # 1. Calculate score for Key Persons group
@@ -886,7 +895,7 @@ class Appointment_Manager(object):
             key_reasons.append(reason)
             
             user_id = attendee.get('userId') or attendee.get('user_id')
-            if user_id and user_id in user_details:
+            if user_id and user_details and user_id in user_details:
                 user_info = user_details[user_id]
                 display_name = user_info.display_name
                 picture_url = user_info.pictureurl
@@ -914,7 +923,7 @@ class Appointment_Manager(object):
             gen_reasons.append(reason)
             
             user_id = attendee.get('userId') or attendee.get('user_id')
-            if user_id and user_id in user_details:
+            if user_id and user_details and user_id in user_details:
                 user_info = user_details[user_id]
                 display_name = user_info.display_name
                 picture_url = user_info.pictureurl
@@ -1173,16 +1182,6 @@ class Appointment_Manager(object):
                 result_type='expand'
             )
             
-            # Apply Manual Suggestion Boost (+15 pts as per DYNAMIC_SCORING.md)
-            preferred_ids = set(overall_summary.get('preferred_restaurants', {}).keys())
-            if preferred_ids:
-                def apply_boost(row):
-                    if str(row['id']) in preferred_ids:
-                        row['score'] = min(row['score'] + 15.0, 100.0)
-                        row['reason']['User Suggestion'] = {"weighted_score": 15.0, "max_score": 15.0}
-                    return row
-                nearby_restaurants = nearby_restaurants.apply(apply_boost, axis=1)
-
             nearby_restaurants = nearby_restaurants.sort_values(by="score", ascending=False)
 
         # 5. Process Suggestions per Slot
@@ -1239,10 +1238,6 @@ class Appointment_Manager(object):
                         axis=1,
                         result_type='expand'
                     )
-                    # Re-apply boost for per-slot scoring if needed
-                    if preferred_ids:
-                        valid_restaurants = valid_restaurants.apply(apply_boost, axis=1)
-                        
                     valid_restaurants = valid_restaurants.sort_values(by="score", ascending=False)
                     top_5 = valid_restaurants.head(5)
 

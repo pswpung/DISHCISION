@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from utils.appointment_manager import Appointment_Manager
 from datetime import datetime
 from loguru import logger
@@ -16,13 +16,16 @@ router = APIRouter(
 class Preference(BaseModel):
     price: str
     category: List[str]
+    avoid_categories: List[str] = []
     good_fors: List[str]
     parking: bool
     alcohols: bool
-    priorities: List[str]
+    priorities: List[Any]
     lat: float = 13.7563
     lng: float = 100.5018
+    max_walk_distance: float = 1000.0
     preferred_restaurant: List[Dict] = []
+    meal_time: str = "Any"
 
 class Attendee(BaseModel):
     user_id: str
@@ -44,6 +47,7 @@ class CalculationRequest(BaseModel):
     attendees: List[Attendee]
     restaurant: RestaurantInput
     center_location: Optional[Dict[str, float]] = None
+    key_weight: Optional[float] = 0.7
 
 @router.post("/calculate")
 def calculate_playground_score(request: CalculationRequest):
@@ -64,7 +68,8 @@ def calculate_playground_score(request: CalculationRequest):
             attendees=attendee_ids,
             start_date=datetime.now().strftime("%d/%m/%Y"),
             end_date=datetime.now().strftime("%d/%m/%Y"),
-            meal_time="Lunch"
+            meal_time="Lunch",
+            key_weight=request.key_weight if request.key_weight is not None else 0.7
         )
 
         # 2. Convert attendees to dict format expected by am
