@@ -192,8 +192,10 @@ def generate_and_send_suggestion(meeting_id: UUID, db: Session):
                         "partial_join": partial_join
                     })
 
+        # Sort by date and time ascending first (as a stable tie-breaker for identical scores/counts)
+        all_slots_sorted = sorted(all_slots, key=lambda x: (x['date'], x['time']))
         # Sort by final score descending, then by attendee count descending, then by partial join count descending
-        sorted_slots = sorted(all_slots, key=lambda x: (x['final_score'], len(x.get('attendees', [])), len(x.get('partial_join', []))), reverse=True)
+        sorted_slots = sorted(all_slots_sorted, key=lambda x: (x['final_score'], len(x.get('attendees', [])), len(x.get('partial_join', []))), reverse=True)
         top_slots = sorted_slots[:10] # Top 10 for Carousel
         
         # Global Discovery Ranking

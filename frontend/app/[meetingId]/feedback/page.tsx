@@ -23,6 +23,137 @@ export default function FeedbackPage() {
     const [sortedSlots, setSortedSlots] = useState<any[]>([]);
     const [topRestaurants, setTopRestaurants] = useState<any[]>([]);
     const [userProfiles, setUserProfiles] = useState<Record<string, any>>({});
+    const [userPreference, setUserPreference] = useState<any | null>(null);
+    const [allMeetingAttendees, setAllMeetingAttendees] = useState<any[]>([]);
+
+    const calculateROCWeights = (priorities: any) => {
+        if (!priorities || !Array.isArray(priorities)) return {};
+        
+        // Normalize priorities: if it's a flat array of strings, turn it into string[][]
+        let normalized: string[][] = [];
+        if (priorities.length > 0) {
+            if (typeof priorities[0] === 'string') {
+                normalized = (priorities as string[]).map(p => [p]);
+            } else if (Array.isArray(priorities[0])) {
+                normalized = priorities as string[][];
+            }
+        }
+        
+        const flat = normalized.flat();
+        const k = flat.length;
+        if (k === 0) return {};
+        const slotWeights: number[] = [];
+        for (let r = 1; r <= k; r++) {
+            let sum = 0;
+            for (let j = r; j <= k; j++) sum += 1 / j;
+            slotWeights.push(sum / k);
+        }
+        const weights: Record<string, number> = {};
+        let start = 1;
+        normalized.forEach(group => {
+            const size = group.length;
+            if (size === 0) return;
+            let sum = 0;
+            for (let s = start; s <= start + size - 1; s++) {
+                sum += slotWeights[s - 1] || 0;
+            }
+            const avg = sum / size;
+            group.forEach(f => { weights[f] = avg; });
+            start += size;
+        });
+        return weights;
+    };
+
+    const getFactorIcon = (factor: string) => {
+        switch (factor) {
+            case 'Price': return '💰';
+            case 'Category': return '🍜';
+            case 'Vibe/Good For': return '🌟';
+            case 'Distance from BTS': return '🚇';
+            case 'Rating': return '⭐';
+            case 'Parking': return '🚗';
+            case 'Alcohol': return '🍺';
+            default: return '📍';
+        }
+    };
+
+    const getFactorDisplayName = (factor: string) => {
+        switch (factor) {
+            case 'Price': return 'Price';
+            case 'Category': return 'Cuisine';
+            case 'Vibe/Good For': return 'Vibe';
+            case 'Distance from BTS': return 'BTS Distance';
+            case 'Rating': return 'Rating';
+            case 'Parking': return 'Parking';
+            case 'Alcohol': return 'Alcohol';
+            default: return factor;
+        }
+    };
+
+    const rocWeights = useMemo(() => {
+        if (!userPreference || !userPreference.priorities) return {};
+        return calculateROCWeights(userPreference.priorities);
+    }, [userPreference]);
+
+    const getHighlights = (place: any) => {
+        let reasonObj = place.reason;
+        if (typeof reasonObj === 'string') {
+            try { reasonObj = JSON.parse(reasonObj.replace(/'/g, '"')); } catch (e) { }
+        }
+        if (!reasonObj || typeof reasonObj !== 'object' || Array.isArray(reasonObj)) return [];
+
+        const badges: Array<{ text: string; type: 'success' | 'warning' | 'info' | 'purple' | 'gold' }> = [];
+
+        const attendeeScores = reasonObj._attendee_scores || {};
+        const keyScores: number[] = [];
+        Object.entries(attendeeScores).forEach(([uid, uData]: [string, any]) => {
+            const att = allMeetingAttendees.find(a => a.user_id === uid);
+            if (att?.is_key_person) {
+                keyScores.push(uData.score || 0);
+            }
+        });
+        if (keyScores.length > 0) {
+            const avgKeyScore = keyScores.reduce((a, b) => a + b, 0) / keyScores.length;
+            if (avgKeyScore >= 85) {
+                badges.push({ text: '👑 Key Choice', type: 'gold' });
+            }
+        }
+
+        const isFactorMatch = (factor: any) => {
+            if (!factor) return false;
+            const max = factor.max_score || factor.max || 0;
+            if (max <= 0) return false;
+            const score = factor.weighted_score ?? factor.base_score ?? factor.score ?? factor.base ?? 0;
+            return Math.round((score / max) * 100) >= 100;
+        };
+
+        if (reasonObj.Price && isFactorMatch(reasonObj.Price)) {
+            badges.push({ text: '💰 Budget Match', type: 'success' });
+        }
+
+        if (reasonObj.Category && isFactorMatch(reasonObj.Category)) {
+            badges.push({ text: '🍽️ Cuisine Match', type: 'success' });
+        }
+
+        if (reasonObj.Station && (reasonObj.Station.base_score >= 80 || reasonObj.Station.score >= 80)) {
+            badges.push({ text: '🚇 Transit Friendly', type: 'info' });
+        }
+
+        if (reasonObj.Parking && isFactorMatch(reasonObj.Parking)) {
+            badges.push({ text: '🚗 Parking Match', type: 'success' });
+        }
+
+        if (reasonObj.Alcohol && isFactorMatch(reasonObj.Alcohol)) {
+            badges.push({ text: '🍻 Drinks Match', type: 'purple' });
+        }
+
+        if (reasonObj.Vibe && isFactorMatch(reasonObj.Vibe)) {
+            badges.push({ text: '✨ Good Vibe', type: 'purple' });
+        }
+
+        return badges;
+    };
+
 
     useEffect(() => {
         if (!meetingId) return;
@@ -57,7 +188,9 @@ export default function FeedbackPage() {
                 const sorted = allSlots.sort((a, b) => {
                     if (b.final_score !== a.final_score) return b.final_score - a.final_score;
                     if (b.attendees.length !== a.attendees.length) return b.attendees.length - a.attendees.length;
-                    return b.partial_join.length - a.partial_join.length;
+                    if (b.partial_join.length !== a.partial_join.length) return b.partial_join.length - a.partial_join.length;
+                    if (a.date !== b.date) return a.date.localeCompare(b.date);
+                    return a.time.localeCompare(b.time);
                 });
                 setSortedSlots(sorted);
 
@@ -75,6 +208,18 @@ export default function FeedbackPage() {
                         };
                     });
                     setUserProfiles(profileMap);
+                }
+
+                // 4. Fetch the user's attendee details for preferences
+                try {
+                    const attendees = await apiService.getMeetingAttendees(meetingId);
+                    setAllMeetingAttendees(attendees);
+                    const myAttendee = attendees.find((a: any) => a.user_id === userId);
+                    if (myAttendee && myAttendee.preference) {
+                        setUserPreference(myAttendee.preference);
+                    }
+                } catch (prefErr) {
+                    console.error("Error loading user preferences:", prefErr);
                 }
             } catch (err) {
                 console.error("Error loading survey metadata:", err);
@@ -213,6 +358,450 @@ export default function FeedbackPage() {
         );
     };
 
+    const getTimeContextData = () => {
+        const keyPersons = allMeetingAttendees.filter(a => a.is_key_person && a.is_joined);
+        const normalAttendees = allMeetingAttendees.filter(a => !a.is_key_person && a.is_joined);
+
+        const parseSlots = (slots: any[]): { date: string, times: string[] }[] => {
+            if (!slots || slots.length === 0) return [];
+            const dateGroups: Record<string, string[]> = {};
+            slots.forEach(s => {
+                if (s.start?.dateTime && s.end?.dateTime) {
+                    const dateStr = s.start.dateTime.slice(0, 10);
+                    const startTime = s.start.dateTime.slice(11, 16);
+                    const endTime = s.end.dateTime.slice(11, 16);
+                    if (!dateGroups[dateStr]) {
+                        dateGroups[dateStr] = [];
+                    }
+                    const timeRange = `${startTime}-${endTime}`;
+                    if (!dateGroups[dateStr].includes(timeRange)) {
+                        dateGroups[dateStr].push(timeRange);
+                    }
+                } else if (s.date && s.time_slots) {
+                    const times = s.time_slots.map((t: any) => `${t.start}-${t.end}`);
+                    if (!dateGroups[s.date]) {
+                        dateGroups[s.date] = [];
+                    }
+                    times.forEach((t: string) => {
+                        if (!dateGroups[s.date].includes(t)) {
+                            dateGroups[s.date].push(t);
+                        }
+                    });
+                }
+            });
+
+            return Object.entries(dateGroups).map(([date, times]) => ({
+                date,
+                times
+            })).sort((a, b) => a.date.localeCompare(b.date));
+        };
+
+        const kpSummaries = keyPersons.map(kp => {
+            const name = userProfiles[kp.user_id]?.name || 'Key Person';
+            return {
+                name,
+                pic: userProfiles[kp.user_id]?.picture || '',
+                slots: parseSlots(kp.avaliable_at)
+            };
+        });
+
+        const normalSummaries = normalAttendees.map(na => {
+            const name = userProfiles[na.user_id]?.name || 'Attendee';
+            return {
+                name,
+                pic: userProfiles[na.user_id]?.picture || '',
+                slots: parseSlots(na.avaliable_at)
+            };
+        });
+
+        return { kpSummaries, normalSummaries };
+    };
+
+    const getRestaurantContextData = () => {
+        const keyPersons = allMeetingAttendees.filter(a => a.is_key_person && a.is_joined);
+        const normalAttendees = allMeetingAttendees.filter(a => !a.is_key_person && a.is_joined);
+
+        const formatPreferences = (pref: any) => {
+            if (!pref) return 'ไม่กำหนดความต้องการพิเศษ';
+            const parts: string[] = [];
+            if (pref.price && pref.price !== 'Any') parts.push(`งบ: ${pref.price}`);
+            if (pref.category && pref.category.length > 0) parts.push(`อาหารที่ชอบ: ${pref.category.join(', ')}`);
+            if (pref.good_fors && pref.good_fors.length > 0) parts.push(`บรรยากาศ: ${pref.good_fors.join(', ')}`);
+            if (pref.parking) parts.push('🚗 ที่จอดรถ');
+            if (pref.alcohols) parts.push('🍺 แอลกอฮอล์');
+            return parts.length > 0 ? parts.join(' | ') : 'เลือกแบบทั่วไป (Any)';
+        };
+
+        const kpPrefs = keyPersons.map(kp => {
+            const name = userProfiles[kp.user_id]?.name || 'Key Person';
+            return {
+                name,
+                pic: userProfiles[kp.user_id]?.picture || '',
+                prefs: formatPreferences(kp.preference)
+            };
+        });
+
+        // Aggregate Normal Attendees preferences
+        const cuisines: Record<string, number> = {};
+        const vibes: Record<string, number> = {};
+        const avoids: Set<string> = new Set();
+        let parkingCount = 0;
+        let alcoholCount = 0;
+
+        normalAttendees.forEach(na => {
+            const pref = na.preference;
+            if (pref) {
+                if (pref.category) {
+                    pref.category.forEach((c: string) => { cuisines[c] = (cuisines[c] || 0) + 1; });
+                }
+                if (pref.good_fors) {
+                    pref.good_fors.forEach((v: string) => { vibes[v] = (vibes[v] || 0) + 1; });
+                }
+                if (pref.avoid_categories) {
+                    pref.avoid_categories.forEach((c: string) => avoids.add(c));
+                }
+                if (pref.parking) parkingCount++;
+                if (pref.alcohols) alcoholCount++;
+            }
+        });
+
+        const cuisinesList = Object.entries(cuisines).sort((a, b) => b[1] - a[1]).map(e => `${e[0]} (${e[1]} คน)`);
+        const vibesList = Object.entries(vibes).sort((a, b) => b[1] - a[1]).map(e => `${e[0]} ( ${e[1]} คน)`);
+        const avoidList = Array.from(avoids);
+
+        const normalSummaryParts: string[] = [];
+        if (cuisinesList.length > 0) normalSummaryParts.push(`อาหารที่ชอบ: ${cuisinesList.slice(0, 3).join(', ')}`);
+        if (vibesList.length > 0) normalSummaryParts.push(`บรรยากาศ: ${vibesList.slice(0, 3).join(', ')}`);
+        if (parkingCount > 0) normalSummaryParts.push(`ต้องการที่จอดรถ (${parkingCount} คน)`);
+        if (alcoholCount > 0) normalSummaryParts.push(`ต้องการแอลกอฮอล์ (${alcoholCount} คน)`);
+
+        const normalPrefsSummary = normalSummaryParts.length > 0 ? normalSummaryParts.join(' | ') : 'ไม่ระบุเงื่อนไขพิเศษ';
+
+        return { kpPrefs, normalPrefsSummary, avoidList };
+    };
+
+    const renderTimeContextAndList = () => {
+        const { kpSummaries, normalSummaries } = getTimeContextData();
+        return (
+            <div className="space-y-4 p-4 rounded-2xl bg-primary/10 border border-primary/20 text-left animate-in fade-in duration-300">
+                <div className="border-b border-primary/20 pb-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5">
+                    <div>
+                        <h4 className="text-xs font-black text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                            📅 Group Availability Context (เงื่อนไขและเวลาว่างของกลุ่ม)
+                        </h4>
+                        <p className="text-[9px] text-muted-foreground leading-relaxed mt-0.5">
+                            นี่คือโจทย์เวลาว่างของสมาชิกในกลุ่มที่ส่งเข้ามา อัลกอริทึมจะคำนวณช่วงเวลาที่ทับซ้อนและจัดลำดับแนะนำเวลาว่าง
+                        </p>
+                    </div>
+                    <div className="shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/20 border border-primary/30 text-[9px] font-black text-primary uppercase tracking-wider">
+                        ⚖️ VIP weight: Key Person 70% / Normal 30%
+                    </div>
+                </div>
+
+                <div className="space-y-3.5">
+                    {/* Key Persons Box */}
+                    <div className="space-y-1.5">
+                        <span className="text-[9px] font-black uppercase text-primary tracking-widest block flex items-center gap-1">
+                            🔑 Key Person Schedule (เวลาว่างของผู้มีอำนาจตัดสินใจ)
+                        </span>
+                        {kpSummaries.length > 0 ? (
+                            <div className="space-y-1.5">
+                                {kpSummaries.map((kp, idx) => (
+                                    <div key={idx} className="flex items-start gap-2.5 p-2 rounded-xl bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5">
+                                        {kp.pic ? (
+                                            <img src={kp.pic} alt="" className="w-6 h-6 rounded-full object-cover border border-primary/20 shrink-0" />
+                                        ) : (
+                                            <div className="w-6 h-6 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center text-[10px] font-bold text-primary shrink-0">👑</div>
+                                        )}
+                                        <div className="space-y-1 min-w-0 flex-1">
+                                            <span className="text-[10px] font-black text-foreground block truncate">{kp.name}</span>
+                                            {kp.slots.length > 0 ? (
+                                                <div className="flex flex-col gap-1 mt-1">
+                                                    {kp.slots.map((slot, sIdx) => (
+                                                        <div key={sIdx} className="flex flex-wrap items-center gap-1.5">
+                                                            <span className="px-1.5 py-0.5 rounded bg-primary/20 text-primary font-black text-[8px]">
+                                                                📅 {slot.date}
+                                                            </span>
+                                                            {slot.times.map((t, tIdx) => (
+                                                                <span key={tIdx} className="px-1.5 py-0.5 rounded bg-black/10 dark:bg-white/5 border border-black/5 dark:border-white/5 text-foreground text-[8px] font-bold">
+                                                                    ⏰ {t}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <span className="text-[9px] text-muted-foreground italic block">ไม่สะดวก / ไม่ระบุเวลาว่าง</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <span className="text-[9px] text-muted-foreground italic block">ไม่มี Key Person ในกลุ่มนี้</span>
+                        )}
+                    </div>
+
+                    {/* Normal Attendees Box */}
+                    <div className="space-y-1.5">
+                        <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest block flex items-center gap-1">
+                            👥 Normal Attendees Schedule (เวลาว่างสมาชิกทั่วไป)
+                        </span>
+                        {normalSummaries.length > 0 ? (
+                            <div className="space-y-1.5">
+                                {normalSummaries.map((na, idx) => (
+                                    <div key={idx} className="flex items-start gap-2.5 p-2 rounded-xl bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5">
+                                        {na.pic ? (
+                                            <img src={na.pic} alt="" className="w-5 h-5 rounded-full object-cover shrink-0" />
+                                        ) : (
+                                            <div className="w-5 h-5 rounded-full bg-black/10 dark:bg-white/10 flex items-center justify-center text-[8px] font-bold text-muted-foreground shrink-0">👤</div>
+                                        )}
+                                        <div className="space-y-1 min-w-0 flex-1">
+                                            <span className="text-[10px] font-black text-foreground block truncate">{na.name}</span>
+                                            {na.slots.length > 0 ? (
+                                                <div className="flex flex-col gap-1 mt-1">
+                                                    {na.slots.map((slot, sIdx) => (
+                                                        <div key={sIdx} className="flex flex-wrap items-center gap-1.5">
+                                                            <span className="px-1.5 py-0.5 rounded bg-black/10 dark:bg-white/5 border border-black/5 dark:border-white/5 text-foreground text-[8px] font-bold">
+                                                                📅 {slot.date}
+                                                            </span>
+                                                            {slot.times.map((t, tIdx) => (
+                                                                <span key={tIdx} className="px-1.5 py-0.5 rounded bg-black/10 dark:bg-white/5 border border-black/5 dark:border-white/5 text-foreground text-[8px] font-bold">
+                                                                    ⏰ {t}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <span className="text-[9px] text-muted-foreground italic block">ไม่สะดวก / ไม่ระบุเวลาว่าง</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <span className="text-[9px] text-muted-foreground italic block">ไม่มีสมาชิกทั่วไปเข้าร่วม</span>
+                        )}
+                    </div>
+
+                    {/* Recommended Slots Dashboard */}
+                    <div className="space-y-1.5 pt-1.5 border-t border-black/5 dark:border-white/5">
+                        <span className="text-[9px] font-black uppercase text-primary tracking-widest block">
+                            🕒 Suggestion Results (ช่วงเวลาแนะนำที่ดีที่สุดจากแอปพลิเคชัน)
+                        </span>
+                        <div className="grid grid-cols-1 gap-2">
+                            {sortedSlots.slice(0, 3).map((slot, index) => {
+                                const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉';
+                                const getAttendeeName = (uid: string) => userProfiles[uid]?.name || 'Unknown Friend';
+                                const getAttendeePic = (uid: string) => userProfiles[uid]?.picture || '';
+                                return (
+                                    <div key={index} className="p-3 rounded-xl bg-black/10 dark:bg-white/5 border border-black/5 dark:border-white/5 space-y-2">
+                                        <div className="flex justify-between items-center gap-2">
+                                            <span className="text-[10px] font-black text-foreground uppercase tracking-wider">
+                                                {medal} อันดับ {index + 1}: {slot.date} • {slot.time}
+                                            </span>
+                                            <span className="text-[9px] px-2 py-0.5 rounded-full bg-primary/20 text-primary font-black shrink-0">
+                                                Score: {slot.final_score.toFixed(1)}/10
+                                            </span>
+                                        </div>
+                                        {/* Attendance representation */}
+                                        <div className="space-y-1">
+                                            <span className="text-[8px] uppercase font-black text-muted-foreground block">สะดวกครบ ({slot.attendees.length} คน):</span>
+                                            {slot.attendees.length > 0 ? (
+                                                <div className="flex flex-wrap gap-1">
+                                                    {slot.attendees.map((uid: string) => (
+                                                        <div key={uid} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/10 dark:bg-white/5 text-[8px] font-bold text-foreground">
+                                                            {getAttendeePic(uid) && <img src={getAttendeePic(uid)} alt="" className="w-3.5 h-3.5 rounded-full object-cover" />}
+                                                            <span>{getAttendeeName(uid)}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <span className="text-[8px] text-muted-foreground/60 italic">ไม่มี</span>
+                                            )}
+                                        </div>
+                                        {slot.partial_join && slot.partial_join.length > 0 && (
+                                            <div className="space-y-1">
+                                                <span className="text-[8px] uppercase font-black text-amber-500 block">สะดวกบางส่วน ({slot.partial_join.length} คน):</span>
+                                                <div className="flex flex-wrap gap-1">
+                                                    {slot.partial_join.map((pj: any) => {
+                                                        const uid = typeof pj === 'string' ? pj : pj.user_id;
+                                                        const timeText = typeof pj === 'string' ? '' : ` (${pj.overlap_text})`;
+                                                        return (
+                                                            <div key={uid} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/10 text-[8px] font-bold text-amber-500">
+                                                                {getAttendeePic(uid) && <img src={getAttendeePic(uid)} alt="" className="w-3.5 h-3.5 rounded-full object-cover" />}
+                                                                <span>{getAttendeeName(uid)}{timeText}</span>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    const renderRestaurantContextAndList = () => {
+        const { kpPrefs, normalPrefsSummary, avoidList } = getRestaurantContextData();
+        return (
+            <div className="space-y-4 p-4 rounded-2xl bg-primary/10 border border-primary/20 text-left animate-in fade-in duration-300">
+                <div className="border-b border-primary/20 pb-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5">
+                    <div>
+                        <h4 className="text-xs font-black text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                            🎯 DINING QUEST CONSTRAINTS (โจทย์ความต้องการของกลุ่ม)
+                        </h4>
+                        <p className="text-[9px] text-muted-foreground leading-relaxed mt-0.5">
+                            นี่คือรายการเงื่อนไขความชอบที่รวบรวมได้จากทั้งกลุ่ม ระบบจัดสรรและคัดเลือกแนะนำร้านอาหารที่เหมาะสมที่สุด
+                        </p>
+                    </div>
+                    <div className="shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/20 border border-primary/30 text-[9px] font-black text-primary uppercase tracking-wider">
+                        ⚖️ Stakeholder: Key Person 70% / General 30%
+                    </div>
+                </div>
+
+                <div className="space-y-3.5">
+                    {/* Your Preference Recall Card */}
+                    {userPreference && (
+                        <div className="p-3.5 rounded-xl bg-primary/20 border border-primary/30 space-y-2">
+                            <span className="text-[10px] font-black uppercase text-primary tracking-widest block flex items-center gap-1">
+                                🎒 YOUR CRAVINGS & PRIORITIES RECALL (ความต้องการของคุณ)
+                            </span>
+                            <div className="space-y-2 text-[10px] font-bold text-foreground leading-relaxed">
+                                {Object.keys(rocWeights).length > 0 ? (
+                                    <div className="space-y-1">
+                                        <span className="text-[9px] uppercase font-black text-muted-foreground tracking-widest block">Priority Weights (computed via ROC Centroid):</span>
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {Object.entries(rocWeights).sort((a, b) => b[1] - a[1]).map(([factor, weight]) => (
+                                                <span key={factor} className="px-2.5 py-1 rounded-lg bg-black/10 dark:bg-white/5 border border-black/5 dark:border-white/5 text-[9px] font-bold">
+                                                    {getFactorIcon(factor)} {getFactorDisplayName(factor)} ({(weight * 100).toFixed(1)}%)
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <span className="text-[9px] text-muted-foreground italic block">ไม่ได้จัดลำดับความสำคัญ (No Ranked Priorities)</span>
+                                )}
+                                
+                                <div className="space-y-1.5 pt-1.5 border-t border-black/5 dark:border-white/5">
+                                    <span className="text-[9px] uppercase font-black text-muted-foreground tracking-widest block">Your Selected Constraints:</span>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+                                        <div className="p-2 rounded-lg bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5">
+                                            <span className="text-[8px] text-muted-foreground block uppercase">Budget / Price</span>
+                                            <span className="text-foreground">{userPreference.price && userPreference.price !== 'Any' ? userPreference.price : 'Any Budget'}</span>
+                                        </div>
+                                        <div className="p-2 rounded-lg bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5">
+                                            <span className="text-[8px] text-muted-foreground block uppercase">Preferred Cuisines</span>
+                                            <span className="text-foreground truncate block" title={userPreference.category?.join(', ')}>{userPreference.category && userPreference.category.length > 0 ? userPreference.category.join(', ') : 'Any Cuisine'}</span>
+                                        </div>
+                                        <div className="p-2 rounded-lg bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5">
+                                            <span className="text-[8px] text-muted-foreground block uppercase">Ideal Vibes</span>
+                                            <span className="text-foreground truncate block" title={userPreference.good_fors?.join(', ')}>{userPreference.good_fors && userPreference.good_fors.length > 0 ? userPreference.good_fors.join(', ') : 'Any Vibe'}</span>
+                                        </div>
+                                        <div className="p-2 rounded-lg bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5 flex justify-between items-center">
+                                            <div>
+                                                <span className="text-[8px] text-muted-foreground block uppercase">Special Needs</span>
+                                                <span className="text-foreground">
+                                                    {[
+                                                        userPreference.parking ? '🚗 Parking' : null,
+                                                        userPreference.alcohols ? '🍺 Alcohol' : null
+                                                    ].filter(Boolean).join(' | ') || 'None'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {userPreference.avoid_categories && userPreference.avoid_categories.length > 0 && (
+                                        <div className="mt-1 p-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[9px] font-bold">
+                                            🚫 Avoided: {userPreference.avoid_categories.join(', ')}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    {/* Key Persons Preferences */}
+                    <div className="space-y-1.5">
+                        <span className="text-[9px] font-black uppercase text-primary tracking-widest block flex items-center gap-1">
+                            👑 Main VIP Cravings (เป้าหมายสูงสุดของปาร์ตี้)
+                        </span>
+                        {kpPrefs.length > 0 ? (
+                            <div className="space-y-1.5">
+                                {kpPrefs.map((kp, idx) => (
+                                    <div key={idx} className="flex items-start gap-2.5 p-2 rounded-xl bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5">
+                                        {kp.pic ? (
+                                            <img src={kp.pic} alt="" className="w-6 h-6 rounded-full object-cover border border-primary/20 shrink-0" />
+                                        ) : (
+                                            <div className="w-6 h-6 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center text-[10px] font-bold text-primary shrink-0">👑</div>
+                                        )}
+                                        <div className="space-y-0.5 min-w-0 flex-1">
+                                            <span className="text-[10px] font-black text-foreground block truncate">{kp.name}</span>
+                                            <span className="text-[9px] text-muted-foreground block leading-tight">{kp.prefs}</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <span className="text-[9px] text-muted-foreground italic block">ไม่มี Key Person ในกลุ่มนี้</span>
+                        )}
+                    </div>
+
+                    {/* Normal Attendees Summary */}
+                    <div className="space-y-1.5">
+                        <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest block flex items-center gap-1">
+                            ⚔️ Guild Member Wishes (ความหวังของสมาชิกทั่วไป)
+                        </span>
+                        <div className="p-2.5 rounded-xl bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5 text-[9px] font-bold text-foreground leading-relaxed">
+                            {normalPrefsSummary}
+                        </div>
+                    </div>
+
+                    {/* Aggregated Avoid / Veto list */}
+                    {avoidList.length > 0 && (
+                        <div className="space-y-1.5">
+                            <span className="text-[9px] font-black uppercase text-rose-500 tracking-widest block flex items-center gap-1">
+                                💀 Forbidden Foods / Vetoes (เมนู/ประเภทต้องห้ามเด็ดขาด)
+                            </span>
+                            <div className="flex flex-wrap gap-1">
+                                {avoidList.map((avoidCategory) => (
+                                    <span key={avoidCategory} className="px-2 py-0.5 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[9px] font-black">
+                                        🚫 {avoidCategory}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Suggestions Comparison */}
+                    <div className="space-y-2 pt-2.5 border-t border-black/5 dark:border-white/5">
+                        <span className="text-[9px] font-black uppercase text-primary tracking-widest block">
+                            🏆 Suggested Restaurant Results (ร้านอาหารที่ระบบจัดสรรแนะนำ)
+                        </span>
+                        <div className="space-y-4">
+                            {topRestaurants.slice(0, 5).map((rest, index) => {
+                                return (
+                                    <div key={rest.id} className="relative">
+                                        <div className="absolute top-2.5 left-2.5 z-10 w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center text-[9px] font-black shadow-md">
+                                            #{index + 1}
+                                        </div>
+                                        <div className="pl-9">
+                                            {renderRestaurantExtra(index)}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     // Helper to render dynamic restaurant info under matching questions
     const renderRestaurantExtra = (restIndex: number) => {
         const rest = topRestaurants[restIndex];
@@ -268,6 +857,57 @@ export default function FeedbackPage() {
             link = `https://${link}`;
         }
 
+        // Helper to parse Python-like list strings safely
+        const parsePythonList = (val: any): string[] => {
+            if (!val) return [];
+            if (Array.isArray(val)) return val;
+            if (typeof val === 'string') {
+                const trimmed = val.trim();
+                if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+                    try {
+                        const formatted = trimmed.replace(/'/g, '"');
+                        return JSON.parse(formatted);
+                    } catch (e) {
+                        return trimmed
+                            .slice(1, -1)
+                            .split(',')
+                            .map(item => item.trim().replace(/^['"]|['"]$/g, ''))
+                            .filter(Boolean);
+                    }
+                }
+                return [trimmed];
+            }
+            return [];
+        };
+
+        const restCategories = parsePythonList(rest.category);
+        const restGoodFors = parsePythonList(rest.good_fors);
+        const restAlcohols = parsePythonList(rest.alcohols);
+
+        // Check compatibility details
+        const userPrice = userPreference?.price;
+        const isPriceMatch = !userPrice || userPrice === 'Any' || rest.price === userPrice;
+
+        const userCuisines = userPreference?.category || [];
+        const matchingCuisines = restCategories.filter((c: string) => userCuisines.includes(c));
+        const isCuisineMatch = userCuisines.length === 0 || matchingCuisines.length > 0;
+
+        const userAvoids = userPreference?.avoid_categories || [];
+        const conflictingAvoids = restCategories.filter((c: string) => userAvoids.includes(c));
+        const isAvoidConflict = conflictingAvoids.length > 0;
+
+        const userVibes = userPreference?.good_fors || [];
+        const matchingVibes = restGoodFors.filter((v: string) => userVibes.includes(v));
+        const isVibeMatch = userVibes.length === 0 || matchingVibes.length > 0;
+
+        const requiresParking = !!userPreference?.parking;
+        const hasParking = rest.parking && !String(rest.parking).includes('ไม่มี') && rest.parking !== 'None' && rest.parking !== 'ไม่มีที่จอดรถ';
+        const isParkingMatch = !requiresParking || hasParking;
+
+        const requiresAlcohol = !!userPreference?.alcohols;
+        const hasAlcohol = restAlcohols.length > 0 || (rest.alcohols && !String(rest.alcohols).includes('ไม่มี') && rest.alcohols !== 'None' && rest.alcohols !== '[]');
+        const isAlcoholMatch = !requiresAlcohol || hasAlcohol;
+
         return (
             <div className="mt-2.5 p-3.5 rounded-xl bg-black/10 dark:bg-white/5 border border-black/5 dark:border-white/5 space-y-3 text-left">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
@@ -287,8 +927,26 @@ export default function FeedbackPage() {
                             </span>
                         )}
                         <span className="text-[9px] text-muted-foreground block leading-tight">
-                            Cuisine: {Array.isArray(rest.category) ? rest.category.join(', ') : rest.category || 'N/A'}
+                            Cuisine: {restCategories.join(', ') || 'N/A'}
                         </span>
+                        {/* Highlights/Badges Tag List */}
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                            {getHighlights(rest).map((badge, bIdx) => {
+                                const colorClasses = 
+                                    badge.type === 'gold' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
+                                    badge.type === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                                    badge.type === 'info' ? 'bg-sky-500/10 text-sky-400 border border-sky-500/20' :
+                                    'bg-purple-500/10 text-purple-400 border border-purple-500/20';
+                                return (
+                                    <span
+                                        key={bIdx}
+                                        className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${colorClasses}`}
+                                    >
+                                        {badge.text}
+                                    </span>
+                                );
+                            })}
+                        </div>
                     </div>
                     
                     {/* Score comparison indicators */}
@@ -322,17 +980,23 @@ export default function FeedbackPage() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {categories.map((cat) => (
-                                        <tr key={cat.name} className="border-b border-black/5 dark:border-white/5 last:border-0 font-bold text-foreground">
-                                            <td className="p-1.5 text-muted-foreground">{cat.name}</td>
-                                            <td className="p-1.5 text-right text-primary">
-                                                {cat.personal !== undefined ? `${Math.round(cat.personal)}%` : '—'}
-                                            </td>
-                                            <td className="p-1.5 text-right text-foreground">
-                                                {cat.group !== undefined ? `${Math.round(cat.group)}%` : '—'}
-                                            </td>
-                                        </tr>
-                                    ))}
+                                    {categories.map((cat) => {
+                                        const weight = rocWeights[cat.name];
+                                        const weightStr = weight !== undefined ? ` (${(weight * 100).toFixed(0)}%)` : '';
+                                        return (
+                                            <tr key={cat.name} className="border-b border-black/5 dark:border-white/5 last:border-0 font-bold text-foreground">
+                                                <td className="p-1.5 text-muted-foreground">
+                                                    {getFactorIcon(cat.name)} {getFactorDisplayName(cat.name)}{weightStr}
+                                                </td>
+                                                <td className="p-1.5 text-right text-primary">
+                                                    {cat.personal !== undefined ? `${Math.round(cat.personal)}%` : '—'}
+                                                </td>
+                                                <td className="p-1.5 text-right text-foreground">
+                                                    {cat.group !== undefined ? `${Math.round(cat.group)}%` : '—'}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
                                     {/* Total Match Score row */}
                                     <tr className="bg-black/10 dark:bg-white/10 font-black text-foreground border-t border-black/10 dark:border-white/10">
                                         <td className="p-1.5 text-muted-foreground">Total Match Score</td>
@@ -345,6 +1009,104 @@ export default function FeedbackPage() {
                                     </tr>
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+                )}
+
+                {/* Preference Matching Analysis */}
+                {userPreference && (
+                    <div className="space-y-1.5 pt-1.5 border-t border-black/5 dark:border-white/5">
+                        <span className="text-[9px] uppercase font-black text-primary tracking-widest block">
+                            Preference Alignment Analysis
+                        </span>
+                        
+                        {/* Avoid warnings alert if there are conflicts */}
+                        {isAvoidConflict && (
+                            <div className="p-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[10px] font-black flex items-center gap-1.5 mb-2">
+                                <span>⚠️ Conflict: Contains avoided cuisine/ingredient:</span>
+                                <span className="underline">{conflictingAvoids.join(', ')}</span>
+                            </div>
+                        )}
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[9px] font-bold text-foreground">
+                            {/* Budget/Price Match */}
+                            {userPrice && (
+                                <div className="flex justify-between items-center gap-2 p-2 rounded-lg bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5">
+                                    <div className="space-y-0.5">
+                                        <span className="text-muted-foreground block text-[8px] uppercase">Budget Match</span>
+                                        <span className="text-foreground font-black">Rest: {rest.price || 'N/A'}</span>
+                                    </div>
+                                    <span className={`px-1.5 py-0.5 rounded text-[8px] uppercase font-black ${
+                                        isPriceMatch ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border border-rose-500/20 text-rose-400'
+                                    }`}>
+                                        {isPriceMatch ? 'Match' : 'Mismatch'}
+                                    </span>
+                                </div>
+                            )}
+
+                            {/* Cuisine Match */}
+                            {userCuisines.length > 0 && (
+                                <div className="flex justify-between items-center gap-2 p-2 rounded-lg bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5">
+                                    <div className="space-y-0.5">
+                                        <span className="text-muted-foreground block text-[8px] uppercase">Cuisine Match</span>
+                                        <span className="text-foreground font-black truncate max-w-[120px] block" title={restCategories.join(', ')}>
+                                            {matchingCuisines.length > 0 ? matchingCuisines.join(', ') : 'None matching'}
+                                        </span>
+                                    </div>
+                                    <span className={`px-1.5 py-0.5 rounded text-[8px] uppercase font-black ${
+                                        isCuisineMatch ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border border-rose-500/20 text-rose-400'
+                                    }`}>
+                                        {isCuisineMatch ? 'Match' : 'Mismatch'}
+                                    </span>
+                                </div>
+                            )}
+
+                            {/* Vibe Match */}
+                            {userVibes.length > 0 && (
+                                <div className="flex justify-between items-center gap-2 p-2 rounded-lg bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5">
+                                    <div className="space-y-0.5">
+                                        <span className="text-muted-foreground block text-[8px] uppercase">Vibe Match</span>
+                                        <span className="text-foreground font-black truncate max-w-[120px] block">
+                                            {matchingVibes.length > 0 ? matchingVibes.join(', ') : 'None matching'}
+                                        </span>
+                                    </div>
+                                    <span className={`px-1.5 py-0.5 rounded text-[8px] uppercase font-black ${
+                                        isVibeMatch ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border border-rose-500/20 text-rose-400'
+                                    }`}>
+                                        {isVibeMatch ? 'Match' : 'Mismatch'}
+                                    </span>
+                                </div>
+                            )}
+
+                            {/* Parking Match */}
+                            {requiresParking && (
+                                <div className="flex justify-between items-center gap-2 p-2 rounded-lg bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5">
+                                    <div className="space-y-0.5">
+                                        <span className="text-muted-foreground block text-[8px] uppercase">Parking Match</span>
+                                        <span className="text-foreground font-black">{hasParking ? 'Available' : 'None'}</span>
+                                    </div>
+                                    <span className={`px-1.5 py-0.5 rounded text-[8px] uppercase font-black ${
+                                        isParkingMatch ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border border-rose-500/20 text-rose-400'
+                                    }`}>
+                                        {isParkingMatch ? 'Match' : 'Mismatch'}
+                                    </span>
+                                </div>
+                            )}
+
+                            {/* Alcohol Match */}
+                            {requiresAlcohol && (
+                                <div className="flex justify-between items-center gap-2 p-2 rounded-lg bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5">
+                                    <div className="space-y-0.5">
+                                        <span className="text-muted-foreground block text-[8px] uppercase">Alcohol Match</span>
+                                        <span className="text-foreground font-black">{hasAlcohol ? 'Available' : 'None'}</span>
+                                    </div>
+                                    <span className={`px-1.5 py-0.5 rounded text-[8px] uppercase font-black ${
+                                        isAlcoholMatch ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border border-rose-500/20 text-rose-400'
+                                    }`}>
+                                        {isAlcoholMatch ? 'Match' : 'Mismatch'}
+                                    </span>
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
@@ -450,6 +1212,10 @@ export default function FeedbackPage() {
                                 <h3 className="text-base font-black text-foreground">{currentSection?.[0]}</h3>
                             </div>
 
+                            {/* Section Context Panels */}
+                            {currentSection?.[1].some(q => q.id === 'q6') && renderTimeContextAndList()}
+                            {currentSection?.[1].some(q => q.id === 'q10') && renderRestaurantContextAndList()}
+
                             {/* Question List */}
                             <div className="space-y-6">
                                 {currentSection?.[1].map((q) => (
@@ -457,16 +1223,6 @@ export default function FeedbackPage() {
                                         <label className="block text-xs font-bold text-foreground leading-relaxed">
                                             {q.text} {!q.optional && <span className="text-primary">*</span>}
                                         </label>
-
-                                        {/* DYNAMIC METADATA BLOCKS */}
-                                        {q.id === 'q6' && renderTimeSlotExtra(0)}
-                                        {q.id === 'q7' && renderTimeSlotExtra(1)}
-                                        {q.id === 'q8' && renderTimeSlotExtra(2)}
-                                        {q.id === 'q10' && renderRestaurantExtra(0)}
-                                        {q.id === 'q11' && renderRestaurantExtra(1)}
-                                        {q.id === 'q12' && renderRestaurantExtra(2)}
-                                        {q.id === 'q13' && renderRestaurantExtra(3)}
-                                        {q.id === 'q14' && renderRestaurantExtra(4)}
 
                                         {/* SELECT/RADIO */}
                                         {q.type === 'select' && q.options && (

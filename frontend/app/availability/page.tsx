@@ -251,9 +251,9 @@ const AvailabilityPage = () => {
             </div>
 
             <div className="flex flex-col gap-2 w-full max-w-xs">
-                {groupId && (
+                {groupId && meetingId && (
                     <button
-                        onClick={() => router.push(`/result?group_id=${groupId}${meetingId ? `&meeting_id=${meetingId}` : ''}`)}
+                        onClick={() => router.push(`/result?group_id=${groupId}&meeting_id=${meetingId}`)}
                         className="bg-primary text-white font-bold py-3 px-6 rounded-xl text-sm transition-all active:scale-95 shadow-lg shadow-primary/20"
                     >
                         See Group Suggestions

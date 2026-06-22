@@ -30,7 +30,8 @@ const ResultPage = () => {
     }
 
     if (groupId) {
-        return <GroupDashboardView groupId={groupId} />;
+        router.replace('/');
+        return null;
     }
 
     return (
@@ -471,14 +472,6 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
         });
     }, [preferredRestaurants, discoveryRestaurants, votingState]);
 
-    const getVetoingUserNames = (restaurantName: string): string[] => {
-        const userIds = votingState.restaurant_vetoes_users?.[restaurantName] || [];
-        return userIds.map((uid: string) => {
-            const att = allAttendees.find(a => a.user_id === uid);
-            return att ? att.displayName : "Someone";
-        });
-    };
-
     const getHighlights = (place: any) => {
         let reasonObj = place.reason;
         if (typeof reasonObj === 'string') {
@@ -733,10 +726,14 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
     const sortedSlots = useMemo(() => {
         const copy = [...allSlots];
         const count = (s: any) => (s.full_join?.length ?? 0) + (s.partial_join?.length ?? 0);
+        const compareTime = (a: any, b: any) => {
+            if (a.date !== b.date) return a.date.localeCompare(b.date);
+            return a.time.localeCompare(b.time);
+        };
         if (slotSortKey === 'score') {
-            copy.sort((a, b) => (b.final_score ?? 0) - (a.final_score ?? 0) || count(b) - count(a));
+            copy.sort((a, b) => (b.final_score ?? 0) - (a.final_score ?? 0) || count(b) - count(a) || compareTime(a, b));
         } else {
-            copy.sort((a, b) => count(b) - count(a) || (b.final_score ?? 0) - (a.final_score ?? 0));
+            copy.sort((a, b) => count(b) - count(a) || (b.final_score ?? 0) - (a.final_score ?? 0) || compareTime(a, b));
         }
         return copy;
     }, [allSlots, slotSortKey]);
@@ -2009,7 +2006,9 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                                                 const keyB = `${b.date}_${b.time}`;
                                                                                 const votesA = votingState.time_votes?.[keyA]?.length || 0;
                                                                                 const votesB = votingState.time_votes?.[keyB]?.length || 0;
-                                                                                return votesB - votesA;
+                                                                                if (votesB !== votesA) return votesB - votesA;
+                                                                                if (a.date !== b.date) return a.date.localeCompare(b.date);
+                                                                                return a.time.localeCompare(b.time);
                                                                             });
                                                                             return sorted.map(slot => {
                                                                                 const key = `${slot.date}_${slot.time}`;
@@ -2054,7 +2053,9 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                                     const keyB = `${b.date}_${b.time}`;
                                                                     const votesA = votingState.time_votes?.[keyA]?.length || 0;
                                                                     const votesB = votingState.time_votes?.[keyB]?.length || 0;
-                                                                    return votesB - votesA;
+                                                                    if (votesB !== votesA) return votesB - votesA;
+                                                                    if (a.date !== b.date) return a.date.localeCompare(b.date);
+                                                                    return a.time.localeCompare(b.time);
                                                                 });
                                                                 return sorted.map(slot => {
                                                                     const key = `${slot.date}_${slot.time}`;
@@ -2301,6 +2302,10 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                         {liveVenueCandidates.slice(0, 3).map((place, i) => {
                                                             const isTop = i === 0;
                                                             const vetoCount = place.vetoCount;
+                                                            const isVetoedByMe = votingState.user_vetoed?.includes(place.name) || false;
+                                                            const vetoLabel = isVetoedByMe
+                                                                ? (vetoCount > 1 ? "Vetoed by you & others" : "Vetoed by you")
+                                                                : "Vetoed by some of your attendees";
                                                             return (
                                                                 <div
                                                                     key={place.name}
@@ -2318,8 +2323,8 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                                             <div className="truncate">
                                                                                 <p className="font-bold text-foreground truncate">{place.name}</p>
                                                                                 {vetoCount > 0 && (
-                                                                                    <p className="text-[9px] text-red-400 font-semibold truncate max-w-[200px]" title={`Vetoed by: ${getVetoingUserNames(place.name).join(', ')}`}>
-                                                                                        ⚠️ Vetoed by: {getVetoingUserNames(place.name).join(', ')}
+                                                                                    <p className="text-[9px] text-red-400 font-semibold truncate max-w-[200px]" title={vetoLabel}>
+                                                                                        ⚠️ {vetoLabel}
                                                                                     </p>
                                                                                 )}
                                                                             </div>
@@ -2564,6 +2569,9 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                         const prefCount = votingState.restaurant_preferences?.[place.name]?.length || 0;
                                         const isPreferredByMe = votingState.restaurant_preferences?.[place.name]?.includes(currentUserId) || false;
                                         const isVetoedByMe = votingState.user_vetoed?.includes(place.name) || false;
+                                        const vetoLabel = isVetoedByMe
+                                            ? (vetoCount > 1 ? "Vetoed by you & others" : "Vetoed by you")
+                                            : "Vetoed by some of your attendees";
 
                                         return (
                                             <div
@@ -2640,7 +2648,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                             </p>
                                                             {vetoCount > 0 && (
                                                                 <p className="text-[10px] text-red-400 font-medium mt-1">
-                                                                    🚫 Vetoed by: {getVetoingUserNames(place.name).join(', ')}
+                                                                    🚫 {vetoLabel}
                                                                 </p>
                                                             )}
                                                         </div>

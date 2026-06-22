@@ -253,10 +253,10 @@ const CreateMeetingPage = () => {
             Close Window
           </button>
           <button
-            onClick={() => router.push(paramGroupId ? `/result?group_id=${paramGroupId}` : '/')}
+            onClick={() => router.push('/')}
             className="text-sm text-muted-foreground hover:text-white transition-colors"
           >
-            Back to Dashboard
+            Back to Home
           </button>
         </div>
       </div>
