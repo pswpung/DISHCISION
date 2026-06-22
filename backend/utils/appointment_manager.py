@@ -906,7 +906,8 @@ class Appointment_Manager(object):
             attendee_scores[user_id] = {
                 "name": display_name,
                 "score": round(score, 1),
-                "pictureUrl": picture_url
+                "pictureUrl": picture_url,
+                "reason": reason
             }
             
         score_key = sum(key_scores) / len(key_scores) if key_scores else 0.0
@@ -934,7 +935,8 @@ class Appointment_Manager(object):
             attendee_scores[user_id] = {
                 "name": display_name,
                 "score": round(score, 1),
-                "pictureUrl": picture_url
+                "pictureUrl": picture_url,
+                "reason": reason
             }
             
         score_gen = sum(gen_scores) / len(gen_scores) if gen_scores else 0.0

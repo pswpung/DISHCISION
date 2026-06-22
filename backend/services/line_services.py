@@ -30,6 +30,7 @@ from linebot.v3.webhooks import (
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET')
 LIFF_ID = os.getenv('LIFF_ID')
+ENABLE_BETA_SURVEY = os.getenv('ENABLE_BETA_SURVEY', 'true').lower() == 'true'
 
 configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
@@ -905,16 +906,67 @@ def push_message_fixed_result_flex(group_id: str, meeting_id: str, meeting_name:
         }
     }
 
+    feedback_url = f"https://liff.line.me/{LIFF_ID}/{meeting_id}/feedback{base_query_string}"
+
+    # Design Feedback Invitation Bubble
+    feedback_bubble = {
+        "type": "bubble",
+        "header": {
+            "type": "box",
+            "layout": "vertical",
+            "backgroundColor": "#2B303B",
+            "paddingAll": "lg",
+            "contents": [
+                {"type": "text", "text": "📝 Beta Feedback Survey", "weight": "bold", "color": "#F58357", "size": "sm"},
+                {"type": "text", "text": "ช่วยประเมินความพึงพอใจ", "weight": "bold", "size": "md", "color": "#FFFFFF", "wrap": True, "margin": "xs"}
+            ]
+        },
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {
+                    "type": "text",
+                    "text": "กรุณาทำแบบประเมินความพึงพอใจการใช้งานแอปพลิเคชัน DISHCISION เพื่อนำข้อมูลไปประกอบการทำวิทยานิพนธ์ระดับปริญญาโทครับ 🙏",
+                    "color": "#555555",
+                    "size": "xs",
+                    "wrap": True
+                }
+            ]
+        },
+        "footer": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {
+                    "type": "button",
+                    "style": "primary",
+                    "color": "#F58357",
+                    "action": {
+                        "type": "uri",
+                        "label": "ทำแบบประเมิน (Feedback)",
+                        "uri": feedback_url
+                    }
+                }
+            ]
+        }
+    }
+
     try:
         with ApiClient(configuration) as api_client:
             line_bot_api = MessagingApi(api_client)
+            
+            messages = [FlexMessage(alt_text=f"Final Result: {meeting_name}", contents=FlexContainer.from_dict(fixed_bubble))]
+            if ENABLE_BETA_SURVEY:
+                messages.append(FlexMessage(alt_text="Beta Feedback Survey", contents=FlexContainer.from_dict(feedback_bubble)))
+                
             line_bot_api.push_message(
                 PushMessageRequest(
                     to=group_id,
-                    messages=[FlexMessage(alt_text=f"Final Result: {meeting_name}", contents=FlexContainer.from_dict(fixed_bubble))]
+                    messages=messages
                 )
             )
-            print(f"✅ Successfully pushed Fixed Result Flex to {group_id}")
+            print(f"✅ Successfully pushed Fixed Result and Feedback Flex to {group_id}")
     except Exception as e:
         error_msg = str(e)
         if "monthly limit" in error_msg.lower() or "429" in error_msg:

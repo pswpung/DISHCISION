@@ -26,8 +26,8 @@ export const LiffProvider = ({ children }: { children: ReactNode }) => {
       if (
         event.reason &&
         (event.reason instanceof Event ||
-         event.reason.toString() === '[object Event]' ||
-         (event.reason.message && event.reason.message.includes('LIFF')))
+          event.reason.toString() === '[object Event]' ||
+          (event.reason.message && event.reason.message.includes('LIFF')))
       ) {
         console.warn('Suppressed unhandled rejection (likely LIFF SDK internal load failure):', event.reason);
         event.preventDefault();
@@ -40,28 +40,29 @@ export const LiffProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const searchParams = new URLSearchParams(window.location.search);
-      const liffState = searchParams.get('liff.state');
-      if (liffState) {
-        const decodedPath = decodeURIComponent(liffState);
-        if (decodedPath.startsWith('/')) {
-          window.location.replace(window.location.origin + decodedPath);
-        }
-      }
-    }
-  }, []);
-
-  useEffect(() => {
     const initLiff = async () => {
       try {
-        const liffId = process.env.NEXT_PUBLIC_LIFF_ID || '2010074250-9aD5NH9x';
+        const liffId = process.env.NEXT_PUBLIC_LIFF_ID || '2008419367-SeVLxzHP';
         await liff.init({ liffId });
         setLiffObject(liff);
         if (liff.isLoggedIn()) {
           setIsLoggedIn(true);
           const userProfile = await liff.getProfile();
           setProfile(userProfile);
+        }
+
+        // Handle liff.state redirect ONLY after successful LIFF initialization
+        // This ensures the SDK has processed the auth parameters and saved the login state/token before we redirect.
+        if (typeof window !== 'undefined') {
+          const searchParams = new URLSearchParams(window.location.search);
+          const liffState = searchParams.get('liff.state');
+          if (liffState) {
+            const decodedPath = decodeURIComponent(liffState);
+            if (decodedPath.startsWith('/')) {
+              window.location.replace(window.location.origin + decodedPath);
+              return;
+            }
+          }
         }
       } catch (err: any) {
         console.error('LIFF Init Error:', err);
@@ -110,8 +111,8 @@ export const LiffProvider = ({ children }: { children: ReactNode }) => {
       closeWindow: () => {
         if (typeof window !== 'undefined') window.close();
       },
-      login: () => {},
-      logout: () => {},
+      login: () => { },
+      logout: () => { },
       isLoggedIn: () => true,
       getProfile: () => Promise.resolve({
         userId: 'mock-user-id',

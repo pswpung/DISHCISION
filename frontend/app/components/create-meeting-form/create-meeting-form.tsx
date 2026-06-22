@@ -758,6 +758,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                     return;
                 }
             }
+        }
         if (getActivePrioritiesCount() === 0) {
             alert("Please select at least one Focus Factor priority.");
             return;

@@ -223,5 +223,13 @@ export const apiService = {
             confirmed_restaurant: confirmedRestaurant
         });
         return response.data;
+    },
+
+    submitFeedback: async (meetingId: string, userId: string | null, responses: Record<string, any>) => {
+        const response = await apiClient.post(`/meetings/${meetingId}/feedback`, {
+            user_id: userId,
+            responses
+        });
+        return response.data;
     }
 };

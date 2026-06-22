@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from uuid import UUID
 from typing import List, Optional, Any
 from services.postgres_services import get_db
-from models import MeetingDetail, UserDetail, MeetingAttendee
+from models import MeetingDetail, UserDetail, MeetingAttendee, Feedback
 from schemas import MeetingBase, MeetingCreate, MeetingUpdate, MeetingResponse
 import copy
 import time
@@ -108,6 +108,10 @@ class ToggleExcludeVetoedRequest(BaseModel):
 class ConfirmFinalRequest(BaseModel):
     confirmed_time: str
     confirmed_restaurant: str
+
+class FeedbackSubmitRequest(BaseModel):
+    user_id: Optional[str] = None
+    responses: dict
 
 # --- MEETING DETAILS CRUD ---
 
@@ -467,3 +471,19 @@ def confirm_final(meeting_id: UUID, req: ConfirmFinalRequest, db: Session = Depe
         print(f"Failed to send final LINE confirmation: {e}")
         
     return sanitize_meeting_response(meeting)
+
+@router.post("/{meeting_id}/feedback", status_code=status.HTTP_201_CREATED)
+def submit_feedback(meeting_id: UUID, req: FeedbackSubmitRequest, db: Session = Depends(get_db)):
+    db_meeting = db.query(MeetingDetail).filter(MeetingDetail.meeting_id == meeting_id).first()
+    if not db_meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+        
+    new_feedback = Feedback(
+        meeting_id=str(meeting_id),
+        user_id=req.user_id,
+        responses=req.responses
+    )
+    db.add(new_feedback)
+    db.commit()
+    db.refresh(new_feedback)
+    return {"status": "success", "id": new_feedback.id}

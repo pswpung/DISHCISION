@@ -13,6 +13,8 @@ services:
       - postgres_data:/var/lib/postgresql/data
 
   backend:
+    profiles:
+      - prod
     build:
       context: ../backend
       dockerfile: Dockerfile
@@ -32,6 +34,8 @@ services:
       FRONTEND_URL: ${FRONTEND_URL}
 
   frontend:
+    profiles:
+      - prod
     build:
       context: ../frontend
       dockerfile: Dockerfile
@@ -42,8 +46,11 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
       NEXT_PUBLIC_LIFF_ID: ${NEXT_PUBLIC_LIFF_ID}
+      NEXT_PUBLIC_ENABLE_BETA_SURVEY: ${NEXT_PUBLIC_ENABLE_BETA_SURVEY}
 
   tunnel:
+    profiles:
+      - prod
     image: cloudflare/cloudflared:latest
     container_name: cloudflare_tunnel
     restart: always

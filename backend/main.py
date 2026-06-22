@@ -23,29 +23,6 @@ with engine.connect() as connection:
 
 Base.metadata.create_all(bind=engine)
 
-# Seed mock users for group-1 (local development / testing)
-from services.postgres_services import SessionLocal
-from models import UserDetail
-db = SessionLocal()
-try:
-    mock_users = [
-        {"user_id": "mock-user-id", "display_name": "Mock User (You)", "pictureurl": "https://via.placeholder.com/150", "group_id": "group-1"},
-        {"user_id": "mock-friend-1", "display_name": "Angpao", "pictureurl": "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&h=150&q=80", "group_id": "group-1"},
-        {"user_id": "mock-friend-2", "display_name": "Developer", "pictureurl": "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=150&h=150&q=80", "group_id": "group-1"},
-        {"user_id": "mock-friend-3", "display_name": "Budsakorn", "pictureurl": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&h=150&q=80", "group_id": "group-1"}
-    ]
-    for mu in mock_users:
-        exists = db.query(UserDetail).filter(UserDetail.user_id == mu["user_id"]).first()
-        if not exists:
-            db.add(UserDetail(**mu))
-    db.commit()
-    logger.info("Successfully seeded mock users for group-1")
-except Exception as e:
-    logger.error(f"Error seeding mock users: {e}")
-    db.rollback()
-finally:
-    db.close()
-
 
 app = FastAPI()
 

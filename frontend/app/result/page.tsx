@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useMemo, useCallback, Suspense } from 'rea
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLiff } from '@/app/context/LiffContext';
 import { apiService } from '@/app/services/api';
+import SurveyModal from '@/app/components/survey-modal/survey-modal';
 
 const ResultPage = () => {
     const { isLoggedIn, profile } = useLiff();
@@ -345,6 +346,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
 
     const [confirmedTimeSlot, setConfirmedTimeSlot] = useState<string>("");
     const [confirmedRestaurant, setConfirmedRestaurant] = useState<string>("");
+    const [isSurveyOpen, setIsSurveyOpen] = useState(false);
 
     const [searchTerm, setSearchTerm] = useState('');
     const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -1878,6 +1880,18 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                         {votingState.final_decision.restaurant_id}
                                                     </p>
                                                 </div>
+                                                
+                                                {/* Beta Feedback Survey Button */}
+                                                {process.env.NEXT_PUBLIC_ENABLE_BETA_SURVEY === 'true' && (
+                                                    <div className="pt-2">
+                                                        <button
+                                                            onClick={() => setIsSurveyOpen(true)}
+                                                            className="w-full py-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-2xl text-[10px] font-black uppercase tracking-wider text-white text-center transition-all active:scale-[0.97]"
+                                                        >
+                                                            📣 Give Beta Feedback & Survey
+                                                        </button>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
@@ -2839,6 +2853,12 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                     </div>
                 </div>
             </div>
+            <SurveyModal
+                isOpen={isSurveyOpen}
+                onClose={() => setIsSurveyOpen(false)}
+                meetingId={meetingId || ''}
+                userId={currentUserId}
+            />
         </div>
     );
 };

@@ -35,6 +35,7 @@ Create a `frontend/.env.local` file:
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:8081
 NEXT_PUBLIC_LIFF_ID=your_line_liff_id
+NEXT_PUBLIC_ENABLE_BETA_SURVEY=true # Set to true to show the UAT feedback survey after meeting confirmation
 ```
 
 ---
@@ -170,6 +171,7 @@ DATABASE_URL=postgresql://postgres:your_secure_password@db:5432/dishcision
 LINE_CHANNEL_ACCESS_TOKEN=your_token
 LINE_CHANNEL_SECRET=your_secret
 NEXT_PUBLIC_LIFF_ID=your_liff_id
+NEXT_PUBLIC_ENABLE_BETA_SURVEY=true # Set to true to show UAT survey for beta group after meeting confirm
 
 # Google OAuth Config
 GOOGLE_CLIENT_ID=your_client_id
@@ -184,15 +186,15 @@ NEXT_PUBLIC_API_URL=https://api.yourdomain.com
 CLOUDFLARE_TUNNEL_TOKEN=your_copied_cloudflare_token
 ```
 
-Start the containerized stack:
+Start the containerized stack (using the `prod` profile to spin up backend, frontend, and tunnel):
 ```bash
-docker-compose -f deploy/docker-compose.yml up -d --build
+docker compose -f deploy/docker-compose.yml --profile prod up -d --build
 ```
 
 ### 4. Initialize Database & Import Data
 Run migrations and populate the local database list inside the active backend container:
 ```bash
-docker-compose -f deploy/docker-compose.yml exec backend python scripts/import_restaurants.py
+docker compose -f deploy/docker-compose.yml --profile prod exec backend python scripts/import_restaurants.py
 ```
 
 ### 5. Update Webhook and LIFF URLs

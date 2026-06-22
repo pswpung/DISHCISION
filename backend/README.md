@@ -76,6 +76,8 @@ The backend is modularized into FastAPI routers. The following is a detailed cat
     - **Description**: Toggles whether restaurants containing any vetoes (Tail Out) should be excluded from the results list for this meeting.
 *   `POST /meetings/{meeting_id}/confirm-final`
     - **Description**: Locks confirmed time slot and venue selections, marks meeting status as `"closed"`, and pushes the final ticket Flex Message to the LINE group.
+*   `POST /meetings/{meeting_id}/feedback`
+    - **Description**: Submits beta user feedback answers and saves them as a structured JSON object in the database's `feedbacks` table.
 
 
 ### 🙋 Meeting Attendees Router (`/attendee`)

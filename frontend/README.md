@@ -87,6 +87,7 @@ This route handles two layout modes:
     - **Veto Filtering Toggle**: Organizer can check *"Exclude Vetoed Restaurants (Tail Out)"* to filter out all vetoed venues from the active selections. Non-organizers receive an information indicator warning them that vetoes have been excluded.
     - **Spin Wheel Panel**: Allows the organizer to choose a tie-breaker wheel for slots or restaurants, select candidates, spin, and automatically populate the winner.
     - **Lock Decision Action**: For organizers to submit confirmed parameters and close voting.
+    - **Beta Survey Integration**: Displays a feedback survey button inside the locked ticket container if the `NEXT_PUBLIC_ENABLE_BETA_SURVEY` environment variable is set to `true`. This opens a step-by-step feedback modal powered by the questions in `app/config/survey-questions.json` to collect UAT responses from beta groups.
 - **B. Group Dashboard View** (when loaded with `group_id` parameter only):
   - Lists all meetings created within that LINE group.
   - Displays dates, status badges (**Vote Now** / **Closed**), and provides direct links to the meeting result pages.
@@ -102,6 +103,7 @@ Copy `.env.local.example` or create a `.env.local` file inside the `frontend` fo
 NEXT_PUBLIC_LIFF_ID=your-liff-id
 NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
 NEXT_PUBLIC_GOOGLE_AUTH_PROXY_URL=https://your-username.github.io/dishcision-auth/
+NEXT_PUBLIC_ENABLE_BETA_SURVEY=true # Set to true to show the UAT feedback survey after meeting confirmation
 ```
 
 ### 🔑 Google Calendar Client ID Setup:

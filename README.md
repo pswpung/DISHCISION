@@ -122,5 +122,7 @@ For details on the mathematical formulas, overlap weights, Rank Order Centroid (
 
 ## 🛠️ Developer & User Setup Guides
 
-- To set up, compile, and deploy this project step-by-step, see [developer_tutorial.md](file:///Users/pasawee.p/Second%20Brain/1.%20Projects/Restaurant%20Suggestion/dishcision-line-bot/developer_tutorial.md).
+- To set up, compile, and deploy this project step-by-step, see [developer_tutorial.md](file:///Users/pasawee.p/Second%20Brain/1.%20Projects/Restaurant%20Suggestion/dishcision-line-bot/developer_tutorial.md) (covers both local development and **secure Docker production deployment on AWS EC2 via Cloudflare Tunnels**).
 - To learn how to use this application to plan events as a user, see [tutorials.md](file:///Users/pasawee.p/Second%20Brain/1.%20Projects/Restaurant%20Suggestion/dishcision-line-bot/tutorials.md).
+- To configure, add, or modify questions in the beta user survey (which is shown after confirmation when `NEXT_PUBLIC_ENABLE_BETA_SURVEY=true`), edit the [survey-questions.json](file:///Users/pasawee.p/Second%20Brain/1.%20Projects/Restaurant%20Suggestion/dishcision-line-bot/frontend/app/config/survey-questions.json) file.
+
