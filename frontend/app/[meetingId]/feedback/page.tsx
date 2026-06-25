@@ -29,7 +29,7 @@ export default function FeedbackPage() {
 
     const calculateROCWeights = (priorities: any) => {
         if (!priorities || !Array.isArray(priorities)) return {};
-        
+
         // Normalize priorities: if it's a flat array of strings, turn it into string[][]
         let normalized: string[][] = [];
         if (priorities.length > 0) {
@@ -39,7 +39,7 @@ export default function FeedbackPage() {
                 normalized = priorities as string[][];
             }
         }
-        
+
         const flat = normalized.flat();
         const k = flat.length;
         if (k === 0) return {};
@@ -168,7 +168,7 @@ export default function FeedbackPage() {
 
                 // 2. Fetch suggestion details (ranking lists)
                 const resultData = await apiService.getSuggestions(meetingId);
-                
+
                 // Process time slots
                 const suggestions = resultData.suggested_restaurants || {};
                 const allSlots: any[] = [];
@@ -184,7 +184,7 @@ export default function FeedbackPage() {
                         });
                     });
                 });
-                
+
                 // Sort matching the backend layout
                 const sorted = allSlots.sort((a, b) => {
                     if (b.final_score !== a.final_score) return b.final_score - a.final_score;
@@ -698,7 +698,7 @@ export default function FeedbackPage() {
                                 ) : (
                                     <span className="text-[9px] text-muted-foreground italic block">ไม่ได้จัดลำดับความสำคัญ (No Ranked Priorities)</span>
                                 )}
-                                
+
                                 <div className="space-y-1.5 pt-1.5 border-t border-black/5 dark:border-white/5">
                                     <span className="text-[9px] uppercase font-black text-muted-foreground tracking-widest block">Your Selected Constraints:</span>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
@@ -923,10 +923,10 @@ export default function FeedbackPage() {
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                     <div className="space-y-0.5">
                         {link ? (
-                            <a 
-                                href={link} 
-                                target="_blank" 
-                                rel="noopener noreferrer" 
+                            <a
+                                href={link}
+                                target="_blank"
+                                rel="noopener noreferrer"
                                 className="text-xs font-black text-primary hover:underline inline-flex items-center gap-1 transition-all"
                             >
                                 🔗 {rest.name}
@@ -942,11 +942,11 @@ export default function FeedbackPage() {
                         {/* Highlights/Badges Tag List */}
                         <div className="flex flex-wrap gap-1 mt-1.5">
                             {getHighlights(rest).map((badge, bIdx) => {
-                                const colorClasses = 
+                                const colorClasses =
                                     badge.type === 'gold' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
-                                    badge.type === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                                    badge.type === 'info' ? 'bg-sky-500/10 text-sky-400 border border-sky-500/20' :
-                                    'bg-purple-500/10 text-purple-400 border border-purple-500/20';
+                                        badge.type === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                                            badge.type === 'info' ? 'bg-sky-500/10 text-sky-400 border border-sky-500/20' :
+                                                'bg-purple-500/10 text-purple-400 border border-purple-500/20';
                                 return (
                                     <span
                                         key={bIdx}
@@ -958,7 +958,7 @@ export default function FeedbackPage() {
                             })}
                         </div>
                     </div>
-                    
+
                     {/* Score comparison indicators */}
                     <div className="flex gap-1.5 w-full sm:w-auto">
                         {personalScore !== undefined && (
@@ -978,14 +978,14 @@ export default function FeedbackPage() {
                 {categories.length > 0 && (
                     <div className="space-y-1.5 pt-1.5 border-t border-black/5 dark:border-white/5">
                         <span className="text-[9px] uppercase font-black text-muted-foreground tracking-widest block">
-                            Score Comparison Breakdown
+                            Matching Score Comparison Breakdown
                         </span>
                         <div className="overflow-hidden rounded-lg border border-black/5 dark:border-white/5 bg-black/5 dark:bg-white/5">
                             <table className="w-full text-left text-[9px] border-collapse">
                                 <thead>
                                     <tr className="border-b border-black/5 dark:border-white/5 bg-black/15 dark:bg-white/5 text-[8px] font-black uppercase text-muted-foreground">
                                         <th className="p-1.5">Criteria</th>
-                                        <th className="p-1.5 text-right w-16">You</th>
+                                        <th className="p-1.5 text-right w-16">Your</th>
                                         <th className="p-1.5 text-right w-16">Group</th>
                                     </tr>
                                 </thead>
@@ -1029,7 +1029,7 @@ export default function FeedbackPage() {
                         <span className="text-[9px] uppercase font-black text-primary tracking-widest block">
                             Preference Alignment Analysis
                         </span>
-                        
+
                         {/* Avoid warnings alert if there are conflicts */}
                         {isAvoidConflict && (
                             <div className="p-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[10px] font-black flex items-center gap-1.5 mb-2">
@@ -1046,9 +1046,8 @@ export default function FeedbackPage() {
                                         <span className="text-muted-foreground block text-[8px] uppercase">Budget Match</span>
                                         <span className="text-foreground font-black">Rest: {rest.price || 'N/A'}</span>
                                     </div>
-                                    <span className={`px-1.5 py-0.5 rounded text-[8px] uppercase font-black ${
-                                        isPriceMatch ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border border-rose-500/20 text-rose-400'
-                                    }`}>
+                                    <span className={`px-1.5 py-0.5 rounded text-[8px] uppercase font-black ${isPriceMatch ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border border-rose-500/20 text-rose-400'
+                                        }`}>
                                         {isPriceMatch ? 'Match' : 'Mismatch'}
                                     </span>
                                 </div>
@@ -1063,9 +1062,8 @@ export default function FeedbackPage() {
                                             {matchingCuisines.length > 0 ? matchingCuisines.join(', ') : 'None matching'}
                                         </span>
                                     </div>
-                                    <span className={`px-1.5 py-0.5 rounded text-[8px] uppercase font-black ${
-                                        isCuisineMatch ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border border-rose-500/20 text-rose-400'
-                                    }`}>
+                                    <span className={`px-1.5 py-0.5 rounded text-[8px] uppercase font-black ${isCuisineMatch ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border border-rose-500/20 text-rose-400'
+                                        }`}>
                                         {isCuisineMatch ? 'Match' : 'Mismatch'}
                                     </span>
                                 </div>
@@ -1080,9 +1078,8 @@ export default function FeedbackPage() {
                                             {matchingVibes.length > 0 ? matchingVibes.join(', ') : 'None matching'}
                                         </span>
                                     </div>
-                                    <span className={`px-1.5 py-0.5 rounded text-[8px] uppercase font-black ${
-                                        isVibeMatch ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border border-rose-500/20 text-rose-400'
-                                    }`}>
+                                    <span className={`px-1.5 py-0.5 rounded text-[8px] uppercase font-black ${isVibeMatch ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border border-rose-500/20 text-rose-400'
+                                        }`}>
                                         {isVibeMatch ? 'Match' : 'Mismatch'}
                                     </span>
                                 </div>
@@ -1095,9 +1092,8 @@ export default function FeedbackPage() {
                                         <span className="text-muted-foreground block text-[8px] uppercase">Parking Match</span>
                                         <span className="text-foreground font-black">{hasParking ? 'Available' : 'None'}</span>
                                     </div>
-                                    <span className={`px-1.5 py-0.5 rounded text-[8px] uppercase font-black ${
-                                        isParkingMatch ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border border-rose-500/20 text-rose-400'
-                                    }`}>
+                                    <span className={`px-1.5 py-0.5 rounded text-[8px] uppercase font-black ${isParkingMatch ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border border-rose-500/20 text-rose-400'
+                                        }`}>
                                         {isParkingMatch ? 'Match' : 'Mismatch'}
                                     </span>
                                 </div>
@@ -1110,9 +1106,8 @@ export default function FeedbackPage() {
                                         <span className="text-muted-foreground block text-[8px] uppercase">Alcohol Match</span>
                                         <span className="text-foreground font-black">{hasAlcohol ? 'Available' : 'None'}</span>
                                     </div>
-                                    <span className={`px-1.5 py-0.5 rounded text-[8px] uppercase font-black ${
-                                        isAlcoholMatch ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border border-rose-500/20 text-rose-400'
-                                    }`}>
+                                    <span className={`px-1.5 py-0.5 rounded text-[8px] uppercase font-black ${isAlcoholMatch ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border border-rose-500/20 text-rose-400'
+                                        }`}>
                                         {isAlcoholMatch ? 'Match' : 'Mismatch'}
                                     </span>
                                 </div>
@@ -1151,6 +1146,12 @@ export default function FeedbackPage() {
                     </div>
                     <div className="flex flex-col gap-2 w-full">
                         <button
+                            onClick={() => bypassLiff()}
+                            className="bg-primary/10 hover:bg-primary/20 text-primary font-bold py-3 px-6 rounded-xl text-sm transition-all border border-primary/30"
+                        >
+                            Bypass LINE (Mock)
+                        </button>
+                        <button
                             onClick={() => window.location.reload()}
                             className="bg-primary hover:bg-primary/95 text-white font-bold py-3 px-6 rounded-xl text-sm transition-all active:scale-95 shadow-lg shadow-primary/20"
                         >
@@ -1171,6 +1172,12 @@ export default function FeedbackPage() {
                         <p className="text-foreground font-bold mb-1">Initializing LINE Client...</p>
                         <p className="text-[10px] text-muted-foreground">Waiting for LINE SDK to sync.</p>
                     </div>
+                    <button
+                        onClick={() => bypassLiff()}
+                        className="text-[10px] font-bold text-primary/70 hover:text-primary transition-all border border-dashed border-primary/30 px-3 py-1.5 rounded-lg bg-primary/5 hover:bg-primary/10"
+                    >
+                        Bypass Initialization (Mock)
+                    </button>
                 </div>
             </div>
         );
@@ -1179,7 +1186,7 @@ export default function FeedbackPage() {
     return (
         <div className="min-h-screen flex flex-col items-center justify-center p-4 py-8 bg-background">
             <div className="w-full max-w-lg glass-panel rounded-[32px] overflow-hidden flex flex-col shadow-2xl animate-in slide-in-from-bottom-4 duration-300">
-                
+
                 {/* Header */}
                 <div className="p-6 border-b border-black/5 dark:border-white/5 bg-black/5 dark:bg-white/5 backdrop-blur-md">
                     <h2 className="text-lg font-black text-foreground tracking-tight">Beta Feedback Survey</h2>
@@ -1262,15 +1269,13 @@ export default function FeedbackPage() {
                                                             key={opt}
                                                             type="button"
                                                             onClick={() => handleSelectOption(q.id, opt)}
-                                                            className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left text-xs transition-all ${
-                                                                isSelected 
-                                                                    ? 'bg-primary/10 border-primary text-foreground font-bold' 
+                                                            className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left text-xs transition-all ${isSelected
+                                                                    ? 'bg-primary/10 border-primary text-foreground font-bold'
                                                                     : 'bg-black/5 dark:bg-white/5 border-black/5 dark:border-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'
-                                                            }`}
+                                                                }`}
                                                         >
-                                                            <div className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 ${
-                                                                isSelected ? 'border-primary' : 'border-black/20 dark:border-white/20'
-                                                            }`}>
+                                                            <div className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 ${isSelected ? 'border-primary' : 'border-black/20 dark:border-white/20'
+                                                                }`}>
                                                                 {isSelected && <div className="w-2 h-2 rounded-full bg-primary" />}
                                                             </div>
                                                             <span>{opt}</span>
@@ -1290,15 +1295,13 @@ export default function FeedbackPage() {
                                                             key={opt}
                                                             type="button"
                                                             onClick={() => handleCheckboxOption(q.id, opt)}
-                                                            className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left text-xs transition-all ${
-                                                                isChecked 
-                                                                    ? 'bg-primary/10 border-primary text-foreground font-bold' 
+                                                            className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left text-xs transition-all ${isChecked
+                                                                    ? 'bg-primary/10 border-primary text-foreground font-bold'
                                                                     : 'bg-black/5 dark:bg-white/5 border-black/5 dark:border-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'
-                                                            }`}
+                                                                }`}
                                                         >
-                                                            <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${
-                                                                isChecked ? 'border-primary bg-primary/20' : 'border-black/20 dark:border-white/20'
-                                                            }`}>
+                                                            <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${isChecked ? 'border-primary bg-primary/20' : 'border-black/20 dark:border-white/20'
+                                                                }`}>
                                                                 {isChecked && <span className="text-primary text-[10px]">✓</span>}
                                                             </div>
                                                             <span>{opt}</span>
@@ -1318,11 +1321,10 @@ export default function FeedbackPage() {
                                                             key={num}
                                                             type="button"
                                                             onClick={() => handleRatingOption(q.id, num)}
-                                                            className={`w-10 h-10 rounded-full border flex items-center justify-center text-xs font-black transition-all ${
-                                                                isSelected
+                                                            className={`w-10 h-10 rounded-full border flex items-center justify-center text-xs font-black transition-all ${isSelected
                                                                     ? 'bg-primary border-primary text-primary-foreground shadow-lg shadow-primary/35 scale-110'
                                                                     : 'bg-black/5 dark:bg-white/5 border-black/5 dark:border-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'
-                                                            }`}
+                                                                }`}
                                                         >
                                                             {num}
                                                         </button>
@@ -1379,7 +1381,7 @@ export default function FeedbackPage() {
                         >
                             Back
                         </button>
-                        
+
                         {!isLastSection ? (
                             <button
                                 type="button"
