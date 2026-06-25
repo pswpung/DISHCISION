@@ -1,0 +1,27 @@
+{
+    "$schema": "https://opencode.ai/config.json",
+    "plugin": [
+        "opencode-ponytail",
+        "superpowers@git+https://github.com/obra/superpowers.git"
+    ],
+    "mcp": {
+        "agentmemory": {
+            "type": "local",
+            "command": [
+                "npx",
+                "-y",
+                "@agentmemory/mcp"
+            ],
+            "environment": {
+                "AGENTMEMORY_URL": "http://localhost:3111"
+            }
+        }
+    },
+    "compaction": {
+        "auto": false
+    },
+    "instructions": [
+        "~/.claude/RTK.md",
+        "frontend/design.md"
+    ]
+}

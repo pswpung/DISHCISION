@@ -5,11 +5,13 @@ All notable changes to this project will be documented in this file.
 ## [1.1.0] - Unreleased
 
 ### Added
+- **Context-aware Feedback Modal**: Replaced bulky inline meeting context panels in survey sections 2–3 with a 📋 info icon per question — clicking opens a scrollable modal overlay with the full time/restaurant context, then closes to continue answering. Added hint text below section headers explaining the icon.
 - **Refined Voting Wizard**: Introduced a self-contained, state-driven `VotingForm` component (Steps 1–3) for RSVP, Availability, and Preferences, ensuring architectural parity with `CreateMeetingForm`.
 - **Smart Location Sync**: Departure location now automatically synchronizes with the meeting's fixed location if provided by the organizer, including automatic geocoding for coordinates.
 - **Advanced Preferences UI**: Added searchable multi-select chips for "Avoid Cuisine" and refined the "Prefer Cuisine" selection flow.
 - **Availability Parser**: Added `availability-parser.ts` to support complex availability strings and parsing.
 - **New Dependency**: Integrated `chrono-node` for natural language date and time parsing in the frontend.
+- **E2E Testing Setup**: Added Playwright, `e2e/feedback.spec.ts`, and `npm run test:e2e` command.
 
 ### Changed
 - **Glassmorphism Design System**: Standardized the premium "glass-panel" aesthetic across all forms, inputs, and interactive components.

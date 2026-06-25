@@ -38,6 +38,7 @@ lerna-debug.log
 
 # Documents folder
 documents/
+frontend/e2e
 
 # Graphify
 graphify-out/

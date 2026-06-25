@@ -16,6 +16,7 @@ export default function FeedbackPage() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isSubmitted, setIsSubmitted] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [contextModal, setContextModal] = useState<'time' | 'restaurant' | null>(null);
 
     // Dynamic data states
     const [loadingData, setLoadingData] = useState(true);
@@ -295,6 +296,15 @@ export default function FeedbackPage() {
     const currentSection = sections[activeSectionIndex];
     const isFirstSection = activeSectionIndex === 0;
     const isLastSection = activeSectionIndex === sections.length - 1;
+
+    const sectionHasContext = (sectionName: string): 'time' | 'restaurant' | null => {
+        if (sectionName.startsWith('ส่วนที่ 2')) {
+            if (sectionName.includes('เวลาแนะนำ') || sectionName.includes('Time Suggestions')) return 'time';
+            if (sectionName.includes('ร้านอาหาร') || sectionName.includes('Information Quality')) return 'restaurant';
+        }
+        if (sectionName.startsWith('ส่วนที่ 3')) return 'restaurant';
+        return null;
+    };
 
     // Helper to render dynamic time slot info under matching questions
     const renderTimeSlotExtra = (slotIndex: number) => {
@@ -1212,17 +1222,35 @@ export default function FeedbackPage() {
                                 <h3 className="text-base font-black text-foreground">{currentSection?.[0]}</h3>
                             </div>
 
-                            {/* Section Context Panels */}
-                            {currentSection?.[1].some(q => q.id === 'q6') && renderTimeContextAndList()}
-                            {currentSection?.[1].some(q => q.id === 'q10') && renderRestaurantContextAndList()}
+                            {sectionHasContext(currentSection[0]) && (
+                                <p className="text-[9px] text-muted-foreground flex items-center gap-1.5">
+                                    สามารถกดดูรายละเอียดของผลลัพธ์จากการนัดหมายได้โดยกดเครื่องหมาย
+                                    <span className="text-primary text-[10px]">📋</span>
+                                </p>
+                            )}
 
                             {/* Question List */}
                             <div className="space-y-6">
                                 {currentSection?.[1].map((q) => (
                                     <div key={q.id} className="space-y-3 bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5 p-4 rounded-2xl">
-                                        <label className="block text-xs font-bold text-foreground leading-relaxed">
-                                            {q.text} {!q.optional && <span className="text-primary">*</span>}
-                                        </label>
+                                        <div className="flex items-start gap-2">
+                                            <label className="flex-1 text-xs font-bold text-foreground leading-relaxed">
+                                                {q.text} {!q.optional && <span className="text-primary">*</span>}
+                                            </label>
+                                            {(() => {
+                                                const ctx = sectionHasContext(currentSection[0]);
+                                                return ctx ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setContextModal(ctx)}
+                                                        className="shrink-0 w-6 h-6 mt-0.5 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary text-[10px] font-black hover:bg-primary/20 transition-all active:scale-90"
+                                                        title="View meeting details"
+                                                    >
+                                                        📋
+                                                    </button>
+                                                ) : null;
+                                            })()}
+                                        </div>
 
                                         {/* SELECT/RADIO */}
                                         {q.type === 'select' && q.options && (
@@ -1318,6 +1346,27 @@ export default function FeedbackPage() {
                         </>
                     )}
                 </div>
+
+                {/* Context Modal */}
+                {contextModal && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                        <div className="relative w-full max-w-lg max-h-[70vh] overflow-y-auto rounded-[32px] bg-white dark:bg-zinc-900 border border-black/10 dark:border-white/10 shadow-2xl">
+                            <div className="sticky top-0 z-10 flex justify-end p-3 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-b border-black/5 dark:border-white/5">
+                                <button
+                                    type="button"
+                                    onClick={() => setContextModal(null)}
+                                    className="w-8 h-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary text-xs font-black hover:bg-primary/20 transition-all"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+                            <div className="p-4">
+                                {contextModal === 'time' && renderTimeContextAndList()}
+                                {contextModal === 'restaurant' && renderRestaurantContextAndList()}
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* Footer Navigation */}
                 {!isSubmitted && (
