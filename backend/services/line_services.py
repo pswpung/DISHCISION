@@ -33,6 +33,15 @@ LIFF_ID = os.getenv('LIFF_ID')
 ENABLE_BETA_SURVEY = os.getenv('ENABLE_BETA_SURVEY', 'true').lower() == 'true'
 
 configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
+
+# Patch: set 5s timeout on all LINE API requests so tests don't hang on invalid tokens
+_original_api_client = ApiClient
+class _TimedApiClient(ApiClient):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.rest_client.timeout = 5
+ApiClient = _TimedApiClient
+
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 flex_contents = {
@@ -260,6 +269,7 @@ def push_message_creation_flex(group_id: str, meeting_id: str, meeting_name: str
 
     try:
         with ApiClient(configuration) as api_client:
+            api_client.rest_client.timeout = 5
             line_bot_api = MessagingApi(api_client)
             line_bot_api.push_message(
                 PushMessageRequest(

@@ -504,7 +504,7 @@ export default function FeedbackPage() {
                         </p>
                     </div>
                     <div className="shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/20 border border-primary/30 text-[9px] font-black text-primary uppercase tracking-wider">
-                        ⚖️ VIP weight: Key Person 70% / Normal 30%
+                        ⚖️ VIP weight: ผู้มีอำนาจตัดสินใจหลัก (Key Person) 70% / ผู้เข้าร่วม (Attendee) 30%
                     </div>
                 </div>
 
@@ -512,7 +512,7 @@ export default function FeedbackPage() {
                     {/* Key Persons Box */}
                     <div className="space-y-1.5">
                         <span className="text-[9px] font-black uppercase text-primary tracking-widest block flex items-center gap-1">
-                            🔑 Key Person Schedule (เวลาว่างของผู้มีอำนาจตัดสินใจ)
+                            🔑 Key Person Schedule (เวลาว่างของผู้มีอำนาจตัดสินใจหลัก)
                         </span>
                         {kpSummaries.length > 0 ? (
                             <div className="space-y-1.5">
@@ -548,7 +548,7 @@ export default function FeedbackPage() {
                                 ))}
                             </div>
                         ) : (
-                            <span className="text-[9px] text-muted-foreground italic block">ไม่มี Key Person ในกลุ่มนี้</span>
+                            <span className="text-[9px] text-muted-foreground italic block">ไม่มีผู้มีอำนาจตัดสินใจหลัก (Key Person) ในกลุ่มนี้</span>
                         )}
                     </div>
 
@@ -672,7 +672,7 @@ export default function FeedbackPage() {
                         </p>
                     </div>
                     <div className="shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/20 border border-primary/30 text-[9px] font-black text-primary uppercase tracking-wider">
-                        ⚖️ Stakeholder: Key Person 70% / General 30%
+                        ⚖️ Stakeholder: ผู้มีอำนาจตัดสินใจหลัก (Key Person) 70% / ผู้เข้าร่วม (Attendee) 30%
                     </div>
                 </div>
 
@@ -757,7 +757,7 @@ export default function FeedbackPage() {
                                 ))}
                             </div>
                         ) : (
-                            <span className="text-[9px] text-muted-foreground italic block">ไม่มี Key Person ในกลุ่มนี้</span>
+                            <span className="text-[9px] text-muted-foreground italic block">ไม่มีผู้มีอำนาจตัดสินใจหลัก (Key Person) ในกลุ่มนี้</span>
                         )}
                     </div>
 
@@ -1270,8 +1270,8 @@ export default function FeedbackPage() {
                                                             type="button"
                                                             onClick={() => handleSelectOption(q.id, opt)}
                                                             className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left text-xs transition-all ${isSelected
-                                                                    ? 'bg-primary/10 border-primary text-foreground font-bold'
-                                                                    : 'bg-black/5 dark:bg-white/5 border-black/5 dark:border-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'
+                                                                ? 'bg-primary/10 border-primary text-foreground font-bold'
+                                                                : 'bg-black/5 dark:bg-white/5 border-black/5 dark:border-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'
                                                                 }`}
                                                         >
                                                             <div className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 ${isSelected ? 'border-primary' : 'border-black/20 dark:border-white/20'
@@ -1296,8 +1296,8 @@ export default function FeedbackPage() {
                                                             type="button"
                                                             onClick={() => handleCheckboxOption(q.id, opt)}
                                                             className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left text-xs transition-all ${isChecked
-                                                                    ? 'bg-primary/10 border-primary text-foreground font-bold'
-                                                                    : 'bg-black/5 dark:bg-white/5 border-black/5 dark:border-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'
+                                                                ? 'bg-primary/10 border-primary text-foreground font-bold'
+                                                                : 'bg-black/5 dark:bg-white/5 border-black/5 dark:border-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'
                                                                 }`}
                                                         >
                                                             <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${isChecked ? 'border-primary bg-primary/20' : 'border-black/20 dark:border-white/20'
@@ -1322,8 +1322,8 @@ export default function FeedbackPage() {
                                                             type="button"
                                                             onClick={() => handleRatingOption(q.id, num)}
                                                             className={`w-10 h-10 rounded-full border flex items-center justify-center text-xs font-black transition-all ${isSelected
-                                                                    ? 'bg-primary border-primary text-primary-foreground shadow-lg shadow-primary/35 scale-110'
-                                                                    : 'bg-black/5 dark:bg-white/5 border-black/5 dark:border-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'
+                                                                ? 'bg-primary border-primary text-primary-foreground shadow-lg shadow-primary/35 scale-110'
+                                                                : 'bg-black/5 dark:bg-white/5 border-black/5 dark:border-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'
                                                                 }`}
                                                         >
                                                             {num}
