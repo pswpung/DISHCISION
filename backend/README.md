@@ -4,6 +4,61 @@ This directory contains the Python FastAPI backend for **DISHCISION**. The syste
 
 ---
 
+## Setup
+
+### Prerequisites
+- **Python 3.11+** (managed via `uv`)
+- **Docker** (for local PostgreSQL with pgvector)
+- **uv** — install with `curl -LsSf https://astral.sh/uv/install.sh | sh`
+
+### Quick Start
+
+```bash
+# 1. Start the database
+cd deploy && docker compose up -d
+
+# 2. Install backend dependencies
+cd backend && uv sync
+
+# 3. Run the backend (auto-reload on :8081)
+uv run main.py
+```
+
+The database tables are auto-created on first startup via SQLAlchemy `Base.metadata.create_all`.
+
+### Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `DATABASE_URL` | `postgresql://postgres:P%40ssw0rd@localhost:54321/postgres` | PostgreSQL connection string with pgvector |
+| `LINE_CHANNEL_ACCESS_TOKEN` | — | LINE Messaging API channel token |
+| `LINE_CHANNEL_SECRET` | — | LINE Messaging API channel secret |
+| `GOOGLE_CLIENT_ID` | — | Google OAuth client ID |
+| `GOOGLE_CLIENT_SECRET` | — | Google OAuth client secret |
+| `GOOGLE_REDIRECT_URI` | — | Google OAuth redirect URI |
+
+### Project Layout
+
+```
+backend/
+├── main.py                 # Entry point — starts uvicorn on :8081
+├── pyproject.toml          # Dependencies (uv-managed)
+├── uv.lock                 # Lockfile
+├── api/                    # FastAPI routers (line, meetings, users, etc.)
+├── services/               # Business logic (postgres, line, suggestion engine)
+├── models/                 # SQLAlchemy ORM models
+├── statics/                # Restaurant CSV data (loaded at import time)
+└── utils/                  # Helpers (embeddings, time utils, MCDM weights)
+```
+
+### Notes
+- Package manager is `uv` — never use `pip` or `poetry`.
+- `numpy<2` pinned in `pyproject.toml`.
+- Static file paths are relative to CWD (run from `backend/`).
+- Timezone is hardcoded to `Asia/Bangkok`.
+
+---
+
 ## 1. REST API Endpoints Reference
 
 The backend is modularized into FastAPI routers. The following is a detailed catalog of exposed endpoints.

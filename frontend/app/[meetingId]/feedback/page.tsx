@@ -504,7 +504,7 @@ export default function FeedbackPage() {
                         </p>
                     </div>
                     <div className="shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/20 border border-primary/30 text-[9px] font-black text-primary uppercase tracking-wider">
-                        ⚖️ VIP weight: ผู้มีอำนาจตัดสินใจหลัก (Key Person) 70% / ผู้เข้าร่วม (Attendee) 30%
+                        ⚖️ VIP weight: Key Person 70% / Attendee 30%
                     </div>
                 </div>
 
@@ -672,7 +672,7 @@ export default function FeedbackPage() {
                         </p>
                     </div>
                     <div className="shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/20 border border-primary/30 text-[9px] font-black text-primary uppercase tracking-wider">
-                        ⚖️ Stakeholder: ผู้มีอำนาจตัดสินใจหลัก (Key Person) 70% / ผู้เข้าร่วม (Attendee) 30%
+                        ⚖️ Stakeholder: Key Person 70% / Attendee 30%
                     </div>
                 </div>
 
