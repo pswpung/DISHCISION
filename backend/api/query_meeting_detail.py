@@ -477,6 +477,13 @@ def submit_feedback(meeting_id: UUID, req: FeedbackSubmitRequest, db: Session = 
     db_meeting = db.query(MeetingDetail).filter(MeetingDetail.meeting_id == meeting_id).first()
     if not db_meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
+    
+    existing = db.query(Feedback).filter(
+        Feedback.meeting_id == str(meeting_id),
+        Feedback.user_id == req.user_id
+    ).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Feedback already submitted for this meeting")
         
     new_feedback = Feedback(
         meeting_id=str(meeting_id),
@@ -487,3 +494,14 @@ def submit_feedback(meeting_id: UUID, req: FeedbackSubmitRequest, db: Session = 
     db.commit()
     db.refresh(new_feedback)
     return {"status": "success", "id": new_feedback.id}
+
+
+@router.get("/{meeting_id}/feedback/{user_id}")
+def check_feedback(meeting_id: UUID, user_id: str, db: Session = Depends(get_db)):
+    existing = db.query(Feedback).filter(
+        Feedback.meeting_id == str(meeting_id),
+        Feedback.user_id == user_id
+    ).first()
+    if existing:
+        return {"submitted": True}
+    return {"submitted": False}

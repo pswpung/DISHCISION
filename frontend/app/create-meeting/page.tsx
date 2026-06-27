@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useLiff } from '@/app/context/LiffContext';
 import { apiService } from '@/app/services/api';
 import CreateMeetingForm from '../components/create-meeting-form/create-meeting-form';
+import SurveyModeBanner from '../components/survey-mode-banner/survey-mode-banner';
 
 const CreateMeetingPage = () => {
   const { profile, isLoggedIn, login, liffObject, error, bypassLiff } = useLiff();
@@ -107,9 +108,17 @@ const CreateMeetingPage = () => {
     }
   }, [liffObject, isLoggedIn, login]);
 
+  const [isSurveyMode, setIsSurveyMode] = useState(false);
+  useEffect(() => {
+    setIsSurveyMode(new URLSearchParams(window.location.search).get('survey_mode') === 'true');
+  }, []);
+
   const handleMeetingData = async (data: any) => {
     console.log("Creating meeting with:", data);
-
+    if (isSurveyMode) {
+      alert("🔍 Preview Mode — cannot submit in survey mode. Close this and continue the questionnaire.");
+      return;
+    }
     try {
       // 1. Create/Ensure Organizer Exists
       if (profile) {
@@ -383,6 +392,7 @@ const CreateMeetingPage = () => {
 
   return (
     <div className="h-[100dvh] flex flex-col overflow-hidden bg-background">
+      {isSurveyMode && <SurveyModeBanner />}
       <div className="flex-1 overflow-y-auto p-4 pb-20">
         <header className="mb-8 pt-4 text-center">
           <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 tracking-tight mb-2">
@@ -409,6 +419,7 @@ const CreateMeetingPage = () => {
           initialGroupId={paramGroupId || 'group-1'}
           initialUserId={profile?.userId || paramUserId} // If allowed, use profile ID
           restaurantConfig={restaurantConfig}
+          surveyMode={isSurveyMode}
         />
       </div>
     </div>

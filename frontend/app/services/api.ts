@@ -231,5 +231,14 @@ export const apiService = {
             responses
         });
         return response.data;
+    },
+
+    checkFeedback: async (meetingId: string, userId: string) => {
+        try {
+            const response = await apiClient.get(`/meetings/${meetingId}/feedback/${userId}`);
+            return response.data;
+        } catch (error) {
+            return null;
+        }
     }
 };

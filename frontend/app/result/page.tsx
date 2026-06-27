@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useLiff } from '@/app/context/LiffContext';
 import { apiService } from '@/app/services/api';
 import SurveyModal from '@/app/components/survey-modal/survey-modal';
+import SurveyModeBanner from '@/app/components/survey-mode-banner/survey-mode-banner';
 
 const ResultPage = () => {
     const { isLoggedIn, profile } = useLiff();
@@ -148,8 +149,8 @@ const GroupDashboardView = ({ groupId }: { groupId: string }) => {
                                 </div>
                                 <div className="text-right">
                                     <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${meeting.status === 'open'
-                                            ? 'bg-green-500/20 text-green-400'
-                                            : 'bg-white/10 text-muted-foreground'
+                                        ? 'bg-green-500/20 text-green-400'
+                                        : 'bg-white/10 text-muted-foreground'
                                         }`}>
                                         {meeting.status === 'open' ? 'Vote Now' : 'Closed'}
                                     </span>
@@ -369,6 +370,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
     }, [searchWrapperRef]);
 
     const searchParams = useSearchParams();
+    const isSurveyMode = searchParams?.get('survey_mode') === 'true';
 
     const currentUserId = useMemo(() => {
         return profile?.userId || paramUserId || 'mock-user-id';
@@ -1018,6 +1020,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
     const handleToggleTimeVote = async (date: string, time: string, e: React.MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
+        if (isSurveyMode) { alert("🔍 Preview Mode — cannot vote in survey mode."); return; }
         if (isCurrentUserReady) return;
         try {
             const slotKey = `${date}_${time}`;
@@ -1048,6 +1051,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
     const handleToggleTailIn = async (restaurantName: string, e: React.MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
+        if (isSurveyMode) { alert("🔍 Preview Mode — cannot vote in survey mode."); return; }
         if (isCurrentUserReady) return;
         try {
             const updated = await apiService.toggleTailIn(meetingId, currentUserId, restaurantName);
@@ -1061,6 +1065,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
     const handleToggleTailOut = async (restaurantName: string, e: React.MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
+        if (isSurveyMode) { alert("🔍 Preview Mode — cannot veto in survey mode."); return; }
         if (isCurrentUserReady) return;
         try {
             const updated = await apiService.toggleTailOut(meetingId, currentUserId, restaurantName);
@@ -1073,6 +1078,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
 
     const handleToggleReady = async () => {
         try {
+            if (isSurveyMode) { alert("🔍 Preview Mode — cannot mark ready in survey mode."); return; }
             const updated = await apiService.toggleReady(meetingId, currentUserId);
             setMeetingData(updated);
         } catch (err) {
@@ -1137,6 +1143,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
             return;
         }
         try {
+            if (isSurveyMode) { alert("🔍 Preview Mode — cannot confirm in survey mode."); return; }
             const updated = await apiService.confirmFinalMeetingPlan(meetingId, timeVal, confirmedRestaurant);
             setMeetingData(updated);
             setStatus('closed');
@@ -1212,6 +1219,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
         }
 
         try {
+            if (isSurveyMode) { alert("🔍 Preview Mode — cannot spin in survey mode."); return; }
             const updated = await apiService.saveSpinResult(
                 meetingId,
                 targetType,
@@ -1291,6 +1299,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
 
     return (
         <div className="h-[100dvh] flex flex-col bg-background overflow-hidden">
+            {isSurveyMode && <SurveyModeBanner />}
             <div className="flex-none p-4 pb-2 z-10 bg-background/95 backdrop-blur-md border-b border-white/5 shadow-sm">
                 <header className="space-y-4 mb-4">
                     <div className="flex items-center justify-between">
@@ -1590,8 +1599,8 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                 <button
                                     onClick={() => setRestaurantSubTab('friends')}
                                     className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${restaurantSubTab === 'friends'
-                                            ? 'bg-white/10 text-foreground'
-                                            : 'text-muted-foreground hover:text-foreground'
+                                        ? 'bg-white/10 text-foreground'
+                                        : 'text-muted-foreground hover:text-foreground'
                                         }`}
                                 >
                                     Friends ({preferredRestaurants.length})
@@ -1599,8 +1608,8 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                 <button
                                     onClick={() => setRestaurantSubTab('all')}
                                     className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${restaurantSubTab === 'all'
-                                            ? 'bg-white/10 text-foreground'
-                                            : 'text-muted-foreground hover:text-foreground'
+                                        ? 'bg-white/10 text-foreground'
+                                        : 'text-muted-foreground hover:text-foreground'
                                         }`}
                                 >
                                     All Restaurants ({discoveryRestaurants.length})
@@ -1620,8 +1629,8 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                             <button
                                 onClick={() => setRestaurantSubTab('friends')}
                                 className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${restaurantSubTab === 'friends'
-                                        ? 'bg-white/10 text-foreground'
-                                        : 'text-muted-foreground hover:text-foreground'
+                                    ? 'bg-white/10 text-foreground'
+                                    : 'text-muted-foreground hover:text-foreground'
                                     }`}
                             >
                                 Friends ({preferredRestaurants.length})
@@ -1629,8 +1638,8 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                             <button
                                 onClick={() => setRestaurantSubTab('suggested')}
                                 className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${restaurantSubTab === 'suggested'
-                                        ? 'bg-white/10 text-foreground'
-                                        : 'text-muted-foreground hover:text-foreground'
+                                    ? 'bg-white/10 text-foreground'
+                                    : 'text-muted-foreground hover:text-foreground'
                                     }`}
                             >
                                 Suggested ({discoveryRestaurants.length})
@@ -1740,8 +1749,8 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                         key={cat}
                                         onClick={() => setSelectedCategory(cat)}
                                         className={`px-3 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition-all ${selectedCategory === cat
-                                                ? 'bg-primary text-white shadow-md shadow-primary/20 scale-[1.02]'
-                                                : 'bg-white/5 text-muted-foreground hover:bg-white/10 border border-white/5'
+                                            ? 'bg-primary text-white shadow-md shadow-primary/20 scale-[1.02]'
+                                            : 'bg-white/5 text-muted-foreground hover:bg-white/10 border border-white/5'
                                             }`}
                                     >
                                         {cat}
@@ -1761,8 +1770,8 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                         key={vibe}
                                         onClick={() => setSelectedVibe(vibe)}
                                         className={`px-3 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition-all ${selectedVibe === vibe
-                                                ? 'bg-primary text-white shadow-md shadow-primary/20 scale-[1.02]'
-                                                : 'bg-white/5 text-muted-foreground hover:bg-white/10 border border-white/5'
+                                            ? 'bg-primary text-white shadow-md shadow-primary/20 scale-[1.02]'
+                                            : 'bg-white/5 text-muted-foreground hover:bg-white/10 border border-white/5'
                                             }`}
                                     >
                                         {vibe}
@@ -1825,7 +1834,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                         {viewMode === 'decision' ? (
                             <div className="space-y-6 animate-in fade-in duration-300">
                                 {/* Guidance banner — shown when user hasn't voted on anything yet */}
-                                {status === 'open' && (() => {
+                                {status === 'open' && !isSurveyMode && (() => {
                                     const hasVotedTime = Object.values(votingState.time_votes || {}).some(
                                         (voters: any) => Array.isArray(voters) && voters.includes(currentUserId)
                                     );
@@ -1851,7 +1860,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                 })()}
 
                                 {/* Final Decision Ticket (if closed) */}
-                                {status === 'closed' && votingState.final_decision && (
+                                {status === 'closed' && !isSurveyMode && votingState.final_decision && (
                                     <div className="px-4 pt-2 max-w-lg mx-auto">
                                         <div className="relative overflow-hidden bg-gradient-to-br from-purple-600 to-indigo-700 rounded-3xl p-6 text-center space-y-4 shadow-2xl border border-white/10">
                                             {/* Decorative ticket punches */}
@@ -1877,9 +1886,9 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                         {votingState.final_decision.restaurant_id}
                                                     </p>
                                                 </div>
-                                                
+
                                                 {/* Beta Feedback Survey Button */}
-                                                {process.env.NEXT_PUBLIC_ENABLE_BETA_SURVEY === 'true' && (
+                                                {!isSurveyMode && process.env.NEXT_PUBLIC_ENABLE_BETA_SURVEY === 'true' && (
                                                     <div className="pt-2">
                                                         <button
                                                             onClick={() => setIsSurveyOpen(true)}
@@ -1895,10 +1904,10 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                 )}
 
                                 {/* Open State panels */}
-                                {status === 'open' && (
+                                {(status === 'open' || isSurveyMode) && (
                                     <>
                                         {/* Readiness Tracker */}
-                                        <div className="glass-panel p-5 rounded-3xl border border-white/5 space-y-4 shadow-lg text-left">
+                                        {/* <div className="glass-panel p-5 rounded-3xl border border-white/5 space-y-4 shadow-lg text-left">
                                             <div className="flex justify-between items-center">
                                                 <div>
                                                     <h3 className="text-sm font-bold text-foreground">Readiness Tracker</h3>
@@ -1942,7 +1951,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                     );
                                                 })}
                                             </div>
-                                        </div>
+                                        </div> */}
 
                                         {/* Time Decision Card (Only show if period mode) */}
                                         {(meetingData?.initial_data?.timing_mode || 'period') !== 'fixed' && (
@@ -2178,12 +2187,12 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                             type="checkbox"
                                                             checked={votingState.exclude_vetoed || false}
                                                             onChange={async () => {
-                                                                    try {
-                                                                        const updated = await apiService.toggleExcludeVetoed(meetingId, currentUserId);
-                                                                        setMeetingData(updated);
-                                                                    } catch (e) {
-                                                                        console.error("Failed to toggle exclude vetoed", e);
-                                                                    }
+                                                                try {
+                                                                    const updated = await apiService.toggleExcludeVetoed(meetingId, currentUserId);
+                                                                    setMeetingData(updated);
+                                                                } catch (e) {
+                                                                    console.error("Failed to toggle exclude vetoed", e);
+                                                                }
                                                             }}
                                                             className="rounded border-white/10 accent-primary"
                                                         />
@@ -2660,11 +2669,11 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
 
                                                     <div className="flex flex-wrap gap-1.5 mb-3">
                                                         {getHighlights(place).map((badge, bIdx) => {
-                                                            const colorClasses = 
+                                                            const colorClasses =
                                                                 badge.type === 'gold' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
-                                                                badge.type === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                                                                badge.type === 'info' ? 'bg-sky-500/10 text-sky-400 border border-sky-500/20' :
-                                                                'bg-purple-500/10 text-purple-400 border border-purple-500/20';
+                                                                    badge.type === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                                                                        badge.type === 'info' ? 'bg-sky-500/10 text-sky-400 border border-sky-500/20' :
+                                                                            'bg-purple-500/10 text-purple-400 border border-purple-500/20';
                                                             return (
                                                                 <span
                                                                     key={bIdx}

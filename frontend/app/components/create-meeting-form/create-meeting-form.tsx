@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLiff } from '@/app/context/LiffContext';
 import { TimeSlotSelector } from '@/app/components/time-slot-selector/time-slot-selector';
+import { InfoTooltip } from '@/app/components/info-tooltip/info-tooltip';
 import dynamic from 'next/dynamic';
 import { apiService } from '@/app/services/api';
 
@@ -60,6 +61,7 @@ interface CreateMeetingFormProps {
     initialGroupId?: string;
     initialUserId?: string;
     restaurantConfig?: any;
+    surveyMode?: boolean;
 }
 
 const getRankLabel = (index: number): string => {
@@ -128,7 +130,7 @@ const getDaysArray = (start: string, end: string) => {
 };
 
 const CreateMeetingForm = (props: CreateMeetingFormProps) => {
-    const { attendeeList, onDataSubmit, initialGroupId, initialUserId } = props;
+    const { attendeeList, onDataSubmit, initialGroupId, initialUserId, surveyMode } = props;
     
     useEffect(() => {
         console.log("CreateMeetingForm: Received attendeeList:", attendeeList.map(a => `${a.displayName} (${a.userId})`));
@@ -185,7 +187,11 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                     alert("Please select date and time for the fixed meeting.");
                     return;
                 }
-                setCurrentStep(2); // Skip Step 1 for Fixed Mode
+                if (surveyMode) {
+                    setCurrentStep(2);
+                } else {
+                    submitMeeting();
+                }
             }
         } else if (currentStep === 1) {
             // Validate Step 1: Availability
@@ -194,7 +200,11 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                 alert("Please select at least one available time slot.");
                 return;
             }
-            setCurrentStep(2);
+            if (surveyMode) {
+                setCurrentStep(2);
+            } else {
+                submitMeeting();
+            }
         }
     };
 
@@ -716,9 +726,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
         }
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-
+    const submitMeeting = () => {
         if (selectedAttendees.length < 2) {
             alert("A meeting must have at least 2 participants (including yourself). Please invite at least one friend.");
             return;
@@ -759,7 +767,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                 }
             }
         }
-        if (getActivePrioritiesCount() === 0) {
+        if (surveyMode && getActivePrioritiesCount() === 0) {
             alert("Please select at least one Focus Factor priority.");
             return;
         }
@@ -814,6 +822,11 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
         if (onDataSubmit) {
             onDataSubmit(meetingData);
         }
+    };
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        submitMeeting();
     };
 
     // Helper for rendering chip selections
@@ -1189,13 +1202,13 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                         {currentStep === 2 && "Step 2: Preferences"}
                     </span>
                     <span className="text-xs text-muted-foreground font-bold">
-                        {currentStep + 1} / 3
+                        {currentStep + 1} / {surveyMode ? 3 : 2}
                     </span>
                 </div>
                 <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden backdrop-blur-sm">
                     <div
                         className="bg-primary h-full transition-all duration-500 ease-out shadow-[0_0_10px_rgba(var(--primary-rgb),0.5)]"
-                        style={{ width: `${((currentStep + 1) / 3) * 100}%` }}
+                        style={{ width: `${((currentStep + 1) / (surveyMode ? 3 : 2)) * 100}%` }}
                     ></div>
                 </div>
             </div>
@@ -1227,7 +1240,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
 
                         {/* Timing Mode Toggle */}
                         <div className="space-y-2">
-                            <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Timing Mode</label>
+                            <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Timing Mode <InfoTooltip text="Voting: everyone shares their availability, and we find the best common time. Fixed: you set a specific date and time." /></label>
                             <div className="flex bg-white/5 rounded-xl p-1 gap-1 border border-white/5">
                                 <button
                                     type="button"
@@ -1379,7 +1392,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                             </div>
 
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Key Decision Makers</label>
+                                <label className="block text-sm font-medium text-foreground/80 uppercase tracking-wider">Key Decision Makers <InfoTooltip text="The person this meeting is about — like the birthday honoree or guest of honor." /></label>
                                 <div className="flex flex-wrap gap-2">
                                     {attendeeList.map((attendee) => (
                                         <button
@@ -1566,7 +1579,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                             onClick={handleNext}
                             className="glass-button w-full py-4 rounded-xl font-bold text-lg tracking-wide uppercase shadow-lg shadow-primary/10 mt-4 active:scale-[0.98] transition-all"
                         >
-                            Next
+                            {timingMode === 'fixed' && !surveyMode ? 'Create & Vote' : 'Next'}
                         </button>
                     </div>
                 )}
@@ -1664,13 +1677,13 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                             onClick={handleNext}
                             className="glass-button w-full py-4 rounded-xl font-bold text-lg tracking-wide uppercase shadow-lg shadow-primary/10 mt-4 active:scale-[0.98] transition-all"
                         >
-                            Next
+                            {surveyMode ? 'Next' : 'Create & Vote'}
                         </button>
                     </div>
                 )}
 
                 {/* STEP 2: PREFERENCE */}
-                {currentStep === 2 && (
+                {surveyMode && currentStep === 2 && (
                     <div className="animate-in slide-in-from-right duration-500">
                         <button onClick={handleBack} className="text-xs font-bold text-muted-foreground hover:text-primary flex items-center gap-1 uppercase tracking-wider transition-colors mb-2">
                             ← Back

@@ -21,6 +21,7 @@ export default function FeedbackPage() {
     // Dynamic data states
     const [loadingData, setLoadingData] = useState(true);
     const [meetingName, setMeetingName] = useState('');
+    const [meetingGroupId, setMeetingGroupId] = useState('');
     const [sortedSlots, setSortedSlots] = useState<any[]>([]);
     const [topRestaurants, setTopRestaurants] = useState<any[]>([]);
     const [userProfiles, setUserProfiles] = useState<Record<string, any>>({});
@@ -165,6 +166,7 @@ export default function FeedbackPage() {
                 // 1. Fetch meeting basic info
                 const meeting = await apiService.getMeeting(meetingId, userId || undefined);
                 setMeetingName(meeting.meeting_name);
+                setMeetingGroupId(meeting.group_id || '');
 
                 // 2. Fetch suggestion details (ranking lists)
                 const resultData = await apiService.getSuggestions(meetingId);
@@ -227,6 +229,14 @@ export default function FeedbackPage() {
             } finally {
                 setLoadingData(false);
             }
+
+            // Check if feedback already submitted
+            if (meetingId && userId) {
+                try {
+                    const res = await apiService.checkFeedback(meetingId, userId);
+                    if (res?.submitted) setIsSubmitted(true);
+                } catch (e) { /* ignore */ }
+            }
         };
 
         fetchData();
@@ -245,6 +255,54 @@ export default function FeedbackPage() {
     }, []);
 
     const [activeSectionIndex, setActiveSectionIndex] = useState(0);
+    const currentSection = sections[activeSectionIndex];
+    const isFirstSection = activeSectionIndex === 0;
+    const isLastSection = activeSectionIndex === sections.length - 1;
+
+    // Persist responses to sessionStorage so navigating away doesn't lose progress
+    const STORAGE_KEY = `feedback_responses_${meetingId}`;
+    const SECTION_KEY = `feedback_section_${meetingId}`;
+
+    useEffect(() => {
+        if (!meetingId) return;
+        try {
+            const saved = sessionStorage.getItem(STORAGE_KEY);
+            if (saved) setResponses(JSON.parse(saved));
+            const savedSection = sessionStorage.getItem(SECTION_KEY);
+            if (savedSection) setActiveSectionIndex(parseInt(savedSection, 10));
+        } catch (e) { /* ignore */ }
+    }, [meetingId]);
+
+    useEffect(() => {
+        if (!meetingId) return;
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(responses));
+        sessionStorage.setItem(SECTION_KEY, String(activeSectionIndex));
+    }, [responses, activeSectionIndex, meetingId]);
+
+    const handleNextSection = () => {
+        const sectionQuestions = currentSection?.[1] || [];
+        const missing = sectionQuestions.filter(q => {
+            if (q.optional) return false;
+            const val = responses[q.id];
+            return val === undefined || val === '';
+        });
+        if (missing.length > 0) {
+            setError('กรุณาตอบคำถามที่มีเครื่องหมาย * ให้ครบก่อนไปส่วนถัดไป');
+            return;
+        }
+        setError(null);
+        setActiveSectionIndex(prev => Math.min(sections.length - 1, prev + 1));
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    const tryFeatureLinks: Record<string, { label: string; href: string }> = useMemo(() => {
+        if (!meetingId) return {};
+        const gId = meetingGroupId || '';
+        return {
+            q20: { label: 'ลองสร้างกิจกรรมนัดหมาย', href: `/create-meeting?survey_mode=true&return_to_survey=${meetingId}` },
+            q23: { label: 'ลองดูสรุปผลและวงล้อ', href: `/result?meeting_id=${meetingId}&group_id=${gId}&survey_mode=true&return_to_survey=${meetingId}` },
+        };
+    }, [meetingId, meetingGroupId]);
 
     const handleSelectOption = (questionId: string, value: string) => {
         setResponses((prev) => ({ ...prev, [questionId]: value }));
@@ -284,6 +342,8 @@ export default function FeedbackPage() {
         setError(null);
         try {
             await apiService.submitFeedback(meetingId, userId, responses);
+            sessionStorage.removeItem(STORAGE_KEY);
+            sessionStorage.removeItem(SECTION_KEY);
             setIsSubmitted(true);
         } catch (err: any) {
             console.error("Failed to submit feedback:", err);
@@ -293,16 +353,11 @@ export default function FeedbackPage() {
         }
     };
 
-    const currentSection = sections[activeSectionIndex];
-    const isFirstSection = activeSectionIndex === 0;
-    const isLastSection = activeSectionIndex === sections.length - 1;
-
     const sectionHasContext = (sectionName: string): 'time' | 'restaurant' | null => {
         if (sectionName.startsWith('ส่วนที่ 2')) {
             if (sectionName.includes('เวลาแนะนำ') || sectionName.includes('Time Suggestions')) return 'time';
             if (sectionName.includes('ร้านอาหาร') || sectionName.includes('Information Quality')) return 'restaurant';
         }
-        if (sectionName.startsWith('ส่วนที่ 3')) return 'restaurant';
         return null;
     };
 
@@ -1215,12 +1270,6 @@ export default function FeedbackPage() {
                         </div>
                     ) : (
                         <>
-                            {error && (
-                                <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs rounded-xl font-medium animate-in fade-in duration-200">
-                                    {error}
-                                </div>
-                            )}
-
                             {/* Section Header */}
                             <div className="space-y-1">
                                 <span className="text-[9px] font-black text-primary uppercase tracking-widest">
@@ -1233,6 +1282,13 @@ export default function FeedbackPage() {
                                 <p className="text-[9px] text-muted-foreground flex items-center gap-1.5">
                                     สามารถกดดูรายละเอียดของผลลัพธ์จากการนัดหมายได้โดยกดเครื่องหมาย
                                     <span className="text-primary text-[10px]">📋</span>
+                                </p>
+                            )}
+                            {currentSection?.[0]?.startsWith('ส่วนที่ 3') && (
+                                <p className="text-[9px] text-muted-foreground flex items-center gap-1.5">
+                                    สามารถกด
+                                    <span className="text-emerald-400 text-[10px]">🧪</span>
+                                    เพื่อเปิดตัวอย่างหน้านั้น และลองใช้งานจริงก่อนตอบคำถาม
                                 </p>
                             )}
 
@@ -1257,7 +1313,23 @@ export default function FeedbackPage() {
                                                     </button>
                                                 ) : null;
                                             })()}
+                                            {tryFeatureLinks[q.id] && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { window.location.href = tryFeatureLinks[q.id].href; }}
+                                                    className="shrink-0 w-6 h-6 mt-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 text-[10px] font-black hover:bg-emerald-500/20 transition-all active:scale-90"
+                                                    title="คลิกเพื่อเปิดตัวอย่างหน้านี้ และกลับมาดูใหม่ได้"
+                                                >
+                                                    🧪
+                                                </button>
+                                            )}
                                         </div>
+
+                                            {!q.optional && error && (responses[q.id] === undefined || responses[q.id] === '') && (
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="text-[9px] text-rose-400 font-bold">⚠️ โปรดตอบคำถามนี้</span>
+                                                </div>
+                                            )}
 
                                         {/* SELECT/RADIO */}
                                         {q.type === 'select' && q.options && (
@@ -1370,12 +1442,21 @@ export default function FeedbackPage() {
                     </div>
                 )}
 
+                {/* Footer error banner */}
+                {!isSubmitted && error && (
+                    <div className="px-6 pb-2">
+                        <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[10px] font-bold text-center">
+                            ⚠️ {error}
+                        </div>
+                    </div>
+                )}
+
                 {/* Footer Navigation */}
                 {!isSubmitted && (
                     <div className="p-6 border-t border-black/5 dark:border-white/5 bg-black/5 dark:bg-white/5 backdrop-blur-md flex justify-between gap-3">
                         <button
                             type="button"
-                            onClick={() => setActiveSectionIndex(prev => Math.max(0, prev - 1))}
+                            onClick={() => { setError(null); setActiveSectionIndex(prev => Math.max(0, prev - 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
                             disabled={isFirstSection}
                             className="px-4 py-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-muted-foreground disabled:opacity-30 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all"
                         >
@@ -1385,7 +1466,7 @@ export default function FeedbackPage() {
                         {!isLastSection ? (
                             <button
                                 type="button"
-                                onClick={() => setActiveSectionIndex(prev => Math.min(sections.length - 1, prev + 1))}
+                                onClick={handleNextSection}
                                 className="px-6 py-3 bg-black/10 dark:bg-white/10 hover:bg-black/20 dark:hover:bg-white/20 border border-black/5 dark:border-white/5 text-foreground rounded-xl text-[10px] font-black uppercase tracking-wider transition-all active:scale-95"
                             >
                                 Next

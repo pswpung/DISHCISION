@@ -352,7 +352,7 @@ def push_message_result_flex(group_id, meeting_id, meeting_name, top_slots, pref
     elif is_fixed_restaurant:
         hero_header_title = "📍 Restaurant Fixed"
     else:
-        hero_header_title = "Suggestions Ready"
+        hero_header_title = "Suggestions Ready, Let's Vote."
     
     # Build Hero Body Contents
     hero_body_contents = [
@@ -489,7 +489,7 @@ def push_message_result_flex(group_id, meeting_id, meeting_name, top_slots, pref
                     "color": "#F58357",
                     "action": {
                         "type": "uri",
-                        "label": "View on Wongnai" if is_fixed_restaurant and wongnai_url else "Open Results Page",
+                        "label": "View on Wongnai" if is_fixed_restaurant and wongnai_url else "See Suggestions & Vote",
                         "uri": wongnai_url if is_fixed_restaurant and wongnai_url else base_result_url
                     }
                 }

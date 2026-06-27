@@ -6,6 +6,7 @@ import { apiService } from '@/app/services/api';
 import VotingForm from '@/app/components/voting-form/voting-form';
 import { TimeSlotSelector } from '@/app/components/time-slot-selector/time-slot-selector';
 import { parseAvailabilityText } from '@/app/utils/availability-parser';
+import SurveyModeBanner from '@/app/components/survey-mode-banner/survey-mode-banner';
 
 const AvailabilityPage = () => {
     const { isLoggedIn, profile, liffObject, error, bypassLiff } = useLiff();
@@ -14,12 +15,14 @@ const AvailabilityPage = () => {
     const [groupId, setGroupId] = useState<string | null>(null);
     const [meetingId, setMeetingId] = useState<string | null>(null);
     const [paramUserId, setParamUserId] = useState<string | null>(null);
+    const [isSurveyMode, setIsSurveyMode] = useState(false);
 
     useEffect(() => {
         const searchParams = new URLSearchParams(window.location.search);
         setGroupId(searchParams.get('group_id'));
         setMeetingId(searchParams.get('meeting_id'));
         setParamUserId(searchParams.get('user_id'));
+        setIsSurveyMode(searchParams.get('survey_mode') === 'true');
     }, []);
 
     const [meetingData, setMeetingData] = useState<any>(null);
@@ -276,6 +279,11 @@ const AvailabilityPage = () => {
     );
 
     const handleFinalSubmit = async (data: any) => {
+        if (isSurveyMode) {
+            alert("🔍 Preview Mode — cannot submit in survey mode. Close this and continue the questionnaire.");
+            return;
+        }
+
         const { status, availability: avail, preferences: prefs } = data;
 
         if (!effectiveUserId) {
@@ -336,6 +344,7 @@ const AvailabilityPage = () => {
 
     return (
         <div className="h-[100dvh] flex flex-col overflow-hidden bg-background">
+            {isSurveyMode && <SurveyModeBanner />}
             <div className="flex-1 overflow-y-auto p-4 pb-20">
                 <header className="mb-8 pt-4 text-center">
                     <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 tracking-tight mb-2">
@@ -344,13 +353,66 @@ const AvailabilityPage = () => {
                     <p className="text-muted-foreground text-sm">Tell us when you are free and what you like</p>
                 </header>
 
-                <VotingForm
-                    meetingData={meetingData}
-                    restaurantConfig={restaurantConfig}
-                    onVoteSubmit={handleFinalSubmit}
-                    userId={effectiveUserId}
-                    allAttendees={allAttendees}
-                />
+                {isSurveyMode && !meetingId ? (
+                    <div className="space-y-4 animate-in fade-in duration-300">
+                        <div className="glass-panel p-4 rounded-2xl space-y-3">
+                            <div className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                                <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">🧪 Survey Preview</span>
+                            </div>
+                            <h2 className="text-sm font-black text-foreground">Step 2: Schedule & Preferences</h2>
+                            <p className="text-[10px] text-muted-foreground leading-relaxed">
+                                ในหน้านี้ คุณสามารถระบุเวลาว่าง จัดลำดับความชอบประเภทอาหาร บรรยากาศร้าน งบประมาณ และข้อจำกัดต่างๆ
+                                ก่อนจะกดส่งเพื่อให้ระบบประมวลผล
+                            </p>
+                        </div>
+
+                        <div className="glass-panel p-4 rounded-2xl space-y-3">
+                            <span className="text-[9px] font-black text-primary uppercase tracking-widest block">⏰ Availability Grid (ตัวอย่าง)</span>
+                            <div className="grid grid-cols-7 gap-1">
+                                {['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'].map(d => (
+                                    <div key={d} className="text-center text-[8px] font-bold text-muted-foreground py-1">{d}</div>
+                                ))}
+                                {Array.from({ length: 35 }).map((_, i) => (
+                                    <div
+                                        key={i}
+                                        className={`h-6 rounded-md ${i > 17 && i < 22 ? 'bg-emerald-500/30 border border-emerald-500/40' : 'bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5'}`}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="glass-panel p-4 rounded-2xl space-y-2">
+                            <span className="text-[9px] font-black text-primary uppercase tracking-widest block">🍜 Preference Chips (ตัวอย่าง)</span>
+                            <div className="flex flex-wrap gap-1.5">
+                                {['อาหารญี่ปุ่น', 'อาหารไทย', 'ก๋วยเตี๋ยว', 'พิซซ่า', 'ชาบู', 'สตรีทฟู้ด'].map(c => (
+                                    <span key={c} className="px-2.5 py-1 rounded-lg bg-primary/10 border border-primary/20 text-primary text-[9px] font-bold">{c}</span>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="glass-panel p-4 rounded-2xl space-y-2">
+                            <span className="text-[9px] font-black text-primary uppercase tracking-widest block">🎯 Priorities (ตัวอย่าง)</span>
+                            <div className="space-y-1.5">
+                                {['🥇 Price', '🥈 Cuisine', '🥉 Vibe'].map(p => (
+                                    <div key={p} className="p-2 rounded-lg bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5 text-[10px] font-bold text-foreground">{p}</div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[10px] font-bold text-center">
+                            ⚡ ปิดโหมดพรีวิวเพื่อกลับไปตอบแบบสอบถาม
+                        </div>
+                    </div>
+                ) : (
+                    <VotingForm
+                        meetingData={meetingData}
+                        restaurantConfig={restaurantConfig}
+                        onVoteSubmit={handleFinalSubmit}
+                        userId={effectiveUserId}
+                        allAttendees={allAttendees}
+                    />
+                )}
             </div>
         </div>
     );
