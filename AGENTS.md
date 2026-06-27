@@ -30,7 +30,7 @@ Monorepo: `backend/` (Python FastAPI) + `frontend/` (Next.js 15, React 19, Tailw
 - **Entry**: `app/layout.tsx` (LiffProvider + ThemeProvider)
 - **API**: `app/services/api.ts` via axios. Empty base URL — Next.js rewrites proxy `/line/*`, `/users/*`, `/meetings/*`, `/attendee/*`, `/restaurant/*`, `/location/*` to `localhost:8081`
 - **Env**: `.env.local` — needs `NEXT_PUBLIC_LIFF_ID`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID`, `NEXT_PUBLIC_GOOGLE_AUTH_PROXY_URL`
-- **CSS**: Tailwind v4, light/dark theme via ThemeContext. Design language in `design.md` (referenced via `opencode.json` instructions — classes are already loaded)
+- **CSS**: Tailwind v4, light/dark theme via ThemeContext. Design tokens in `design.md`.
 - **Build quirks**: `eslint.ignoreDuringBuilds: true`, `typescript.ignoreBuildErrors: true` in `next.config.ts`
 - **LIFF nuance**: Cache-Control is `no-cache, must-revalidate` (not `no-store`) — `no-store` breaks LIFF webview on iOS/WKWebView redirect
 - **Survey**: set `NEXT_PUBLIC_ENABLE_BETA_SURVEY=true` to enable feedback survey
@@ -77,3 +77,7 @@ Monorepo: `backend/` (Python FastAPI) + `frontend/` (Next.js 15, React 19, Tailw
 - `cd frontend && npm run test:e2e` (Playwright, starts dev server). Tests in `frontend/e2e/`
 - Requires: `cd frontend && npx playwright install chromium`
 - `backend/tests/` is empty — no backend test commands.
+
+## Graphify
+
+- `graphify` needs an API key for semantic extraction (docs/papers/images). Set one of: `GEMINI_API_KEY`, `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`. Without one, only code AST extraction runs.
