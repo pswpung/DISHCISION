@@ -15,6 +15,7 @@ const CreateMeetingPage = () => {
   // State for params and loading
   const [isReady, setIsReady] = useState(false);
   const [isCreated, setIsCreated] = useState(false); // Added success state
+  const [isSubmitting, setIsSubmitting] = useState(false); // Added submission state lock
   const [paramGroupId, setParamGroupId] = useState<string | null>(null);
   const [paramUserId, setParamUserId] = useState<string | null>(null);
 
@@ -114,9 +115,12 @@ const CreateMeetingPage = () => {
   }, []);
 
   const handleMeetingData = async (data: any) => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     console.log("Creating meeting with:", data);
     if (isSurveyMode) {
       alert("🔍 Preview Mode — cannot submit in survey mode. Close this and continue the questionnaire.");
+      setIsSubmitting(false);
       return;
     }
     try {
@@ -233,6 +237,7 @@ const CreateMeetingPage = () => {
       // router.push(`/result?group_id=${data.groupId}&meeting_id=${newMeeting.meeting_id}`); // Removed redirect
 
     } catch (error) {
+      setIsSubmitting(false);
       console.error("Failed to create meeting:", error);
       alert("Failed to create meeting. See console for details.");
     }

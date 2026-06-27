@@ -300,7 +300,8 @@ export default function FeedbackPage() {
         const gId = meetingGroupId || '';
         return {
             q20: { label: 'ลองสร้างกิจกรรมนัดหมาย', href: `/create-meeting?survey_mode=true&return_to_survey=${meetingId}` },
-            q23: { label: 'ลองดูสรุปผลและวงล้อ', href: `/result?meeting_id=${meetingId}&group_id=${gId}&survey_mode=true&return_to_survey=${meetingId}` },
+            // q22: { label: 'ลองดูขั้นตอนโหวต', href: `/vote?meeting_id=${meetingId}&group_id=${gId}&survey_mode=true&return_to_survey=${meetingId}` },
+            q23: { label: 'ลองดูสรุปผลและตัดสินใจ', href: `/decision?meeting_id=${meetingId}&group_id=${gId}&survey_mode=true&return_to_survey=${meetingId}` },
         };
     }, [meetingId, meetingGroupId]);
 
@@ -1325,11 +1326,11 @@ export default function FeedbackPage() {
                                             )}
                                         </div>
 
-                                            {!q.optional && error && (responses[q.id] === undefined || responses[q.id] === '') && (
-                                                <div className="flex items-center gap-1.5">
-                                                    <span className="text-[9px] text-rose-400 font-bold">⚠️ โปรดตอบคำถามนี้</span>
-                                                </div>
-                                            )}
+                                        {!q.optional && error && (responses[q.id] === undefined || responses[q.id] === '') && (
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="text-[9px] text-rose-400 font-bold">⚠️ โปรดตอบคำถามนี้</span>
+                                            </div>
+                                        )}
 
                                         {/* SELECT/RADIO */}
                                         {q.type === 'select' && q.options && (

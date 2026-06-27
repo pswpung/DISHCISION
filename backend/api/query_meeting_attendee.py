@@ -14,7 +14,7 @@ def background_generate_suggestion(meeting_id: UUID):
     db: Session = SessionLocal()
     try:
         from .restaurant_suggestion import generate_and_send_suggestion
-        generate_and_send_suggestion(meeting_id, db)
+        generate_and_send_suggestion(meeting_id, db, notify_type="summary")
     except Exception as e:
         import traceback
         print(f"Error triggering suggestion in background: {e}")
@@ -82,10 +82,10 @@ def update_attendee_group(
     print(f"All Attendees : {all_attendees}")
     all_voted = True
     for attendee in all_attendees:
-        print(f"    > Attendee {attendee.user_id} : {attendee.preference}")
-        # if not attendee.preference: 
-        #     all_voted = False
-        #     break
+        print(f"    > Attendee {attendee.user_id} : preference={attendee.preference}")
+        if attendee.preference is None:
+            all_voted = False
+            break
     
     if all_voted:
         print(f"All attendees voted for meeting {meeting_id}. Triggering suggestion...")

@@ -109,13 +109,18 @@ class ConfirmFinalRequest(BaseModel):
     confirmed_time: str
     confirmed_restaurant: str
 
+class SubmitVotesRequest(BaseModel):
+    user_id: str
+    voted_slots: List[str] = []
+    voted_restaurants: List[str] = []
+
 class FeedbackSubmitRequest(BaseModel):
     user_id: Optional[str] = None
     responses: dict
 
 # --- MEETING DETAILS CRUD ---
 
-from services.line_services import push_message_creation_flex, push_message_fixed_result_flex
+from services.line_services import push_message_creation_flex, push_message_result_flex, push_message_decision_summary_flex
 
 @router.post("", response_model=MeetingResponse)
 def create_meeting(meeting: MeetingCreate, db: Session = Depends(get_db)):
@@ -292,7 +297,90 @@ def toggle_ready(meeting_id: UUID, req: ToggleReadyRequest, db: Session = Depend
     meeting.voting_state = state
     db.commit()
     db.refresh(meeting)
+
+    # Check if ALL attendees are ready
+    try:
+        attendees = db.query(MeetingAttendee).filter(MeetingAttendee.meeting_id == meeting_id).all()
+        attendee_ids = [a.user_id for a in attendees if a.is_joined]
+        all_ready = len(attendee_ids) > 0 and all(uid in ready for uid in attendee_ids)
+        if all_ready and meeting.group_id:
+            users = db.query(UserDetail).filter(UserDetail.user_id.in_(attendee_ids)).all()
+            user_map = {u.user_id: u for u in users}
+            attendee_names = [user_map.get(uid, UserDetail()).display_name or uid for uid in attendee_ids]
+            push_message_decision_summary_flex(
+                group_id=meeting.group_id,
+                meeting_id=str(meeting.meeting_id),
+                meeting_name=meeting.meeting_name,
+                attendee_names=attendee_names,
+                voted_count=len(attendee_ids),
+                total_count=len(attendee_ids),
+                organizer_name=user_map.get(meeting.initial_data.get("organizer_id", ""), UserDetail()).display_name or "Organizer",
+            )
+    except Exception as e:
+        print(f"Failed to send decision summary: {e}")
+
     return sanitize_meeting_response(meeting, req.user_id)
+
+
+@router.post("/{meeting_id}/submit-votes", response_model=MeetingResponse)
+def submit_votes(meeting_id: UUID, req: SubmitVotesRequest, db: Session = Depends(get_db)):
+    meeting = db.query(MeetingDetail).filter(MeetingDetail.meeting_id == meeting_id).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    state = copy.deepcopy(get_initialized_voting_state(meeting))
+
+    # Save voted time slots
+    time_votes = state.get("time_votes", {})
+    for slot_key in req.voted_slots:
+        if slot_key not in time_votes:
+            time_votes[slot_key] = []
+        if req.user_id not in time_votes[slot_key]:
+            time_votes[slot_key].append(req.user_id)
+    state["time_votes"] = time_votes
+
+    # Save voted restaurants
+    rest_prefs = state.get("restaurant_preferences", {})
+    for name in req.voted_restaurants:
+        if name not in rest_prefs:
+            rest_prefs[name] = []
+        if req.user_id not in rest_prefs[name]:
+            rest_prefs[name].append(req.user_id)
+    state["restaurant_preferences"] = rest_prefs
+
+    # Track submitted users
+    submitted = state.get("votes_submitted", [])
+    if req.user_id not in submitted:
+        submitted.append(req.user_id)
+    state["votes_submitted"] = submitted
+
+    meeting.voting_state = state
+    db.commit()
+    db.refresh(meeting)
+
+    # Check if ALL joined attendees have submitted
+    try:
+        attendees = db.query(MeetingAttendee).filter(MeetingAttendee.meeting_id == meeting_id).all()
+        attendee_ids = [a.user_id for a in attendees if a.is_joined]
+        all_done = len(attendee_ids) > 0 and all(uid in submitted for uid in attendee_ids)
+        if all_done and meeting.group_id:
+            users = db.query(UserDetail).filter(UserDetail.user_id.in_(attendee_ids)).all()
+            user_map = {u.user_id: u for u in users}
+            attendee_names = [user_map.get(uid, UserDetail()).display_name or uid for uid in attendee_ids]
+            push_message_decision_summary_flex(
+                group_id=meeting.group_id,
+                meeting_id=str(meeting.meeting_id),
+                meeting_name=meeting.meeting_name,
+                attendee_names=attendee_names,
+                voted_count=len(attendee_ids),
+                total_count=len(attendee_ids),
+                organizer_name=user_map.get(meeting.initial_data.get("organizer_id", ""), UserDetail()).display_name or "Organizer",
+            )
+    except Exception as e:
+        print(f"Failed to send decision summary after votes: {e}")
+
+    return sanitize_meeting_response(meeting, req.user_id)
+
 
 @router.post("/{meeting_id}/set-decision-method", response_model=MeetingResponse)
 def set_decision_method(meeting_id: UUID, req: SetDecisionMethodRequest, db: Session = Depends(get_db)):
@@ -327,6 +415,21 @@ def spin_wheel(meeting_id: UUID, req: SpinWheelRequest, db: Session = Depends(ge
         "selected_keys": req.selected_keys or []
     }
     
+    meeting.voting_state = state
+    db.commit()
+    db.refresh(meeting)
+    return sanitize_meeting_response(meeting)
+
+@router.post("/{meeting_id}/reset-wheel", response_model=MeetingResponse)
+def reset_wheel(meeting_id: UUID, db: Session = Depends(get_db)):
+    meeting = db.query(MeetingDetail).filter(MeetingDetail.meeting_id == meeting_id).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    
+    state = copy.deepcopy(get_initialized_voting_state(meeting))
+    if "wheel_state" in state:
+        state["wheel_state"]["status"] = "idle"
+        
     meeting.voting_state = state
     db.commit()
     db.refresh(meeting)
@@ -434,7 +537,10 @@ def confirm_final(meeting_id: UUID, req: ConfirmFinalRequest, db: Session = Depe
             slot_dict = {
                 "attendees": attendee_pics,
                 "time": confirmed_time_only or req.confirmed_time,
-                "date": confirmed_date or meeting.initial_data.get("start_date", "")
+                "date": confirmed_date or meeting.initial_data.get("start_date", ""),
+                "final_score": 10.0,
+                "restaurants": [],
+                "attendee_names": []
             }
             
             # 4. Search for the restaurant's Wongnai link
@@ -458,14 +564,18 @@ def confirm_final(meeting_id: UUID, req: ConfirmFinalRequest, db: Session = Depe
                 "url": restaurant_url
             }
             
-            push_message_fixed_result_flex(
+            push_message_result_flex(
                 group_id=meeting.group_id,
                 meeting_id=str(meeting.meeting_id),
                 meeting_name=meeting.meeting_name,
-                slot=slot_dict,
-                fixed_restaurant=fixed_restaurant_dict,
+                top_slots=[slot_dict],
+                preferred_restaurants=None,
+                all_scored_restaurants=None,
                 meal_time=slot_dict["time"],
-                start_date=slot_dict["date"]
+                start_date=slot_dict["date"],
+                end_date="",
+                fixed_restaurant=fixed_restaurant_dict,
+                total_attendees=len(attendees_db)
             )
     except Exception as e:
         print(f"Failed to send final LINE confirmation: {e}")

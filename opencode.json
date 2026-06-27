@@ -22,6 +22,7 @@
     },
     "instructions": [
         "~/.claude/RTK.md",
-        "frontend/design.md"
+        "frontend/design.md",
+        ".agents/prompt.md"
     ]
 }

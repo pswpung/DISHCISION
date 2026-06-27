@@ -335,12 +335,17 @@ const SpinWheel = ({ options, targetAngle, spinAt, isSpinning, onComplete }: Spi
 // -----------------------------------------------------------------------------
 const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedIn }: any) => {
     const router = useRouter();
+    const { liffObject } = useLiff();
     const [suggestionsMap, setSuggestionsMap] = useState<any>(null);
     const [preferredRestaurants, setPreferredRestaurants] = useState<any[]>([]);
     const [discoveryRestaurants, setDiscoveryRestaurants] = useState<any[]>([]);
-    const [viewMode, setViewMode] = useState<'slots' | 'restaurants' | 'decision'>('decision');
+    const [viewMode, setViewMode] = useState<'slots' | 'restaurants'>('slots');
     // Sub-tab inside the Restaurants tab: 'friends' (suggested by attendees) | 'suggested' (by system) | 'all' (all scored, when suggest_per_time=false)
     const [restaurantSubTab, setRestaurantSubTab] = useState<'friends' | 'suggested' | 'all'>('friends');
+    const [showFilters, setShowFilters] = useState(false);
+    const [pendingSlotVotes, setPendingSlotVotes] = useState<Set<string>>(new Set());
+    const [pendingRestaurantVotes, setPendingRestaurantVotes] = useState<Set<string>>(new Set());
+    const [wasReady, setWasReady] = useState<boolean | null>(null);
     const [meetingData, setMeetingData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [status, setStatus] = useState('open'); // 'open' | 'closed'
@@ -393,16 +398,12 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
     }, [meetingData]);
 
     const hasVotedTime = useMemo(() => {
-        return Object.values(votingState.time_votes || {}).some(
-            (voters: any) => Array.isArray(voters) && voters.includes(currentUserId)
-        );
-    }, [votingState, currentUserId]);
+        return pendingSlotVotes.size > 0;
+    }, [pendingSlotVotes]);
 
     const hasVotedRestaurant = useMemo(() => {
-        return Object.values(votingState.restaurant_preferences || {}).some(
-            (voters: any) => Array.isArray(voters) && voters.includes(currentUserId)
-        ) || (votingState.user_vetoed && votingState.user_vetoed.length > 0);
-    }, [votingState, currentUserId]);
+        return pendingRestaurantVotes.size > 0 || (votingState.user_vetoed && votingState.user_vetoed.length > 0);
+    }, [pendingRestaurantVotes, votingState.user_vetoed]);
 
     const canToggleReady = useMemo(() => {
         const timeCheck = isFixedTime || hasVotedTime;
@@ -421,6 +422,32 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
     const isSpinningRestaurant = useMemo(() => {
         return votingState.wheel_state?.status === 'spinning' && votingState.wheel_state?.target_type === 'restaurant';
     }, [votingState]);
+
+    const getSlotVoteCount = (slotKey: string) => {
+        const users = votingState.time_votes?.[slotKey] || [];
+        const hasVotedInDb = users.includes(currentUserId);
+        const isPendingVoted = pendingSlotVotes?.has(slotKey);
+
+        if (hasVotedInDb && !isPendingVoted) {
+            return Math.max(0, users.length - 1);
+        } else if (!hasVotedInDb && isPendingVoted) {
+            return users.length + 1;
+        }
+        return users.length;
+    };
+
+    const getRestaurantPrefCount = (restaurantName: string) => {
+        const users = votingState.restaurant_preferences?.[restaurantName] || [];
+        const hasVotedInDb = users.includes(currentUserId);
+        const isPendingVoted = pendingRestaurantVotes?.has(restaurantName);
+
+        if (hasVotedInDb && !isPendingVoted) {
+            return Math.max(0, users.length - 1);
+        } else if (!hasVotedInDb && isPendingVoted) {
+            return users.length + 1;
+        }
+        return users.length;
+    };
 
     const liveVenueCandidates = useMemo(() => {
         let list = [...preferredRestaurants];
@@ -450,7 +477,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
         });
 
         let mappedList = list.map(place => {
-            const prefCount = votingState.restaurant_preferences?.[place.name]?.length || 0;
+            const prefCount = getRestaurantPrefCount(place.name);
             const rawVeto = votingState.restaurant_vetoes?.[place.name];
             const vetoCount = typeof rawVeto === 'number' ? rawVeto : (rawVeto?.length || 0);
             const netVotes = prefCount - vetoCount;
@@ -902,41 +929,6 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
             } else {
                 setSuggestions(discoveryRestaurants);
             }
-        } else if (viewMode === 'decision' && suggestionsMap) {
-            let activeDate = selectedDate;
-            let activeTime = selectedTime;
-
-            if ((meetingData?.initial_data?.timing_mode || 'period') === 'fixed') {
-                activeDate = meetingData?.initial_data?.fixed_date || '';
-                activeTime = meetingData?.initial_data?.fixed_start_time || '';
-            } else if (confirmedTimeSlot) {
-                const parts = confirmedTimeSlot.split('_');
-                if (parts.length === 2) {
-                    activeDate = parts[0];
-                    activeTime = parts[1];
-                }
-            } else if (sortedSlots.length > 0) {
-                activeDate = sortedSlots[0].date;
-                activeTime = sortedSlots[0].time;
-            }
-
-            if (activeDate && activeTime) {
-                const dateSlots = suggestionsMap[activeDate];
-                if (dateSlots && dateSlots[activeTime]) {
-                    const slotData = dateSlots[activeTime];
-                    if (Array.isArray(slotData)) {
-                        setSuggestions(slotData);
-                    } else if (slotData && Array.isArray(slotData.restaurants)) {
-                        setSuggestions(slotData.restaurants);
-                    } else {
-                        setSuggestions([]);
-                    }
-                } else {
-                    setSuggestions([]);
-                }
-            } else {
-                setSuggestions([]);
-            }
         }
     }, [suggestionsMap, selectedDate, selectedTime, viewMode, restaurantSubTab, preferredRestaurants, discoveryRestaurants, confirmedTimeSlot, sortedSlots, meetingData]);
 
@@ -1017,19 +1009,69 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
         return () => clearInterval(interval);
     }, [meetingId, currentUserId, suggestionsMap]);
 
-    const handleToggleTimeVote = async (date: string, time: string, e: React.MouseEvent) => {
+    useEffect(() => {
+        if (!votingState || !currentUserId) return;
+
+        // If user is ready, keep pending state synced to database
+        if (isCurrentUserReady) {
+            const slots = new Set<string>();
+            Object.entries(votingState.time_votes || {}).forEach(([slotKey, users]: [string, any]) => {
+                if (Array.isArray(users) && users.includes(currentUserId)) {
+                    slots.add(slotKey);
+                }
+            });
+            setPendingSlotVotes(slots);
+
+            const rests = new Set<string>();
+            Object.entries(votingState.restaurant_preferences || {}).forEach(([restName, users]: [string, any]) => {
+                if (Array.isArray(users) && users.includes(currentUserId)) {
+                    rests.add(restName);
+                }
+            });
+            setPendingRestaurantVotes(rests);
+            setWasReady(true);
+        } else {
+            // If user was ready, or this is first load (wasReady is null), initialize the pending state
+            if (wasReady === null || wasReady === true) {
+                const slots = new Set<string>();
+                Object.entries(votingState.time_votes || {}).forEach(([slotKey, users]: [string, any]) => {
+                    if (Array.isArray(users) && users.includes(currentUserId)) {
+                        slots.add(slotKey);
+                    }
+                });
+                setPendingSlotVotes(slots);
+
+                const rests = new Set<string>();
+                Object.entries(votingState.restaurant_preferences || {}).forEach(([restName, users]: [string, any]) => {
+                    if (Array.isArray(users) && users.includes(currentUserId)) {
+                        rests.add(restName);
+                    }
+                });
+                setPendingRestaurantVotes(rests);
+                setWasReady(false);
+            }
+        }
+    }, [votingState, currentUserId, isCurrentUserReady, wasReady]);
+
+    const handleToggleTimeVote = (date: string, time: string, e: React.MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
         if (isSurveyMode) { alert("🔍 Preview Mode — cannot vote in survey mode."); return; }
         if (isCurrentUserReady) return;
-        try {
-            const slotKey = `${date}_${time}`;
-            const updated = await apiService.voteTimeSlot(meetingId, currentUserId, slotKey);
-            setMeetingData(updated);
-        } catch (err) {
-            console.error("Toggle time vote failed:", err);
-        }
+
+        const slotKey = `${date}_${time}`;
+        setPendingSlotVotes(prev => {
+            const next = new Set(prev);
+            if (next.has(slotKey)) {
+                next.delete(slotKey);
+            } else {
+                next.add(slotKey);
+            }
+            return next;
+        });
     };
+
+
 
     // --- Restaurant Search ---
     const handleSearch = async (keyword: string) => {
@@ -1048,18 +1090,21 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
         }
     };
 
-    const handleToggleTailIn = async (restaurantName: string, e: React.MouseEvent) => {
+    const handleToggleTailIn = (restaurantName: string, e: React.MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
         if (isSurveyMode) { alert("🔍 Preview Mode — cannot vote in survey mode."); return; }
         if (isCurrentUserReady) return;
-        try {
-            const updated = await apiService.toggleTailIn(meetingId, currentUserId, restaurantName);
-            setMeetingData(updated);
-            await loadResultData();
-        } catch (err) {
-            console.error("Toggle prefer failed:", err);
-        }
+
+        setPendingRestaurantVotes(prev => {
+            const next = new Set(prev);
+            if (next.has(restaurantName)) {
+                next.delete(restaurantName);
+            } else {
+                next.add(restaurantName);
+            }
+            return next;
+        });
     };
 
     const handleToggleTailOut = async (restaurantName: string, e: React.MouseEvent) => {
@@ -1079,6 +1124,11 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
     const handleToggleReady = async () => {
         try {
             if (isSurveyMode) { alert("🔍 Preview Mode — cannot mark ready in survey mode."); return; }
+            if (!isCurrentUserReady) {
+                const votedSlots = Array.from(pendingSlotVotes);
+                const votedRestaurants = Array.from(pendingRestaurantVotes);
+                await apiService.submitVotes(meetingId, currentUserId, votedSlots, votedRestaurants);
+            }
             const updated = await apiService.toggleReady(meetingId, currentUserId);
             setMeetingData(updated);
         } catch (err) {
@@ -1258,6 +1308,41 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
         )
     }
 
+    if (isCurrentUserReady && status === 'open') {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-screen p-6 text-center space-y-6 bg-[#09090b] animate-in fade-in zoom-in duration-500">
+                <div className="w-24 h-24 bg-green-500/20 rounded-full flex items-center justify-center text-5xl border border-green-500/30 shadow-[0_0_20px_rgba(34,197,94,0.3)] mb-2">
+                    🎉
+                </div>
+                <div className="space-y-3">
+                    <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-300 tracking-tight">
+                        Votes Submitted!
+                    </h1>
+                    <p className="text-muted-foreground text-sm max-w-xs mx-auto leading-relaxed">
+                        Your preferences have been successfully recorded. 
+                        <br />Waiting for other attendees to complete their votes...
+                    </p>
+                </div>
+
+                <div className="pt-4 flex flex-col gap-3 w-full max-w-xs z-10">
+                    <button
+                        onClick={() => handleToggleReady()}
+                        className="w-full py-4 rounded-xl font-bold text-md border border-white/10 bg-white/5 hover:bg-white/10 text-white transition-all flex items-center justify-center gap-2"
+                    >
+                        ✏️ Edit My Votes
+                    </button>
+                    
+                    <button
+                        onClick={() => liffObject?.closeWindow()}
+                        className="glass-button w-full py-4 rounded-xl font-bold text-md shadow-lg hover:shadow-green-500/20 transition-all border-green-500/30 bg-green-500/10 text-green-200"
+                    >
+                        Close Window
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
     if (status === 'open' && missingVoters.length > 0) {
         return (
             <div className="h-[100dvh] w-full flex flex-col items-center justify-center p-4">
@@ -1373,7 +1458,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                         const tabs: { id: string; label: string }[] = [];
                         if (mode !== 'fixed') tabs.push({ id: 'slots', label: 'Slots' });
                         if (!isFixedRestaurant && hasRestaurants) tabs.push({ id: 'restaurants', label: 'Restaurants' });
-                        tabs.push({ id: 'decision', label: 'Decision' });
+
                         return tabs;
                     })().map((tab) => (
                         <button
@@ -1390,7 +1475,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                 </div>
 
                 {/* Filter & Cuisine Header Row */}
-                {viewMode !== 'decision' && (
+                {viewMode === 'restaurants' && (
                     <div className="mt-6 px-1 space-y-4">
                         <div className="flex items-center justify-between mb-2 px-1">
                             <div className="flex items-center gap-2">
@@ -1651,6 +1736,17 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
 
             {viewMode === 'restaurants' && (
                 <div className="flex-none px-4 pt-3 pb-2 border-b border-white/5 bg-background space-y-3">
+                    <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Restaurant Options</span>
+                        <button
+                            type="button"
+                            onClick={() => setShowFilters(!showFilters)}
+                            className="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 hover:border-primary/30 text-[9px] font-black uppercase tracking-wider text-muted-foreground hover:text-primary transition-all flex items-center gap-1"
+                        >
+                            <span>⚡</span>
+                            <span>{showFilters ? 'Hide Filters' : 'Show Filters'}</span>
+                        </button>
+                    </div>
                     {(suggestPerTime || restaurantSubTab === 'friends') && (
                         <div className="relative space-y-2" ref={searchWrapperRef}>
                             {/* <div className="flex items-center justify-between">
@@ -1681,9 +1777,9 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                             {searchResults.length > 0 && (
                                 <div className="absolute left-0 right-0 z-50 mt-2 bg-zinc-900/95 border border-white/10 rounded-2xl shadow-2xl max-h-72 overflow-y-auto backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200 divide-y divide-white/5">
                                     {searchResults.map((place, idx) => {
-                                        const isPreferredByMe = votingState.restaurant_preferences?.[place.name]?.includes(currentUserId) || false;
+                                        const isPreferredByMe = pendingRestaurantVotes.has(place.name);
                                         const isVetoedByMe = votingState.user_vetoed?.includes(place.name) || false;
-                                        const prefCount = votingState.restaurant_preferences?.[place.name]?.length || 0;
+                                        const prefCount = getRestaurantPrefCount(place.name);
                                         const vetoCount = votingState.restaurant_vetoes?.[place.name] || 0;
 
                                         return (
@@ -1722,13 +1818,17 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                             handleToggleTailOut(place.name, e);
                                                         }}
                                                         className={`flex items-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-black uppercase tracking-wider transition-all duration-200 ${isVetoedByMe
-                                                            ? 'bg-red-500/20 text-red-400 border-red-500/40 shadow-md shadow-red-500/10'
-                                                            : 'bg-white/5 text-muted-foreground border-white/5 hover:border-white/10 hover:text-foreground'
+                                                            ? 'bg-emerald-500 text-white border-emerald-500 shadow-lg shadow-emerald-500/25 hover:opacity-95'
+                                                            : 'bg-emerald-500/5 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/10 hover:border-emerald-500/50 hover:scale-[1.01] hover:shadow-[0_4px_12px_rgba(16,185,129,0.1)]'
                                                             } ${isCurrentUserReady ? 'opacity-40 cursor-not-allowed pointer-events-none' : 'active:scale-95'}`}
                                                     >
                                                         <span>🚫</span>
                                                         <span>{isVetoedByMe ? 'Vetoed' : 'Veto'}</span>
-                                                        {vetoCount > 0 && <span className="text-[9px] bg-red-500/30 text-red-200 px-1.5 py-0.5 rounded-full">{vetoCount}</span>}
+                                                        {vetoCount > 0 && (
+                                                            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${isVetoedByMe ? 'bg-white/20 text-white' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`}>
+                                                                {vetoCount}
+                                                            </span>
+                                                        )}
                                                     </button>
                                                 </div>
                                             </div>
@@ -1739,45 +1839,50 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                         </div>
                     )}
 
-                    {/* Cuisine selector */}
-                    {availableCategories.length > 1 && (
-                        <div className="space-y-1">
-                            <span className="block text-[9px] font-bold text-muted-foreground uppercase tracking-wider">Cuisine / Category</span>
-                            <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-                                {availableCategories.map((cat) => (
-                                    <button
-                                        key={cat}
-                                        onClick={() => setSelectedCategory(cat)}
-                                        className={`px-3 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition-all ${selectedCategory === cat
-                                            ? 'bg-primary text-white shadow-md shadow-primary/20 scale-[1.02]'
-                                            : 'bg-white/5 text-muted-foreground hover:bg-white/10 border border-white/5'
-                                            }`}
-                                    >
-                                        {cat}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    )}
+                    {/* Cuisine and Vibe selectors */}
+                    {showFilters && (
+                        <div className="space-y-3 pt-1 border-t border-white/5 animate-in fade-in slide-in-from-top-2 duration-300">
+                            {availableCategories.length > 1 && (
+                                <div className="space-y-1">
+                                    <span className="block text-[9px] font-bold text-muted-foreground uppercase tracking-wider">Cuisine / Category</span>
+                                    <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                                        {availableCategories.map((cat) => (
+                                            <button
+                                                key={cat}
+                                                type="button"
+                                                onClick={() => setSelectedCategory(cat)}
+                                                className={`px-3 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition-all ${selectedCategory === cat
+                                                    ? 'bg-primary text-white shadow-md shadow-primary/20 scale-[1.02]'
+                                                    : 'bg-white/5 text-muted-foreground hover:bg-white/10 border border-white/5'
+                                                    }`}
+                                            >
+                                                {cat}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
 
-                    {/* Vibe selector */}
-                    {availableVibes.length > 1 && (
-                        <div className="space-y-1">
-                            <span className="block text-[9px] font-bold text-muted-foreground uppercase tracking-wider">Vibe / Environment</span>
-                            <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-                                {availableVibes.map((vibe) => (
-                                    <button
-                                        key={vibe}
-                                        onClick={() => setSelectedVibe(vibe)}
-                                        className={`px-3 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition-all ${selectedVibe === vibe
-                                            ? 'bg-primary text-white shadow-md shadow-primary/20 scale-[1.02]'
-                                            : 'bg-white/5 text-muted-foreground hover:bg-white/10 border border-white/5'
-                                            }`}
-                                    >
-                                        {vibe}
-                                    </button>
-                                ))}
-                            </div>
+                            {availableVibes.length > 1 && (
+                                <div className="space-y-1">
+                                    <span className="block text-[9px] font-bold text-muted-foreground uppercase tracking-wider">Vibe / Environment</span>
+                                    <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                                        {availableVibes.map((vibe) => (
+                                            <button
+                                                key={vibe}
+                                                type="button"
+                                                onClick={() => setSelectedVibe(vibe)}
+                                                className={`px-3 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition-all ${selectedVibe === vibe
+                                                    ? 'bg-primary text-white shadow-md shadow-primary/20 scale-[1.02]'
+                                                    : 'bg-white/5 text-muted-foreground hover:bg-white/10 border border-white/5'
+                                                    }`}
+                                            >
+                                                {vibe}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -1785,7 +1890,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
 
             <div ref={scrollRef} className="flex-1 overflow-y-auto pb-8 no-scrollbar scroll-smooth">
                 {/* Sticky Results Header */}
-                {viewMode !== 'decision' && suggestions.length > 0 && filteredSuggestions.length > 0 && (
+                {suggestions.length > 0 && filteredSuggestions.length > 0 && (
                     <div className="sticky top-0 z-40 px-4 py-3 bg-[#09090b]/80 backdrop-blur-md border-b border-white/5 flex items-center justify-between shadow-lg">
                         <div className="flex items-center gap-2">
                             <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse shadow-[0_0_8px_rgba(168,85,247,0.5)]" />
@@ -1822,573 +1927,16 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                         : 'System recommendations are still being generated. Check back soon.'}
                             </p>
                             <button
-                                onClick={() => setViewMode('decision')}
+                                onClick={() => setViewMode('slots')}
                                 className="mt-8 text-xs font-bold text-primary uppercase tracking-widest hover:underline"
                             >
-                                Go to Decision
+                                Go to Slots
                             </button>
                         </div>
                     )}
 
                     <div className="max-w-lg mx-auto space-y-4">
-                        {viewMode === 'decision' ? (
-                            <div className="space-y-6 animate-in fade-in duration-300">
-                                {/* Guidance banner — shown when user hasn't voted on anything yet */}
-                                {status === 'open' && !isSurveyMode && (() => {
-                                    const hasVotedTime = Object.values(votingState.time_votes || {}).some(
-                                        (voters: any) => Array.isArray(voters) && voters.includes(currentUserId)
-                                    );
-                                    const hasVotedRestaurant =
-                                        Object.values(votingState.restaurant_preferences || {}).some(
-                                            (voters: any) => Array.isArray(voters) && voters.includes(currentUserId)
-                                        ) ||
-                                        (votingState.user_vetoed && votingState.user_vetoed.length > 0);
-                                    const showBanner = !hasVotedTime && !hasVotedRestaurant;
-                                    return showBanner ? (
-                                        <div className="bg-primary/10 border border-primary/20 rounded-2xl p-4 space-y-1">
-                                            <p className="text-xs font-black text-foreground uppercase tracking-wider">What to do next</p>
-                                            <p className="text-xs text-muted-foreground leading-relaxed">
-                                                {(meetingData?.initial_data?.timing_mode || 'period') !== 'fixed' && (
-                                                    <>
-                                                        Go to <button onClick={() => setViewMode('slots')} className="text-primary font-bold hover:underline">Slots</button> to vote for your preferred time, then{' '}
-                                                    </>
-                                                )}
-                                                Go to <button onClick={() => setViewMode('restaurants')} className="text-primary font-bold hover:underline">Restaurants</button> to mark the ones you like or want to avoid.
-                                            </p>
-                                        </div>
-                                    ) : null;
-                                })()}
-
-                                {/* Final Decision Ticket (if closed) */}
-                                {status === 'closed' && !isSurveyMode && votingState.final_decision && (
-                                    <div className="px-4 pt-2 max-w-lg mx-auto">
-                                        <div className="relative overflow-hidden bg-gradient-to-br from-purple-600 to-indigo-700 rounded-3xl p-6 text-center space-y-4 shadow-2xl border border-white/10">
-                                            {/* Decorative ticket punches */}
-                                            <div className="absolute -left-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-[#09090b] rounded-full border border-white/5" />
-                                            <div className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-[#09090b] rounded-full border border-white/5" />
-
-                                            <div className="text-3xl animate-bounce">🎉</div>
-                                            <div>
-                                                <h2 className="text-lg font-black text-white uppercase tracking-tight">Meeting Plan Locked!</h2>
-                                                <p className="text-[10px] text-white/70 uppercase tracking-widest font-black mt-1">Confirmed details sent to LINE</p>
-                                            </div>
-
-                                            <div className="border-t border-dashed border-white/30 pt-4 space-y-3 text-left">
-                                                <div>
-                                                    <span className="text-[9px] uppercase font-black text-white/50 tracking-widest block">Date & Time Slot</span>
-                                                    <p className="text-sm font-bold text-white mt-0.5">
-                                                        {votingState.final_decision.time_slot.replace("_", " • ")}
-                                                    </p>
-                                                </div>
-                                                <div>
-                                                    <span className="text-[9px] uppercase font-black text-white/50 tracking-widest block">Confirmed Venue</span>
-                                                    <p className="text-sm font-bold text-white mt-0.5">
-                                                        {votingState.final_decision.restaurant_id}
-                                                    </p>
-                                                </div>
-
-                                                {/* Beta Feedback Survey Button */}
-                                                {/* {!isSurveyMode && process.env.NEXT_PUBLIC_ENABLE_BETA_SURVEY === 'true' && (
-                                                    <div className="pt-2">
-                                                        <button
-                                                            onClick={() => setIsSurveyOpen(true)}
-                                                            className="w-full py-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-2xl text-[10px] font-black uppercase tracking-wider text-white text-center transition-all active:scale-[0.97]"
-                                                        >
-                                                            📣 Give Beta Feedback & Survey
-                                                        </button>
-                                                    </div>
-                                                )} */}
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Open State panels */}
-                                {(status === 'open' || isSurveyMode) && (
-                                    <>
-                                        {/* Readiness Tracker */}
-                                        {/* <div className="glass-panel p-5 rounded-3xl border border-white/5 space-y-4 shadow-lg text-left">
-                                            <div className="flex justify-between items-center">
-                                                <div>
-                                                    <h3 className="text-sm font-bold text-foreground">Readiness Tracker</h3>
-                                                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">
-                                                        {votingState.ready_users?.length || 0} of {allAttendees.length} friends ready
-                                                    </p>
-                                                </div>
-                                                <button
-                                                    disabled={!canToggleReady && !isCurrentUserReady}
-                                                    onClick={handleToggleReady}
-                                                    className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-200 ${isCurrentUserReady
-                                                        ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30 active:scale-95 hover:bg-purple-500/30'
-                                                        : !canToggleReady
-                                                            ? 'bg-zinc-800 text-zinc-500 border border-white/5 opacity-40 cursor-not-allowed'
-                                                            : 'bg-primary text-white shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98]'
-                                                        }`}
-                                                >
-                                                    {isCurrentUserReady ? 'Edit' : 'I\'m Ready'}
-                                                </button>
-                                            </div>
-
-                                            <div className="grid grid-cols-2 gap-2 mt-2">
-                                                {allAttendees.map(att => {
-                                                    const isReady = votingState.ready_users?.includes(att.user_id);
-                                                    return (
-                                                        <div key={att.user_id} className="flex items-center gap-2 p-2 bg-white/5 rounded-xl border border-white/5">
-                                                            {att.pictureUrl ? (
-                                                                <img src={att.pictureUrl} alt={att.displayName} className="w-6 h-6 rounded-full object-cover" />
-                                                            ) : (
-                                                                <div className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center text-[10px] text-zinc-400 font-bold">
-                                                                    {att.displayName?.slice(0, 1)}
-                                                                </div>
-                                                            )}
-                                                            <div className="flex-1 min-w-0">
-                                                                <p className="text-[11px] font-semibold truncate text-foreground/80">{att.displayName}</p>
-                                                            </div>
-                                                            <span className={`text-[10px] ${isReady ? 'text-green-400 font-black' : 'text-zinc-500'}`}>
-                                                                {isReady ? 'Ready' : 'Pending'}
-                                                            </span>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div> */}
-
-                                        {/* Time Decision Card (Only show if period mode) */}
-                                        {(meetingData?.initial_data?.timing_mode || 'period') !== 'fixed' && (
-                                            <div className="glass-panel p-5 rounded-3xl border border-white/5 space-y-4 shadow-lg text-left">
-                                                <div className="flex justify-between items-center">
-                                                    <div>
-                                                        <h3 className="text-sm font-bold text-foreground">Time Slot Decision</h3>
-                                                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">
-                                                            Method: {votingState.time_decision_method === 'wheel' ? 'Spin Wheel' : 'Majority Vote'}
-                                                        </p>
-                                                    </div>
-                                                </div>
-
-                                                {isOrganizer && (
-                                                    <div className="flex gap-2 p-1 bg-white/5 rounded-xl border border-white/5 text-[11px]">
-                                                        <button
-                                                            onClick={() => handleSetDecisionMethod('time', 'majority')}
-                                                            className={`flex-1 py-1.5 rounded-lg font-bold transition-all ${votingState.time_decision_method !== 'wheel'
-                                                                ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-[1.02]'
-                                                                : 'text-muted-foreground hover:text-foreground'
-                                                                }`}
-                                                        >
-                                                            Majority Vote
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleSetDecisionMethod('time', 'wheel')}
-                                                            className={`flex-1 py-1.5 rounded-lg font-bold transition-all ${votingState.time_decision_method === 'wheel'
-                                                                ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-[1.02]'
-                                                                : 'text-muted-foreground hover:text-foreground'
-                                                                }`}
-                                                        >
-                                                            Spin Wheel
-                                                        </button>
-                                                    </div>
-                                                )}
-
-                                                {/* Time slot tie warning banner */}
-                                                {timeSlotTies.length > 1 && (
-                                                    <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex gap-3 text-amber-200 text-xs animate-in fade-in duration-300">
-                                                        <span className="text-lg">🤝</span>
-                                                        <div className="space-y-1">
-                                                            <p className="font-black uppercase tracking-wider">Tie Detected!</p>
-                                                            <p className="leading-relaxed opacity-90">
-                                                                There is a tie between the top time slot options ({timeSlotTies.map(s => `${s.date.slice(5)} ${s.time}`).join(' vs ')}).
-                                                                Discuss with your friends to decide, or let the organizer use the **Spin Wheel** to make the final decision.
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                )}
-
-                                                {votingState.time_decision_method === 'wheel' ? (
-                                                    <div className="space-y-4 pt-2">
-                                                        {isOrganizer && (
-                                                            <div className="space-y-3">
-                                                                <div className="space-y-2">
-                                                                    <h4 className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Include in Spin Wheel</h4>
-                                                                    <div className="max-h-32 overflow-y-auto bg-black/10 rounded-2xl p-2.5 border border-white/5 space-y-1.5 custom-scrollbar">
-                                                                        {(() => {
-                                                                            const sorted = [...sortedSlots].sort((a, b) => {
-                                                                                const keyA = `${a.date}_${a.time}`;
-                                                                                const keyB = `${b.date}_${b.time}`;
-                                                                                const votesA = votingState.time_votes?.[keyA]?.length || 0;
-                                                                                const votesB = votingState.time_votes?.[keyB]?.length || 0;
-                                                                                if (votesB !== votesA) return votesB - votesA;
-                                                                                if (a.date !== b.date) return a.date.localeCompare(b.date);
-                                                                                return a.time.localeCompare(b.time);
-                                                                            });
-                                                                            return sorted.map(slot => {
-                                                                                const key = `${slot.date}_${slot.time}`;
-                                                                                const isChecked = votingState.selected_time_slots?.includes(key) || false;
-                                                                                const votes = votingState.time_votes?.[key]?.length || 0;
-                                                                                return (
-                                                                                    <label key={key} className="flex items-center gap-2 text-[11px] font-semibold text-foreground/80 cursor-pointer">
-                                                                                        <input
-                                                                                            type="checkbox"
-                                                                                            checked={isChecked}
-                                                                                            onChange={() => handleToggleTimeSlotForWheel(key)}
-                                                                                            className="rounded border-white/10 accent-primary"
-                                                                                        />
-                                                                                        <span className="truncate flex-1">{slot.date.slice(5)} • {slot.time}</span>
-                                                                                        <span className="text-[10px] text-primary font-black shrink-0">👍 {votes}</span>
-                                                                                    </label>
-                                                                                );
-                                                                            });
-                                                                        })()}
-                                                                    </div>
-                                                                </div>
-                                                                <div className="bg-primary/5 border border-dashed border-primary/20 rounded-2xl p-4 text-[11px] text-muted-foreground space-y-1.5">
-                                                                    <span className="font-bold text-primary block">🎡 Organizer Guide: Time Slot Spin Wheel</span>
-                                                                    <ul className="list-disc pl-4 space-y-1">
-                                                                        <li>Use the checkboxes above to choose which time slots to include.</li>
-                                                                        <li>Slice sizes are dynamically weighted by matches/votes from friends.</li>
-                                                                        <li>Tap <strong>Spin Time Slot Wheel</strong> to let fortune decide!</li>
-                                                                        <li>Locks in the choice and notifies the LINE group upon confirmation.</li>
-                                                                    </ul>
-                                                                </div>
-                                                            </div>
-                                                        )}
-
-                                                        <SpinWheel
-                                                            options={(() => {
-                                                                const selectedKeys = votingState.selected_time_slots || [];
-                                                                const slotsToUse = selectedKeys.length > 0
-                                                                    ? sortedSlots.filter(slot => selectedKeys.includes(`${slot.date}_${slot.time}`))
-                                                                    : sortedSlots;
-                                                                const sorted = [...slotsToUse].sort((a, b) => {
-                                                                    const keyA = `${a.date}_${a.time}`;
-                                                                    const keyB = `${b.date}_${b.time}`;
-                                                                    const votesA = votingState.time_votes?.[keyA]?.length || 0;
-                                                                    const votesB = votingState.time_votes?.[keyB]?.length || 0;
-                                                                    if (votesB !== votesA) return votesB - votesA;
-                                                                    if (a.date !== b.date) return a.date.localeCompare(b.date);
-                                                                    return a.time.localeCompare(b.time);
-                                                                });
-                                                                return sorted.map(slot => {
-                                                                    const key = `${slot.date}_${slot.time}`;
-                                                                    const votes = votingState.time_votes?.[key]?.length || 0;
-                                                                    return {
-                                                                        key,
-                                                                        label: `${slot.date.slice(5)} ${slot.time} (${votes} ${votes === 1 ? 'vote' : 'votes'})`,
-                                                                        weight: Math.max(1, votes)
-                                                                    };
-                                                                });
-                                                            })()}
-                                                            targetAngle={votingState.wheel_state?.target_type === 'time' ? votingState.wheel_state.stop_angle : null}
-                                                            spinAt={votingState.wheel_state?.target_type === 'time' ? votingState.wheel_state.spin_at : null}
-                                                            isSpinning={isSpinningTime}
-                                                            onComplete={() => {
-                                                                if (votingState.wheel_state?.landed_key) {
-                                                                    setConfirmedTimeSlot(votingState.wheel_state.landed_key);
-                                                                }
-                                                            }}
-                                                        />
-                                                        {isOrganizer && (
-                                                            <button
-                                                                disabled={isSpinningTime || sortedSlots.length === 0}
-                                                                onClick={() => handleTriggerSpin('time')}
-                                                                className="w-full py-3 bg-gradient-to-r from-purple-500 to-indigo-600 text-white text-xs font-black uppercase tracking-wider rounded-xl shadow-lg active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none"
-                                                            >
-                                                                {isSpinningTime ? 'Spinning...' : 'Spin Time Slot Wheel'}
-                                                            </button>
-                                                        )}
-                                                        {!isOrganizer && (
-                                                            <div className="text-center text-xs text-muted-foreground italic animate-pulse">
-                                                                {isSpinningTime ? '🎡 The wheel is spinning!' : 'Waiting for organizer to spin...'}
-                                                            </div>
-                                                        )}
-                                                        {confirmedTimeSlot && (() => {
-                                                            const votes = votingState.time_votes?.[confirmedTimeSlot]?.length || 0;
-                                                            return (
-                                                                <div className="p-3 bg-purple-500/10 border border-purple-500/25 rounded-2xl text-center text-xs font-semibold text-purple-400">
-                                                                    Selected Time Slot: <span className="font-bold text-foreground">{confirmedTimeSlot.replace('_', ' • ')}</span> <span className="text-[10px] text-purple-300 ml-1.5">(👍 {votes} {votes === 1 ? 'vote' : 'votes'})</span>
-                                                                </div>
-                                                            );
-                                                        })()}
-                                                    </div>
-                                                ) : (
-                                                    <div className="space-y-2 pt-2">
-                                                        <h4 className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Top Time Slots</h4>
-                                                        <div className="space-y-1.5">
-                                                            {sortedSlots.slice(0, 3).map((slot, i) => {
-                                                                const key = `${slot.date}_${slot.time}`;
-                                                                const votes = votingState.time_votes?.[key]?.length || 0;
-                                                                const isTop = i === 0;
-                                                                return (
-                                                                    <div
-                                                                        key={key}
-                                                                        onClick={() => {
-                                                                            if (isOrganizer) setConfirmedTimeSlot(key);
-                                                                        }}
-                                                                        className={`flex justify-between items-center p-3 rounded-2xl border text-xs cursor-pointer transition-all ${confirmedTimeSlot === key
-                                                                            ? 'bg-purple-500/20 border-purple-500/40 text-purple-400'
-                                                                            : 'bg-white/5 border-white/5 hover:border-white/10'
-                                                                            }`}
-                                                                    >
-                                                                        <div className="flex items-center gap-2">
-                                                                            <span>{isTop ? '🏆' : '⏰'}</span>
-                                                                            <div>
-                                                                                <p className="font-bold text-foreground">{slot.time}</p>
-                                                                                <p className="text-[10px] text-muted-foreground">{slot.date}</p>
-                                                                            </div>
-                                                                        </div>
-                                                                        <div className="flex items-center gap-3">
-                                                                            <span className="font-black text-primary">{votes} {votes === 1 ? 'vote' : 'votes'}</span>
-                                                                            {isOrganizer && confirmedTimeSlot === key && (
-                                                                                <span className="text-[9px] bg-purple-500/30 text-purple-200 px-1.5 py-0.5 rounded font-black uppercase">Confirmed</span>
-                                                                            )}
-                                                                        </div>
-                                                                    </div>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-
-                                        {/* Restaurant Decision Card */}
-                                        <div className="glass-panel p-5 rounded-3xl border border-white/5 space-y-4 shadow-lg text-left">
-                                            <div className="flex justify-between items-center">
-                                                <div>
-                                                    <h3 className="text-sm font-bold text-foreground">Venue Decision</h3>
-                                                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">
-                                                        Method: {votingState.restaurant_decision_method === 'wheel' ? 'Spin Wheel' : 'Scoring List'}
-                                                    </p>
-                                                </div>
-                                            </div>
-
-                                            {isOrganizer && (
-                                                <div className="space-y-3">
-                                                    <div className="flex gap-2 p-1 bg-white/5 rounded-xl border border-white/5 text-[11px]">
-                                                        <button
-                                                            onClick={() => handleSetDecisionMethod('restaurant', 'list')}
-                                                            className={`flex-1 py-1.5 rounded-lg font-bold transition-all ${votingState.restaurant_decision_method !== 'wheel'
-                                                                ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-[1.02]'
-                                                                : 'text-muted-foreground hover:text-foreground'
-                                                                }`}
-                                                        >
-                                                            Scoring List
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleSetDecisionMethod('restaurant', 'wheel')}
-                                                            className={`flex-1 py-1.5 rounded-lg font-bold transition-all ${votingState.restaurant_decision_method === 'wheel'
-                                                                ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-[1.02]'
-                                                                : 'text-muted-foreground hover:text-foreground'
-                                                                }`}
-                                                        >
-                                                            Spin Wheel
-                                                        </button>
-                                                    </div>
-                                                    <label className="flex items-center gap-2 text-xs font-semibold text-foreground/80 cursor-pointer pt-1 px-1">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={votingState.exclude_vetoed || false}
-                                                            onChange={async () => {
-                                                                try {
-                                                                    const updated = await apiService.toggleExcludeVetoed(meetingId, currentUserId);
-                                                                    setMeetingData(updated);
-                                                                } catch (e) {
-                                                                    console.error("Failed to toggle exclude vetoed", e);
-                                                                }
-                                                            }}
-                                                            className="rounded border-white/10 accent-primary"
-                                                        />
-                                                        <span>Exclude Vetoed Restaurants (Tail Out)</span>
-                                                    </label>
-                                                </div>
-                                            )}
-
-                                            {!isOrganizer && votingState.exclude_vetoed && (
-                                                <div className="px-1 text-[11px] text-amber-400 font-medium pt-1">
-                                                    ℹ️ Organizer has excluded vetoed restaurants.
-                                                </div>
-                                            )}
-
-                                            {/* Restaurant tie warning banner */}
-                                            {restaurantTies.length > 1 && (
-                                                <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex gap-3 text-amber-200 text-xs animate-in fade-in duration-300">
-                                                    <span className="text-lg">🤝</span>
-                                                    <div className="space-y-1">
-                                                        <p className="font-black uppercase tracking-wider">Tie Detected!</p>
-                                                        <p className="leading-relaxed opacity-90">
-                                                            There is a tie between the top venues ({restaurantTies.map(r => r.name).join(' vs ')}).
-                                                            Discuss with your friends to decide, or let the organizer use the **Spin Wheel** to make the final decision.
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {votingState.restaurant_decision_method === 'wheel' ? (
-                                                <div className="space-y-4 pt-2">
-                                                    {isOrganizer && (
-                                                        <div className="space-y-3">
-                                                            <div className="space-y-2">
-                                                                <h4 className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Include in Spin Wheel</h4>
-                                                                <div className="max-h-32 overflow-y-auto bg-black/10 rounded-2xl p-2.5 border border-white/5 space-y-1.5 custom-scrollbar">
-                                                                    {(() => {
-                                                                        const sorted = [...liveVenueCandidates].sort((a, b) => {
-                                                                            return (b.prefCount || 0) - (a.prefCount || 0);
-                                                                        });
-                                                                        return sorted.map(place => {
-                                                                            const isChecked = votingState.selected_restaurants?.includes(place.name) || false;
-                                                                            const vetoCount = place.vetoCount;
-                                                                            return (
-                                                                                <label key={place.name} className="flex items-center gap-2 text-[11px] font-semibold text-foreground/80 cursor-pointer">
-                                                                                    <input
-                                                                                        type="checkbox"
-                                                                                        checked={isChecked}
-                                                                                        onChange={() => handleToggleRestaurantForWheel(place.name)}
-                                                                                        className="rounded border-white/10 accent-primary"
-                                                                                    />
-                                                                                    <span className="truncate flex-1">{place.name}</span>
-                                                                                    {vetoCount > 0 && <span className="text-[9px] text-red-400 font-bold shrink-0">⚠️ {vetoCount} veto</span>}
-                                                                                </label>
-                                                                            );
-                                                                        });
-                                                                    })()}
-                                                                </div>
-                                                            </div>
-                                                            <div className="bg-primary/5 border border-dashed border-primary/20 rounded-2xl p-4 text-[11px] text-muted-foreground space-y-1.5">
-                                                                <span className="font-bold text-primary block">🎡 Organizer Guide: Restaurant Spin Wheel</span>
-                                                                <ul className="list-disc pl-4 space-y-1">
-                                                                    <li>Use the checkboxes above to choose which restaurants to include.</li>
-                                                                    <li>Slice sizes are dynamically weighted by match score and friends' preferences.</li>
-                                                                    <li>Tap <strong>Spin Restaurant Wheel</strong> to let fortune decide!</li>
-                                                                    <li>Locks in the choice and notifies the LINE group upon confirmation.</li>
-                                                                </ul>
-                                                            </div>
-                                                        </div>
-                                                    )}
-
-                                                    <SpinWheel
-                                                        options={(() => {
-                                                            const filtered = liveVenueCandidates.filter(r => (votingState.selected_restaurants || []).length === 0 || votingState.selected_restaurants.includes(r.name));
-                                                            const sorted = [...filtered].sort((a, b) => (b.prefCount || 0) - (a.prefCount || 0));
-                                                            return sorted.map(place => {
-                                                                return {
-                                                                    key: place.name,
-                                                                    label: place.name,
-                                                                    weight: Math.max(1, Math.round((place.score || 50) / 10 + (place.prefCount || 0) * 5))
-                                                                };
-                                                            });
-                                                        })()}
-                                                        targetAngle={votingState.wheel_state?.target_type === 'restaurant' ? votingState.wheel_state.stop_angle : null}
-                                                        spinAt={votingState.wheel_state?.target_type === 'restaurant' ? votingState.wheel_state.spin_at : null}
-                                                        isSpinning={isSpinningRestaurant}
-                                                        onComplete={() => {
-                                                            if (votingState.wheel_state?.landed_key) {
-                                                                setConfirmedRestaurant(votingState.wheel_state.landed_key);
-                                                            }
-                                                        }}
-                                                    />
-                                                    {isOrganizer && (
-                                                        <button
-                                                            disabled={isSpinningRestaurant || liveVenueCandidates.length === 0}
-                                                            onClick={() => handleTriggerSpin('restaurant')}
-                                                            className="w-full py-3 bg-gradient-to-r from-purple-500 to-indigo-600 text-white text-xs font-black uppercase tracking-wider rounded-xl shadow-lg active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none"
-                                                        >
-                                                            {isSpinningRestaurant ? 'Spinning...' : 'Spin Restaurant Wheel'}
-                                                        </button>
-                                                    )}
-                                                    {!isOrganizer && (
-                                                        <div className="text-center text-xs text-muted-foreground italic animate-pulse">
-                                                            {isSpinningRestaurant ? '🎡 The wheel is spinning!' : 'Waiting for organizer to spin...'}
-                                                        </div>
-                                                    )}
-                                                    {confirmedRestaurant && (
-                                                        <div className="p-3 bg-purple-500/10 border border-purple-500/25 rounded-2xl text-center text-xs font-semibold text-purple-400">
-                                                            Selected Venue: <span className="font-bold text-foreground">{confirmedRestaurant}</span>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <div className="space-y-2 pt-2">
-                                                    <h4 className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Top Venues</h4>
-                                                    <div className="space-y-1.5">
-                                                        {liveVenueCandidates.slice(0, 3).map((place, i) => {
-                                                            const isTop = i === 0;
-                                                            const vetoCount = place.vetoCount;
-                                                            const isVetoedByMe = votingState.user_vetoed?.includes(place.name) || false;
-                                                            const vetoLabel = isVetoedByMe
-                                                                ? (vetoCount > 1 ? "Vetoed by you & others" : "Vetoed by you")
-                                                                : "Vetoed by some of your attendees";
-                                                            return (
-                                                                <div
-                                                                    key={place.name}
-                                                                    onClick={() => {
-                                                                        if (isOrganizer) setConfirmedRestaurant(place.name);
-                                                                    }}
-                                                                    className={`flex flex-col p-3 rounded-2xl border text-xs cursor-pointer transition-all ${confirmedRestaurant === place.name
-                                                                        ? 'bg-purple-500/20 border-purple-500/40 text-purple-400'
-                                                                        : 'bg-white/5 border-white/5 hover:border-white/10'
-                                                                        }`}
-                                                                >
-                                                                    <div className="flex justify-between items-center w-full">
-                                                                        <div className="flex items-center gap-2 min-w-0">
-                                                                            <span>{isTop ? '🥇' : i === 1 ? '🥈' : '🥉'}</span>
-                                                                            <div className="truncate">
-                                                                                <p className="font-bold text-foreground truncate">{place.name}</p>
-                                                                                {vetoCount > 0 && (
-                                                                                    <p className="text-[9px] text-red-400 font-semibold truncate max-w-[200px]" title={vetoLabel}>
-                                                                                        ⚠️ {vetoLabel}
-                                                                                    </p>
-                                                                                )}
-                                                                            </div>
-                                                                        </div>
-                                                                        <div className="flex items-center gap-3 shrink-0 ml-2">
-                                                                            <span className="font-black text-primary" title={`Match Score: ${place.score}`}>
-                                                                                👍 {place.prefCount}
-                                                                            </span>
-                                                                            {isOrganizer && confirmedRestaurant === place.name && (
-                                                                                <span className="text-[9px] bg-purple-500/30 text-purple-200 px-1.5 py-0.5 rounded font-black uppercase">Confirmed</span>
-                                                                            )}
-                                                                        </div>
-                                                                    </div>
-                                                                    {isTop && (
-                                                                        <div className="mt-2 text-[10px] text-primary/80 leading-relaxed bg-primary/5 p-2 rounded-xl border border-primary/10 w-full">
-                                                                            💡 {getBestMatchSummary(place)}
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* Organizer Final Locking Box */}
-                                        {isOrganizer && (
-                                            <div className="glass-panel p-5 rounded-3xl border border-white/5 space-y-4 shadow-lg text-left pt-4">
-                                                <div className="space-y-2">
-                                                    <h4 className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Organizer Final Action</h4>
-                                                    <div className="grid grid-cols-2 gap-2 text-xs">
-                                                        <div className="p-3 bg-white/5 border border-white/5 rounded-2xl">
-                                                            <span className="text-[9px] text-muted-foreground uppercase font-black tracking-wider block mb-1">Time Slot</span>
-                                                            <span className="font-bold truncate block">{((meetingData?.initial_data?.timing_mode || 'period') === 'fixed') ? meetingData?.initial_data?.fixed_date + ' ' + meetingData?.initial_data?.fixed_start_time : confirmedTimeSlot ? confirmedTimeSlot.replace('_', ' • ') : 'Not selected'}</span>
-                                                        </div>
-                                                        <div className="p-3 bg-white/5 border border-white/5 rounded-2xl">
-                                                            <span className="text-[9px] text-muted-foreground uppercase font-black tracking-wider block mb-1">Restaurant</span>
-                                                            <span className="font-bold truncate block">{confirmedRestaurant || 'Not selected'}</span>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <button
-                                                    onClick={handleConfirmFinal}
-                                                    disabled={(!confirmedTimeSlot && ((meetingData?.initial_data?.timing_mode || 'period') !== 'fixed')) || !confirmedRestaurant}
-                                                    className="w-full py-4 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-xs font-black uppercase tracking-wider rounded-2xl shadow-lg hover:shadow-emerald-500/25 active:scale-95 transition-all disabled:opacity-40 disabled:pointer-events-none"
-                                                >
-                                                    Lock Meeting Plan & Notify Group
-                                                </button>
-                                            </div>
-                                        )}
-                                    </>
-                                )}
-                            </div>
-                        ) : viewMode === 'slots' ? (
+                        {viewMode === 'slots' ? (
                             sortedSlots.length === 0 ? (
                                 <div className="text-center text-muted-foreground py-12">
                                     No available time slots found.
@@ -2410,7 +1958,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-2">
-                                                    {status === 'open' && (
+                                                    {/* {status === 'open' && (
                                                         <button
                                                             disabled={isCurrentUserReady}
                                                             onClick={(e) => handleToggleTimeVote(slot.date, slot.time, e)}
@@ -2429,7 +1977,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                                 </span>
                                                             )}
                                                         </button>
-                                                    )}
+                                                    )} */}
                                                     <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-white/5 text-muted-foreground border border-white/10">
                                                         👥 {totalAttendees}
                                                     </span>
@@ -2543,6 +2091,29 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                     </div>
                                                 </details>
                                             )}
+
+                                            {status === 'open' && (
+                                                <button
+                                                    disabled={isCurrentUserReady}
+                                                    onClick={(e) => handleToggleTimeVote(slot.date, slot.time, e)}
+                                                    className={"w-full mt-4 py-3.5 rounded-xl border text-xs font-bold uppercase tracking-wider transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-2 shadow-sm " + (
+                                                        pendingSlotVotes.has(slot.date + "_" + slot.time)
+                                                            ? "bg-primary text-white border-primary shadow-lg shadow-primary/25 hover:opacity-95"
+                                                            : "bg-primary/5 text-primary border-primary/30 hover:bg-primary/10 hover:border-primary/50 hover:scale-[1.01] hover:shadow-[0_4px_12px_rgba(245,131,87,0.1)]"
+                                                    ) + (isCurrentUserReady ? " opacity-40 cursor-not-allowed pointer-events-none" : "")}
+                                                >
+                                                    <span>{pendingSlotVotes.has(slot.date + "_" + slot.time) ? "✅ Chosen (Preferred)" : "👍 Select This Time"}</span>
+                                                    {/* {getSlotVoteCount(slot.date + "_" + slot.time) > 0 && (
+                                                        <span className={"text-[9px] font-black px-1.5 py-0.5 rounded-full " + (
+                                                            pendingSlotVotes.has(slot.date + "_" + slot.time)
+                                                                ? "bg-white/20 text-white"
+                                                                : "bg-primary/10 text-primary border border-primary/20"
+                                                        )}>
+                                                            {getSlotVoteCount(slot.date + "_" + slot.time)}
+                                                        </span>
+                                                    )} */}
+                                                </button>
+                                            )}
                                         </div>
                                     );
                                 })
@@ -2576,7 +2147,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
 
                                         const vetoCount = votingState.restaurant_vetoes?.[place.name] || 0;
                                         const prefCount = votingState.restaurant_preferences?.[place.name]?.length || 0;
-                                        const isPreferredByMe = votingState.restaurant_preferences?.[place.name]?.includes(currentUserId) || false;
+                                        const isPreferredByMe = pendingRestaurantVotes.has(place.name);
                                         const isVetoedByMe = votingState.user_vetoed?.includes(place.name) || false;
                                         const vetoLabel = isVetoedByMe
                                             ? (vetoCount > 1 ? "Vetoed by you & others" : "Vetoed by you")
@@ -2813,15 +2384,15 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                                     e.stopPropagation();
                                                                     handleToggleTailIn(place.name, e);
                                                                 }}
-                                                                className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-black uppercase tracking-wider transition-all duration-200 ${isPreferredByMe
-                                                                    ? 'bg-rose-500/20 text-rose-400 border-rose-500/40 shadow-md shadow-rose-500/10'
-                                                                    : 'bg-white/5 text-muted-foreground border-white/5 hover:border-white/10 hover:text-foreground'
+                                                                className={`flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl border text-xs font-black uppercase tracking-wider transition-all duration-200 ${isPreferredByMe
+                                                                    ? 'bg-rose-500 text-white border-rose-500 shadow-lg shadow-rose-500/25 hover:opacity-95'
+                                                                    : 'bg-rose-500/5 text-rose-300 border-rose-500/30 hover:bg-rose-500/10 hover:border-rose-500/50 hover:scale-[1.01] hover:shadow-[0_4px_12px_rgba(244,63,94,0.1)]'
                                                                     } ${isCurrentUserReady ? 'opacity-40 cursor-not-allowed pointer-events-none' : 'active:scale-95'}`}
                                                             >
                                                                 <span>❤️</span>
                                                                 <span>{isPreferredByMe ? 'Preferred' : 'Prefer'}</span>
                                                                 {prefCount > 0 && (
-                                                                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${isPreferredByMe ? 'bg-rose-500/30 text-rose-200' : 'bg-white/10 text-muted-foreground'
+                                                                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${isPreferredByMe ? 'bg-white/20 text-white' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
                                                                         }`}>
                                                                         {prefCount}
                                                                     </span>
@@ -2833,15 +2404,15 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                                     e.stopPropagation();
                                                                     handleToggleTailOut(place.name, e);
                                                                 }}
-                                                                className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-black uppercase tracking-wider transition-all duration-200 ${isVetoedByMe
-                                                                    ? 'bg-red-500/20 text-red-400 border-red-500/40 shadow-md shadow-red-500/10'
-                                                                    : 'bg-white/5 text-muted-foreground border-white/5 hover:border-white/10 hover:text-foreground'
+                                                                className={`flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl border text-xs font-black uppercase tracking-wider transition-all duration-200 ${isVetoedByMe
+                                                                    ? 'bg-emerald-500 text-white border-emerald-500 shadow-lg shadow-emerald-500/25 hover:opacity-95'
+                                                                    : 'bg-emerald-500/5 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/10 hover:border-emerald-500/50 hover:scale-[1.01] hover:shadow-[0_4px_12px_rgba(16,185,129,0.1)]'
                                                                     } ${isCurrentUserReady ? 'opacity-40 cursor-not-allowed pointer-events-none' : 'active:scale-95'}`}
                                                             >
                                                                 <span>🚫</span>
                                                                 <span>{isVetoedByMe ? 'Vetoed' : 'Veto'}</span>
                                                                 {vetoCount > 0 && (
-                                                                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${isVetoedByMe ? 'bg-red-500/30 text-red-200' : 'bg-white/10 text-muted-foreground'
+                                                                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${isVetoedByMe ? 'bg-white/20 text-white' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                                                                         }`}>
                                                                         {vetoCount}
                                                                     </span>
@@ -2870,6 +2441,74 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                     </div>
                 </div>
             </div>
+            {/* STICKY BOTTOM SUBMIT VOTE & DECISION BAR */}
+            {status === 'open' && (
+                <div className="flex-none p-4 bg-[#09090b]/95 backdrop-blur-md border-t border-white/5 shadow-[0_-4px_12px_rgba(0,0,0,0.5)] z-20">
+                    <div className="max-w-lg mx-auto space-y-3">
+                        {!isCurrentUserReady ? (
+                            <div className="space-y-2">
+                                <button
+                                    disabled={!canToggleReady}
+                                    onClick={handleToggleReady}
+                                    className="glass-button w-full py-3.5 rounded-xl font-bold text-sm uppercase tracking-wider shadow-lg disabled:opacity-40 disabled:pointer-events-none transition-all flex items-center justify-center gap-2"
+                                >
+                                    <span>📤 Submit My Votes</span>
+                                </button>
+                                <p className="text-[10px] text-center text-muted-foreground">
+                                    {!canToggleReady
+                                        ? "Select your preferred time slots and restaurants to submit."
+                                        : "Ready to submit your preferences to the group!"}
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col gap-2">
+                                <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-center flex flex-col items-center justify-center gap-1">
+                                    <p className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                                        <span>✅</span> Votes submitted! Waiting for others...
+                                    </p>
+                                    <p className="text-[9px] text-muted-foreground uppercase tracking-wider font-semibold">
+                                        All preferences submitted. You can still edit them if needed.
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={handleToggleReady}
+                                    className="w-full py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all"
+                                >
+                                    ✏️ Edit My Votes
+                                </button>
+                            </div>
+                        )}
+
+                        {/* {isOrganizer && (
+                            <button
+                                onClick={() => router.push(`/decision?group_id=${groupId}&meeting_id=${meetingId}`)}
+                                className="w-full py-2.5 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/30 text-purple-300 text-xs font-bold uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5"
+                            >
+                                <span>🎯</span> Go to Decision Page
+                            </button>
+                        )} */}
+                    </div>
+                </div>
+            )}
+
+            {status === 'closed' && (
+                <div className="flex-none p-4 bg-[#09090b]/95 backdrop-blur-md border-t border-white/5 shadow-[0_-4px_12px_rgba(0,0,0,0.5)] z-20">
+                    <div className="max-w-lg mx-auto flex flex-col gap-2">
+                        <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded-xl text-center">
+                            <p className="text-xs font-bold text-purple-400">
+                                📍 Meeting Finalized!
+                            </p>
+                        </div>
+                        <button
+                            onClick={() => router.push(`/decision?group_id=${groupId}&meeting_id=${meetingId}`)}
+                            className="w-full py-3 bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white text-xs font-black uppercase tracking-wider rounded-xl shadow-lg transition-all flex items-center justify-center gap-1.5"
+                        >
+                            <span>🎯</span> View Final Details
+                        </button>
+                    </div>
+                </div>
+            )}
+
             <SurveyModal
                 isOpen={isSurveyOpen}
                 onClose={() => setIsSurveyOpen(false)}

@@ -108,7 +108,7 @@ def get_restaurant_config():
     }
 
 # REFACTORED: Standalone function to be used by API and other triggers
-def generate_and_send_suggestion(meeting_id: UUID, db: Session):
+def generate_and_send_suggestion(meeting_id: UUID, db: Session, notify_type: str = "full"):
     from models import UserDetail # Import UserDetail
 
     # SECTION: QUERY DATA
@@ -218,17 +218,19 @@ def generate_and_send_suggestion(meeting_id: UUID, db: Session):
             is_fixed_meeting = (timing_mode == "fixed" and len(initial_data.get("fixed_restaurants", [])) > 0)
 
             if is_fixed_meeting:
-                from services.line_services import push_message_fixed_result_flex
                 fixed_restaurant = initial_data.get("fixed_restaurants", [])[0]
-                # In fixed mode, top_slots[0] contains the confirmed slot with attendees
-                push_message_fixed_result_flex(
+                push_message_result_flex(
                     group_id=meeting_detail.group_id,
                     meeting_id=str(meeting_detail.meeting_id),
                     meeting_name=meeting_detail.meeting_name,
-                    slot=top_slots[0] if top_slots else {},
-                    fixed_restaurant=fixed_restaurant,
+                    top_slots=top_slots,
+                    preferred_restaurants=preferred_restaurants,
+                    all_scored_restaurants=None,
                     meal_time=meal_time,
-                    start_date=start_date
+                    start_date=start_date,
+                    end_date=end_date,
+                    fixed_restaurant=fixed_restaurant,
+                    total_attendees=len(attendee_details)
                 )
             else:
                 # Push System Result Flex (Top Slots + Friend Recommends + Global Discovery)

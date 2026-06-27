@@ -225,6 +225,15 @@ export const apiService = {
         return response.data;
     },
 
+    submitVotes: async (meetingId: string, userId: string, votedSlots: string[], votedRestaurants: string[]) => {
+        const response = await apiClient.post(`/meetings/${meetingId}/submit-votes`, {
+            user_id: userId,
+            voted_slots: votedSlots,
+            voted_restaurants: votedRestaurants,
+        });
+        return response.data;
+    },
+
     submitFeedback: async (meetingId: string, userId: string | null, responses: Record<string, any>) => {
         const response = await apiClient.post(`/meetings/${meetingId}/feedback`, {
             user_id: userId,
@@ -240,5 +249,10 @@ export const apiService = {
         } catch (error) {
             return null;
         }
+    },
+
+    resetWheel: async (meetingId: string) => {
+        const response = await apiClient.post(`/meetings/${meetingId}/reset-wheel`);
+        return response.data;
     }
 };

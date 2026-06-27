@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 ## [1.1.0] - Unreleased
 
 ### Added
+- **Decision Panel Page**: New `/decision` route with organizer mode (confirm & notify) and observer mode (read-only waiting state). Organizer can pick or spin wheel for both time slot and restaurant. Includes the `SpinWheel` canvas component extracted to shared `components/spin-wheel/`.
+- **Auto-Trigger on All Votes**: When the last attendee submits their preference, `PATCH /attendee/{meetingId}/{userId}` now auto-triggers suggestion generation in the background.
+- **Summary Flex Message**: New `push_message_decision_summary_flex` sent to LINE group when all votes are collected — shows X/Y voted, attendee names, time range, and "Review & Decide" button linking to `/decision`.
+- **InfoTooltip Component**: Reusable CSS-only tooltip component for adding (i) help icons to form labels. Used on "Key Decision Makers" and "Timing Mode" fields in create-meeting form.
+- **Survey mode preferences toggle**: Preferences step hidden from normal create-meeting flow, only shown when `survey_mode=true`.
 - **Interactive Survey Mode**: Feedback page now has "Try it →" action cards linking to `/create-meeting`, `/availability`, and `/result` pages so testers can explore features before answering. Responses persist via `sessionStorage` across navigation. Target pages show a **Survey Mode** banner with a "← Back to Survey" button, and all submit/vote/spin actions are blocked with a preview-mode alert.
 - **Context-aware Feedback Modal**: Replaced bulky inline meeting context panels in survey sections 2–3 with a 📋 info icon per question — clicking opens a scrollable modal overlay with the full time/restaurant context, then closes to continue answering. Added hint text below section headers explaining the icon.
 - **Refined Voting Wizard**: Introduced a self-contained, state-driven `VotingForm` component (Steps 1–3) for RSVP, Availability, and Preferences, ensuring architectural parity with `CreateMeetingForm`.
@@ -18,6 +23,22 @@ All notable changes to this project will be documented in this file.
 - **Glassmorphism Design System**: Standardized the premium "glass-panel" aesthetic across all forms, inputs, and interactive components.
 - **Theme-Aware Accessibility**: Overhauled dropdown and selection chip styling using theme-aware CSS variables to ensure high contrast and legibility in both light and dark modes (addressing the "white-on-white" issue).
 - **UX Flow Optimization**: If both system and user-suggested restaurants are disabled, the voting flow now skips Step 3 and presents a "Ready to Go!" completion state.
+- **Voting UI Optimization**: Removed Decision tab/panel from `/result` page (voting page). Introduced sticky bottom action footer that handles voter readiness (`handleToggleReady`) with a success banner when votes are submitted, and options to edit preferences. Added "Go to Decision Page" button for the Organizer.
+- **Slots Voting Layout**: Relocated the time slot vote buttons to the bottom of each slot card as full-width modern glass buttons matching `design.md` baseline for improved visibility.
+- **Decision Page Restaurant Sorting**: Configured candidate restaurants on the `/decision` page to sort by vote count (attendee preferences) first, falling back to calculated system match scores for sorting alignment.
+- **Match Score Display**: Displayed the calculated system match score next to each restaurant candidate on the decision page (both in the main list and in the wheel selection settings) to aid organizers in choosing.
+- **Spin Wheel Stop Transition**: Created a new `/reset-wheel` endpoint to transition `wheel_state.status` to `idle` on completion, resolving the bug where buttons would continue displaying "Spinning..." after the wheel animation came to a stop.
+- **Confirm Meeting Plan Fix**: Appended missing keys (`final_score`, `restaurants`, `attendee_names`) to the finalized slot payload on meeting confirmation, preventing a backend `KeyError` that was crashing the final LINE Flex Message delivery.
+- **Vibrant Call-To-Action (CTA) Styles**: Upgraded timeslot and restaurant voting buttons with glowing outline borders, premium hover states, and descriptive labels (`Select This Time`, `Prefer`, etc.) to significantly improve user affordance and visual hierarchy.
+- **Result Page Filter Collapser**: Introduced a premium "Show Filters" / "Hide Filters" toggle to collapse or expand the Cuisine and Vibe filter lists on the result page, keeping the view clean.
+- **Conditional Refine Search Row**: Configured the "Refine Search" filter drawer trigger row to automatically hide when the **Slots** tab is active, displaying only when looking at **Restaurants**.
+- **State Overwrite Safeguard**: Configured synchronization hooks to safeguard local pending slot and restaurant selections from being overwritten by 3-second background database polling while the user is actively editing/voting.
+- **Batch Restaurant Voting**: Unified restaurant voting with timeslots, storing preferred selections in a local state pending set and committing them to the database in a single transaction via `apiService.submitVotes` upon clicking the "Submit My Votes" button.
+- **Decision Page Profiles**: Enriched attendee information using group users to display actual user profiles/names instead of raw user IDs in the voting summary table.
+- **Decision Page Attendee Layout**: Upgraded the text-list of attendee statuses in the voting summary section on the `/decision` page to match the premium flex attendee chips layout (with profile picture support and custom borders) used in `/result` for layout cohesion.
+- **Meeting Creation Submission Lock**: Implemented `isSubmitting` state lock to disable further action during submission, preventing duplicate meeting invitations/flex messages from being pushed on double-clicks.
+- **Spin Wheel Filters**: Added a filter switch ("Voted Slots Only" / "All Slots") on the organizer decision spin wheel to allow easily restricting candidates to only slots that have votes.
+- **Finalized Meeting Flex Message**: Updated `push_message_result_flex` to show a primary "Review Final Details" button linking to the decision dashboard on finalized meetings, alongside a secondary "View on Wongnai" button if a restaurant link is available. If `ENABLE_BETA_SURVEY` is active, a dedicated beta feedback survey bubble is automatically appended to the LINE carousel.
 - **Backend Developer Experience**: Enabled auto-reload in `main.py` for the uvicorn development server.
 
 ### Fixed

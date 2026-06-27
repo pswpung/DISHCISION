@@ -88,14 +88,14 @@ const addSlotToDate = (dateStr: string, startStr: string, endStr: string, curren
     const startMin = timeToMinutes(startStr);
     const endMin = timeToMinutes(endStr);
     if (startMin >= endMin) return currentAvailability[dateStr] || [];
-    
+
     const daySlots = currentAvailability[dateStr] || [];
     const intervals = daySlots.map((s: any) => ({
         start: timeToMinutes(s.start),
         end: timeToMinutes(s.end)
     }));
     intervals.push({ start: startMin, end: endMin });
-    
+
     intervals.sort((a: any, b: any) => a.start - b.start);
     const merged: { start: number; end: number }[] = [];
     intervals.forEach((i: any) => {
@@ -110,7 +110,7 @@ const addSlotToDate = (dateStr: string, startStr: string, endStr: string, curren
             }
         }
     });
-    
+
     return merged.map(i => ({
         start: minutesToTime(i.start),
         end: minutesToTime(i.end)
@@ -131,7 +131,7 @@ const getDaysArray = (start: string, end: string) => {
 
 const CreateMeetingForm = (props: CreateMeetingFormProps) => {
     const { attendeeList, onDataSubmit, initialGroupId, initialUserId, surveyMode } = props;
-    
+
     useEffect(() => {
         console.log("CreateMeetingForm: Received attendeeList:", attendeeList.map(a => `${a.displayName} (${a.userId})`));
     }, [attendeeList]);
@@ -187,11 +187,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                     alert("Please select date and time for the fixed meeting.");
                     return;
                 }
-                if (surveyMode) {
-                    setCurrentStep(2);
-                } else {
-                    submitMeeting();
-                }
+                setCurrentStep(2); // Skip Step 1 for Fixed Mode
             }
         } else if (currentStep === 1) {
             // Validate Step 1: Availability
@@ -200,11 +196,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                 alert("Please select at least one available time slot.");
                 return;
             }
-            if (surveyMode) {
-                setCurrentStep(2);
-            } else {
-                submitMeeting();
-            }
+            setCurrentStep(2);
         }
     };
 
@@ -333,23 +325,23 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
         if (!startDate || !endDate) return;
         const dates = getDaysArray(startDate, endDate);
         const updatedAvailability = { ...availability };
-        
+
         dates.forEach(dateStr => {
             const dateObj = new Date(dateStr);
-            const dayOfWeek = dateObj.getDay(); 
+            const dayOfWeek = dateObj.getDay();
             const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
             const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-            
+
             let matches = false;
             if (customScope === 'all') matches = true;
             else if (customScope === 'weekdays' && isWeekday) matches = true;
             else if (customScope === 'weekends' && isWeekend) matches = true;
-            
+
             if (matches) {
                 updatedAvailability[dateStr] = addSlotToDate(dateStr, customStart, customEnd, updatedAvailability);
             }
         });
-        
+
         setAvailability(updatedAvailability);
         setShowBulkPresets(false);
     };
@@ -373,9 +365,9 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                         setLocationCoords({ lat: 13.7563, lng: 100.5018 });
                         setIsLocating(false);
                     },
-                    { 
+                    {
                         enableHighAccuracy: false, // Better for LINE/Android
-                        timeout: 15000, 
+                        timeout: 15000,
                         maximumAge: 60000 // Use cached location if available
                     }
                 );
@@ -641,7 +633,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
     const toggleAdvancedPriority = (factor: string) => {
         const isSelected = advancedPriorities.some(group => group.includes(factor));
         if (isSelected) {
-            setAdvancedPriorities(prev => 
+            setAdvancedPriorities(prev =>
                 prev.map(group => group.filter(p => p !== factor)).filter(group => group.length > 0)
             );
         } else {
@@ -650,7 +642,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
     };
 
     const removeAdvancedPriority = (factor: string) => {
-        setAdvancedPriorities(prev => 
+        setAdvancedPriorities(prev =>
             prev.map(group => group.filter(p => p !== factor)).filter(group => group.length > 0)
         );
     };
@@ -667,11 +659,11 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
 
             // Remove factor from all groups
             let cleaned = prev.map(group => group.filter(f => f !== factor)).filter(group => group.length > 0);
-            
+
             if (type === 'remove') {
                 return cleaned;
             }
-            
+
             if (type === 'tie') {
                 const next = [...cleaned];
                 if (adjustedTargetIndex >= 0 && adjustedTargetIndex < next.length) {
@@ -681,13 +673,13 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                 }
                 return next;
             }
-            
+
             if (type === 'insert') {
                 const next = [...cleaned];
                 next.splice(adjustedTargetIndex, 0, [factor]);
                 return next;
             }
-            
+
             return cleaned;
         });
     };
@@ -977,19 +969,17 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                     onDragOver={(e) => handleDragOver(e, targetIndex, 'insert')}
                     onDragLeave={handleDragLeave}
                     onDrop={(e) => handleDrop(e, targetIndex, 'insert')}
-                    className={`relative w-full transition-all duration-200 flex items-center justify-center ${
-                        isHovered 
-                            ? 'py-3.5 opacity-100' 
-                            : isDragging 
-                            ? 'py-2 opacity-50' 
-                            : 'py-0 h-0.5 opacity-0 pointer-events-none'
-                    }`}
+                    className={`relative w-full transition-all duration-200 flex items-center justify-center ${isHovered
+                            ? 'py-3.5 opacity-100'
+                            : isDragging
+                                ? 'py-2 opacity-50'
+                                : 'py-0 h-0.5 opacity-0 pointer-events-none'
+                        }`}
                 >
-                    <div className={`w-full border-t-2 border-dashed rounded transition-colors ${
-                        isHovered 
-                            ? 'border-primary shadow-[0_0_8px_rgba(var(--primary-rgb),0.3)]' 
+                    <div className={`w-full border-t-2 border-dashed rounded transition-colors ${isHovered
+                            ? 'border-primary shadow-[0_0_8px_rgba(var(--primary-rgb),0.3)]'
                             : 'border-primary/20'
-                    }`} />
+                        }`} />
                     {isHovered && (
                         <span className="absolute px-2.5 py-0.5 rounded-full bg-primary text-[8px] font-black text-white uppercase tracking-widest pointer-events-none shadow-md">
                             Insert Rank Level {targetIndex + 1}
@@ -1011,22 +1001,20 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                         <button
                             type="button"
                             onClick={() => setPrioritiesMode('normal')}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                prioritiesMode === 'normal'
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${prioritiesMode === 'normal'
                                     ? 'bg-primary text-white shadow-md'
                                     : 'text-muted-foreground hover:text-foreground'
-                            }`}
+                                }`}
                         >
                             Normal
                         </button>
                         <button
                             type="button"
                             onClick={() => setPrioritiesMode('advanced')}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                prioritiesMode === 'advanced'
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${prioritiesMode === 'advanced'
                                     ? 'bg-primary text-white shadow-md'
                                     : 'text-muted-foreground hover:text-foreground'
-                            }`}
+                                }`}
                         >
                             Advanced
                         </button>
@@ -1046,11 +1034,10 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                                         key={factor}
                                         type="button"
                                         onClick={() => toggleNormalPriority(factor)}
-                                        className={`relative px-4 py-2.5 rounded-xl text-xs font-bold border transition-all duration-300 flex items-center gap-1.5 ${
-                                            isSelected
+                                        className={`relative px-4 py-2.5 rounded-xl text-xs font-bold border transition-all duration-300 flex items-center gap-1.5 ${isSelected
                                                 ? 'bg-primary border-primary text-white shadow-lg scale-105'
                                                 : 'bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10 hover:border-white/20'
-                                        }`}
+                                            }`}
                                     >
                                         {isSelected && (
                                             <span className="flex items-center justify-center px-1.5 py-0.5 rounded bg-white/20 text-[9px] font-black mr-0.5">
@@ -1069,19 +1056,18 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                         <p className="text-[10px] text-muted-foreground/80 italic">
                             Drag & drop chips to rank and tie them freely, or tap them in order.
                         </p>
-                        
+
                         {/* Available Pool Wrapper with drag target for removing */}
                         <div
                             onDragOver={(e) => isDraggedFactorRanked ? handleDragOver(e, -1, 'pool') : undefined}
                             onDragLeave={handleDragLeave}
                             onDrop={(e) => isDraggedFactorRanked ? handleDrop(e, -1, 'pool') : undefined}
-                            className={`p-3 rounded-2xl border transition-all duration-300 ${
-                                isPoolHovered && isDraggedFactorRanked
+                            className={`p-3 rounded-2xl border transition-all duration-300 ${isPoolHovered && isDraggedFactorRanked
                                     ? 'border-red-500/40 bg-red-500/5 shadow-[0_0_12px_rgba(239,68,68,0.15)]'
                                     : isDragging && isDraggedFactorRanked
-                                    ? 'border-dashed border-red-500/30 bg-red-500/[0.02]'
-                                    : 'border-transparent bg-transparent'
-                            }`}
+                                        ? 'border-dashed border-red-500/30 bg-red-500/[0.02]'
+                                        : 'border-transparent bg-transparent'
+                                }`}
                         >
                             {isPoolHovered && isDraggedFactorRanked && (
                                 <div className="text-center text-[10px] text-red-400 font-bold mb-2 uppercase tracking-wider animate-pulse">
@@ -1100,11 +1086,10 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                                             onDragStart={(e) => handleDragStart(e, factor)}
                                             onDragEnd={handleDragEnd}
                                             onClick={() => toggleAdvancedPriority(factor)}
-                                            className={`px-4 py-2.5 rounded-xl text-xs font-bold border transition-all duration-300 ${
-                                                isSelected
+                                            className={`px-4 py-2.5 rounded-xl text-xs font-bold border transition-all duration-300 ${isSelected
                                                     ? 'opacity-40 bg-white/10 border-dashed border-white/10 text-muted-foreground/60 cursor-default pointer-events-none'
                                                     : 'bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10 hover:border-white/20 cursor-grab active:cursor-grabbing hover:scale-[1.02]'
-                                            }`}
+                                                }`}
                                         >
                                             {factor}
                                         </button>
@@ -1116,7 +1101,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                         {/* Selected Sequence with drag and drop zones */}
                         <div className="glass-panel p-4 rounded-2xl border border-black/5 dark:border-white/5 space-y-2">
                             <label className="block text-[10px] uppercase font-black tracking-widest text-primary/80">Priority Ranking</label>
-                            
+
                             {/* Top Drop Zone */}
                             {advancedPriorities.length > 0 && renderInsertDropZone(0)}
 
@@ -1125,11 +1110,10 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                                     onDragOver={(e) => handleDragOver(e, 0, 'insert')}
                                     onDragLeave={handleDragLeave}
                                     onDrop={(e) => handleDrop(e, 0, 'insert')}
-                                    className={`py-12 border-2 border-dashed rounded-xl text-center transition-all ${
-                                        dragOverIndex?.type === 'insert' && dragOverIndex?.index === 0
+                                    className={`py-12 border-2 border-dashed rounded-xl text-center transition-all ${dragOverIndex?.type === 'insert' && dragOverIndex?.index === 0
                                             ? 'border-primary bg-primary/5 text-primary scale-[0.99]'
                                             : 'border-white/10 text-muted-foreground'
-                                    }`}
+                                        }`}
                                 >
                                     <p className="text-xs uppercase tracking-wider font-bold">Drag and drop factors here to start ranking</p>
                                     <p className="text-[10px] text-muted-foreground/60 mt-1 italic">Or tap factors from the pool above</p>
@@ -1145,11 +1129,10 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                                                     onDragOver={(e) => handleDragOver(e, index, 'tie')}
                                                     onDragLeave={handleDragLeave}
                                                     onDrop={(e) => handleDrop(e, index, 'tie')}
-                                                    className={`flex items-center gap-3 p-3 rounded-xl border transition-all duration-200 ${
-                                                        isTieHovered
+                                                    className={`flex items-center gap-3 p-3 rounded-xl border transition-all duration-200 ${isTieHovered
                                                             ? 'bg-primary/10 border-primary scale-[1.01] shadow-[0_0_10px_rgba(var(--primary-rgb),0.15)]'
                                                             : 'bg-black/5 dark:bg-white/5 border-black/5 dark:border-white/5'
-                                                    }`}
+                                                        }`}
                                                 >
                                                     <span className="flex items-center justify-center w-5 h-5 rounded-full bg-primary text-white text-[9px] font-black shrink-0">
                                                         {index + 1}
@@ -1176,7 +1159,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                                                         )}
                                                     </div>
                                                 </div>
-                                                
+
                                                 {/* Insert Spacer Zone below this group */}
                                                 {renderInsertDropZone(index + 1)}
                                             </div>
@@ -1197,18 +1180,31 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
             <div className="mb-8 px-2">
                 <div className="flex justify-between items-center mb-3">
                     <span className="text-xs font-bold text-primary uppercase tracking-wider">
-                        {currentStep === 0 && "Step 0: Meeting Details"}
-                        {currentStep === 1 && "Step 1: Availability"}
-                        {currentStep === 2 && "Step 2: Preferences"}
+                        {(() => {
+                            if (timingMode === 'fixed') {
+                                return currentStep === 0 ? "Step 1: Meeting Details" : "Step 2: Preferences";
+                            }
+                            return currentStep === 0 ? "Step 1: Meeting Details"
+                                : currentStep === 1 ? "Step 2: Availability"
+                                : "Step 3: Preferences";
+                        })()}
                     </span>
                     <span className="text-xs text-muted-foreground font-bold">
-                        {currentStep + 1} / {surveyMode ? 3 : 2}
+                        {(() => {
+                            const total = timingMode === 'fixed' ? 2 : 3;
+                            const step = timingMode === 'fixed' && currentStep === 2 ? 2 : currentStep + 1;
+                            return `${step} / ${total}`;
+                        })()}
                     </span>
                 </div>
                 <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden backdrop-blur-sm">
                     <div
                         className="bg-primary h-full transition-all duration-500 ease-out shadow-[0_0_10px_rgba(var(--primary-rgb),0.5)]"
-                        style={{ width: `${((currentStep + 1) / (surveyMode ? 3 : 2)) * 100}%` }}
+                        style={{ width: `${(() => {
+                            const total = timingMode === 'fixed' ? 2 : 3;
+                            const step = timingMode === 'fixed' && currentStep === 2 ? 2 : currentStep + 1;
+                            return (step / total) * 100;
+                        })()}%` }}
                     ></div>
                 </div>
             </div>
@@ -1417,14 +1413,14 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                                         <span className="text-amber-500">Key Decision Makers: {keyPersonRatio}%</span>
                                         <span className="text-primary">General Attendees: {100 - keyPersonRatio}%</span>
                                     </div>
-                                    
+
                                     <div className="relative w-full h-3 bg-white/10 rounded-full overflow-hidden flex">
                                         {/* Progress bar visual split */}
-                                        <div 
+                                        <div
                                             className="h-full bg-amber-500 transition-all duration-300"
                                             style={{ width: `${keyPersonRatio}%` }}
                                         />
-                                        <div 
+                                        <div
                                             className="h-full bg-primary/70 transition-all duration-300"
                                             style={{ width: `${100 - keyPersonRatio}%` }}
                                         />
@@ -1600,11 +1596,10 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                                 <button
                                     type="button"
                                     onClick={() => setShowBulkPresets(!showBulkPresets)}
-                                    className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1 active:scale-95 transition-all ${
-                                        showBulkPresets
+                                    className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1 active:scale-95 transition-all ${showBulkPresets
                                             ? 'bg-primary border-primary text-white shadow-md shadow-primary/20'
                                             : 'border-primary/20 bg-primary/5 hover:bg-primary/10 text-primary'
-                                    }`}
+                                        }`}
                                 >
                                     ⚡ {showBulkPresets ? "Close Presets" : "Bulk Apply"}
                                 </button>
@@ -1630,7 +1625,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                                                     />
                                                 </div>
                                             </div>
-                                            
+
                                             <div className="flex items-center justify-between gap-2">
                                                 <span className="text-xs font-medium text-foreground">Scope:</span>
                                                 <select
@@ -1683,7 +1678,7 @@ const CreateMeetingForm = (props: CreateMeetingFormProps) => {
                 )}
 
                 {/* STEP 2: PREFERENCE */}
-                {surveyMode && currentStep === 2 && (
+                {currentStep === 2 && (
                     <div className="animate-in slide-in-from-right duration-500">
                         <button onClick={handleBack} className="text-xs font-bold text-muted-foreground hover:text-primary flex items-center gap-1 uppercase tracking-wider transition-colors mb-2">
                             ← Back

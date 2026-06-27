@@ -481,19 +481,18 @@ def push_message_result_flex(group_id, meeting_id, meeting_name, top_slots, pref
         "footer": {
             "type": "box",
             "layout": "vertical",
-            "contents": [
-                {
-                    "type": "button",
-                    "style": "primary",
-                    "height": "sm",
-                    "color": "#F58357",
-                    "action": {
-                        "type": "uri",
-                        "label": "View on Wongnai" if is_fixed_restaurant and wongnai_url else "See Suggestions & Vote",
-                        "uri": wongnai_url if is_fixed_restaurant and wongnai_url else base_result_url
-                    }
+            "contents": ([{
+                "type": "button",
+                "style": "secondary",
+                "height": "sm",
+                "color": "#F58357",
+                "margin": "sm",
+                "action": {
+                    "type": "uri",
+                    "label": "View on Wongnai",
+                    "uri": wongnai_url
                 }
-            ]
+            }] if (is_fixed_time and is_fixed_restaurant and wongnai_url) else [])
         }
     }
 
@@ -775,6 +774,55 @@ def push_message_result_flex(group_id, meeting_id, meeting_name, top_slots, pref
             if len(restaurants) > 0:
                 bubbles.append(bubble)
     
+    # Add Survey Bubble if Beta Mode is enabled and meeting is finalized
+    if ENABLE_BETA_SURVEY and (is_fixed_time and is_fixed_restaurant):
+        survey_url = f"https://liff.line.me/{LIFF_ID}/{meeting_id}/feedback"
+        survey_bubble = {
+            "type": "bubble",
+            "size": "kilo",
+            "header": {
+                "type": "box",
+                "layout": "vertical",
+                "backgroundColor": "#F58357", # Primary Color
+                "paddingAll": "lg",
+                "contents": [
+                    {"type": "text", "text": "📣 Beta Feedback & Survey", "weight": "bold", "color": "#FFFFFF", "size": "sm"},
+                    {"type": "text", "text": "Help Us Improve!", "weight": "bold", "size": "lg", "color": "#FFFFFF", "wrap": True, "margin": "md"}
+                ]
+            },
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": "Your meeting is successfully finalized! Please take 1 minute to share your feedback and help us make DISHCISION better.",
+                        "size": "xs",
+                        "color": "#555555",
+                        "wrap": True
+                    }
+                ]
+            },
+            "footer": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {
+                        "type": "button",
+                        "style": "primary",
+                        "height": "sm",
+                        "color": "#F58357",
+                        "action": {
+                            "type": "uri",
+                            "label": "Share Feedback",
+                            "uri": survey_url
+                        }
+                    }
+                ]
+            }
+        }
+        bubbles.append(survey_bubble)
+
     carousel = {
         "type": "carousel",
         "contents": bubbles
@@ -1218,6 +1266,84 @@ def handle_message(event):
                 messages = messages
             )
         )
+
+def push_message_decision_summary_flex(group_id: str, meeting_id: str, meeting_name: str, attendee_names: list, voted_count: int, total_count: int, organizer_name: str):
+    if not group_id:
+        return
+        
+    base_params = [f"group_id={group_id}", f"meeting_id={meeting_id}"]
+    base_query_string = "?" + "&".join(base_params)
+    decision_url = f"https://liff.line.me/{LIFF_ID}/decision{base_query_string}"
+    
+    bubble = {
+        "type": "bubble",
+        "size": "kilo",
+        "header": {
+            "type": "box",
+            "layout": "vertical",
+            "backgroundColor": "#F58357", # Primary Color
+            "paddingAll": "lg",
+            "contents": [
+                {"type": "text", "text": "All Votes Collected!", "weight": "bold", "color": "#FFFFFF", "size": "sm"},
+                {"type": "text", "text": meeting_name, "weight": "bold", "size": "xl", "color": "#FFFFFF", "wrap": True, "margin": "md"}
+            ]
+        },
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {
+                    "type": "text",
+                    "text": f"@{organizer_name} all votes are in!",
+                    "weight": "bold",
+                    "size": "md",
+                    "color": "#2B303B",
+                    "wrap": True
+                },
+                {"type": "separator", "margin": "md"},
+                {
+                    "type": "box",
+                    "layout": "vertical",
+                    "margin": "md",
+                    "spacing": "xs",
+                    "contents": [
+                        {"type": "text", "text": "Voted Attendees", "weight": "bold", "size": "xs", "color": "#aaaaaa"},
+                        {"type": "text", "text": ", ".join(attendee_names), "size": "xs", "color": "#555555", "wrap": True, "margin": "xs"}
+                    ]
+                }
+            ]
+        },
+        "footer": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {
+                    "type": "button",
+                    "style": "primary",
+                    "color": "#F58357",
+                    "action": {
+                        "type": "uri",
+                        "label": "Review & Decide",
+                        "uri": decision_url
+                    }
+                }
+            ]
+        }
+    }
+    
+    try:
+        with ApiClient(configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
+            line_bot_api.push_message(
+                PushMessageRequest(
+                    to=group_id,
+                    messages=[FlexMessage(alt_text=f"All Votes Collected for {meeting_name}", contents=FlexContainer.from_dict(bubble))]
+                )
+            )
+            print(f"✅ Successfully pushed Decision Summary to {group_id}")
+    except Exception as e:
+        print(f"❌ Error pushing decision summary: {e}")
+
 
 @handler.add(JoinEvent)
 def handle_join(event):
