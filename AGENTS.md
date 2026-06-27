@@ -31,7 +31,7 @@ Monorepo: `backend/` (Python FastAPI) + `frontend/` (Next.js 15, React 19, Tailw
 - **API**: `app/services/api.ts` via axios. Empty base URL — Next.js rewrites proxy `/line/*`, `/users/*`, `/meetings/*`, `/attendee/*`, `/restaurant/*`, `/location/*` to `localhost:8081`
 - **Env**: `.env.local` — needs `NEXT_PUBLIC_LIFF_ID`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID`, `NEXT_PUBLIC_GOOGLE_AUTH_PROXY_URL`
 - **CSS**: Tailwind v4, light/dark theme via ThemeContext. Design tokens in `design.md`.
-- **Build quirks**: `eslint.ignoreDuringBuilds: true`, `typescript.ignoreBuildErrors: true` in `next.config.ts`
+- **Build quirks**: `eslint.ignoreDuringBuilds: true`, `typescript.ignoreBuildErrors: true` in `next.config.ts`. SWC parser rejects nested template literals in JSX className — use `str + '_' + str` instead of `` `${str}_${str}` `` inside outer backticks. SWC also fails on JSX between ternary branches — wrap with `<>...</>` fragments.
 - **LIFF nuance**: Cache-Control is `no-cache, must-revalidate` (not `no-store`) — `no-store` breaks LIFF webview on iOS/WKWebView redirect
 - **Survey**: set `NEXT_PUBLIC_ENABLE_BETA_SURVEY=true` to enable feedback survey
 

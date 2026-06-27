@@ -202,3 +202,54 @@ Update the addresses in your **LINE Developers Console** to point to your secure
 1. **Webhook URL:** `https://api.yourdomain.com/line/callback`
 2. **LIFF Endpoint URL:** `https://yourdomain.com/`
 
+---
+
+## ☁️ Step 7: Manual Setup on Clean EC2 Instance (Ubuntu 22.04 / 24.04)
+
+If you prefer to run the services directly on a clean EC2 instance instead of Docker, follow these steps to configure Python 3.12, Node.js, and Cloudflare Tunnels correctly.
+
+### 1. System & Compiler Packages
+Update packages and install basic utilities:
+```bash
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y curl git build-essential pkg-config libpq-dev
+```
+
+### 2. Node.js Installation (v20)
+Install Node.js 20 via NodeSource:
+```bash
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+```
+
+### 3. Python 3.12 & `uv` Package Manager Setup
+To prevent package build issues (such as `numpy` compilation errors on experimental Python versions), explicitly install and bind the environment to **Python 3.12**:
+```bash
+# 1. Install uv package manager
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source $HOME/.local/bin/env
+
+# 2. Sync python dependencies specifying Python 3.12
+cd backend
+uv sync --python 3.12
+```
+
+### 4. Cloudflare Tunnel (`cloudflared`) Installation
+Install `cloudflared` to expose the service to public HTTPS endpoints:
+```bash
+curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+sudo dpkg -i cloudflared.deb
+```
+Start the tunnel with:
+```bash
+./start-cloudflared.sh
+```
+*(Note: You can safely ignore any group range GID/ICMP warnings in the log; the tunnel will still forward HTTP traffic properly).*
+
+### 5. Ngrok Installation (Alternative Tunnel)
+If you prefer ngrok, install it cleanly via snap:
+```bash
+sudo snap install ngrok
+ngrok config add-authtoken <YOUR_TOKEN>
+```
+

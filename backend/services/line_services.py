@@ -1094,12 +1094,16 @@ def sync_group_members(api_client, group_id):
 
 
 def register_line_user(api_client, user_id, group_id):
+    group_id = group_id or ""
     try:
         # Check if already registered first to avoid unnecessary LINE API calls
         db = SessionLocal()
         try:
-            user = db.query(UserDetail).filter(UserDetail.user_id == user_id).first()
-            if user and user.group_id == group_id and user.display_name and user.pictureurl:
+            user = db.query(UserDetail).filter(
+                UserDetail.user_id == user_id,
+                UserDetail.group_id == group_id
+            ).first()
+            if user and user.display_name and user.pictureurl:
                 # Mock a profile class to return
                 class MockProfile:
                     def __init__(self, display_name, picture_url):
@@ -1130,7 +1134,10 @@ def register_line_user(api_client, user_id, group_id):
         # 2. Save to Database
         db = SessionLocal()
         try:
-            user = db.query(UserDetail).filter(UserDetail.user_id == user_id).first()
+            user = db.query(UserDetail).filter(
+                UserDetail.user_id == user_id,
+                UserDetail.group_id == group_id
+            ).first()
             if not user:
                 user = UserDetail(
                     user_id=user_id,
@@ -1143,8 +1150,6 @@ def register_line_user(api_client, user_id, group_id):
                 # Update existing
                 user.display_name = profile.display_name
                 user.pictureurl = profile.picture_url or ""
-                if group_id:
-                    user.group_id = group_id
             
             db.commit()
             return profile, "Success"

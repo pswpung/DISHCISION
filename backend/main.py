@@ -21,6 +21,39 @@ from sqlalchemy import text
 with engine.connect() as connection:
     connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
     connection.execute(text("ALTER TABLE meeting_details ADD COLUMN IF NOT EXISTS voting_state JSONB DEFAULT NULL;"))
+    
+    # Migrate user_details table primary key to composite (user_id, group_id) cleanly and robustly
+    try:
+        connection.execute(text("UPDATE user_details SET group_id = '' WHERE group_id IS NULL;"))
+    except Exception as e:
+        print(f"Migration step 1 (update nulls) skipped/failed: {e}")
+        
+    try:
+        connection.execute(text("ALTER TABLE user_details ALTER COLUMN group_id SET NOT NULL;"))
+    except Exception as e:
+        print(f"Migration step 2 (set not null) skipped/failed: {e}")
+        
+    try:
+        connection.execute(text("ALTER TABLE user_details DROP CONSTRAINT IF EXISTS user_details_pkey CASCADE;"))
+    except Exception as e:
+        print(f"Migration step 3 (drop old constraint) skipped/failed: {e}")
+        
+    try:
+        connection.execute(text("ALTER TABLE user_details DROP CONSTRAINT IF EXISTS user_details_pkey_composite CASCADE;"))
+    except Exception as e:
+        print(f"Migration step 4 (drop composite constraint) skipped/failed: {e}")
+        
+    try:
+        connection.execute(text("ALTER TABLE user_details ADD CONSTRAINT user_details_pkey_composite PRIMARY KEY (user_id, group_id);"))
+    except Exception as e:
+        print(f"Migration step 5 (add composite constraint) skipped/failed: {e}")
+        
+    try:
+        connection.execute(text("ALTER TABLE meeting_attendees DROP CONSTRAINT IF EXISTS fk_meeting_attendees_user_details CASCADE;"))
+        connection.execute(text("ALTER TABLE meeting_attendees ADD CONSTRAINT fk_meeting_attendees_user_details FOREIGN KEY (user_id, group_id) REFERENCES user_details (user_id, group_id) ON DELETE CASCADE;"))
+    except Exception as e:
+        print(f"Migration step 6 (add composite foreign key) skipped/failed: {e}")
+        
     connection.commit()
 
 

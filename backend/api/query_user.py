@@ -13,11 +13,20 @@ router = APIRouter(
 # CREATE: Add a new user
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def create_user(user: UserCreate, db: Session = Depends(get_db)):
-    db_user = db.query(UserDetail).filter(UserDetail.user_id == user.user_id).first()
+    group_id = user.group_id or ""
+    db_user = db.query(UserDetail).filter(
+        UserDetail.user_id == user.user_id,
+        UserDetail.group_id == group_id
+    ).first()
     if db_user:
-        raise HTTPException(status_code=400, detail="User already registered")
+        raise HTTPException(status_code=400, detail="User already registered in this group")
     
-    new_user = UserDetail(**user.model_dump())
+    new_user = UserDetail(
+        user_id=user.user_id,
+        display_name=user.display_name,
+        pictureurl=user.pictureurl,
+        group_id=group_id
+    )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
@@ -65,24 +74,25 @@ def read_users_by_group(group_id: str, db: Session = Depends(get_db)):
 # UPDATE: Update user profile
 @router.patch("/{user_id}", response_model=UserResponse)
 def update_user(user_id: str, user_update: UserUpdate, db: Session = Depends(get_db)):
-    db_user = db.query(UserDetail).filter(UserDetail.user_id == user_id).first()
-    if not db_user:
+    db_users = db.query(UserDetail).filter(UserDetail.user_id == user_id).all()
+    if not db_users:
         raise HTTPException(status_code=404, detail="User not found")
     
     user_data = user_update.model_dump(exclude_unset=True)
-    for key, value in user_data.items():
-        setattr(db_user, key, value)
+    for db_user in db_users:
+        for key, value in user_data.items():
+            if key != 'group_id':
+                setattr(db_user, key, value)
     
     db.commit()
-    db.refresh(db_user)
-    return db_user
+    return db_users[0]
 
 # DELETE: Remove user
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(user_id: str, db: Session = Depends(get_db)):
-    db_user = db.query(UserDetail).filter(UserDetail.user_id == user_id).first()
-    if not db_user:
+    db_users = db.query(UserDetail).filter(UserDetail.user_id == user_id).all()
+    if not db_users:
         raise HTTPException(status_code=404, detail="User not found")
-    db.delete(db_user)
+    db.query(UserDetail).filter(UserDetail.user_id == user_id).delete(synchronize_session=False)
     db.commit()
     return None
