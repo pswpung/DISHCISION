@@ -1888,7 +1888,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                 </div>
 
                                                 {/* Beta Feedback Survey Button */}
-                                                {!isSurveyMode && process.env.NEXT_PUBLIC_ENABLE_BETA_SURVEY === 'true' && (
+                                                {/* {!isSurveyMode && process.env.NEXT_PUBLIC_ENABLE_BETA_SURVEY === 'true' && (
                                                     <div className="pt-2">
                                                         <button
                                                             onClick={() => setIsSurveyOpen(true)}
@@ -1897,7 +1897,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                                                             📣 Give Beta Feedback & Survey
                                                         </button>
                                                     </div>
-                                                )}
+                                                )} */}
                                             </div>
                                         </div>
                                     </div>
