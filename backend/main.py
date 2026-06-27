@@ -14,14 +14,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from services.postgres_services import engine, Base
 import models
 
+Base.metadata.create_all(bind=engine)
+
 # Create database tables if they do not exist
 from sqlalchemy import text
 with engine.connect() as connection:
     connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
     connection.execute(text("ALTER TABLE meeting_details ADD COLUMN IF NOT EXISTS voting_state JSONB DEFAULT NULL;"))
     connection.commit()
-
-Base.metadata.create_all(bind=engine)
 
 
 app = FastAPI()
