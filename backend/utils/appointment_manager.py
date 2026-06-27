@@ -20,6 +20,7 @@ class Appointment_Manager(object):
         self.DINNER_CONFIG = {"start": time(hour=17), "end": time(hour=19)}
         
         self.key_person = key_person if len(key_person) > 0 else attendees
+        self.has_explicit_key_person = len(key_person) > 0
         self.attendees = attendees
         self.start_date = start_date
         self.end_date = end_date
@@ -380,9 +381,11 @@ class Appointment_Manager(object):
         print(f"DEBUG: Similarity availability found dates: {list(attendees_availiability.keys())}")
         
         filtered_availability = {}
+        single_attendee_availability = {}
         for date, avail_times in attendees_availiability.items():
             print(f"DEBUG: Processing date {date} with {len(avail_times)} slots")
             valid_times = []
+            single_times = []
             for avail_time in avail_times:
                 # 1. Compute Full Join vs Partial Join first
                 slot_start = avail_time["start"]
@@ -409,10 +412,8 @@ class Appointment_Manager(object):
                                 "overlap_text": self.format_overlap_time(overlap)
                             })
                 
-                # Filter out slots with only 1 person if the meeting has > 1 attendee total
                 total_slot_participants = len(full_join) + len(partial_join)
-                if len(self.attendees) > 1 and total_slot_participants <= 1:
-                    continue
+                is_single = len(self.attendees) > 1 and total_slot_participants <= 1
 
                 # Calculate adjusted key person and attendee ratios
                 full_kp_count = sum(1 for kp in self.key_person if kp in full_join)
@@ -472,12 +473,27 @@ class Appointment_Manager(object):
                     "time_quality": round(norm_quality, 1)
                 }
                 avail_time["final_score"] = round(final_score, 1)
-                valid_times.append(avail_time)
+                
+                if is_single:
+                    single_times.append(avail_time)
+                else:
+                    valid_times.append(avail_time)
             
             if valid_times:
                 filtered_availability[date] = valid_times
+            if single_times:
+                single_attendee_availability[date] = single_times
                 
-        return filtered_availability
+        # If we have valid slots with multiple attendees, return them
+        if filtered_availability:
+            return filtered_availability
+            
+        # Fallback: if no strict overlap was found, we have multiple attendees, and no explicit key person, fallback to single attendees:
+        allow_single_attendee = suggestion_config.get("allow_single_attendee", False) if suggestion_config else False
+        if (allow_single_attendee or not self.has_explicit_key_person) and len(self.attendees) > 1:
+            return single_attendee_availability
+                
+        return {}
 
     def __extract_preference(self, attendee_preferences_df: pd.DataFrame):
         # Extract preferred_restaurants IDs if available
