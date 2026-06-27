@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useLiff } from '@/app/context/LiffContext';
 import { apiService } from '@/app/services/api';
 import { SpinWheel } from '@/app/components/spin-wheel/spin-wheel';
+import SurveyModeBanner from '@/app/components/survey-mode-banner/survey-mode-banner';
 
 const DecisionPage = () => {
     const { profile } = useLiff();
@@ -22,6 +23,11 @@ const DecisionPage = () => {
         setParamsReady(true);
     }, []);
 
+    const [isSurveyMode, setIsSurveyMode] = useState(false);
+    useEffect(() => {
+        setIsSurveyMode(new URLSearchParams(window.location.search).get('survey_mode') === 'true');
+    }, []);
+
     const currentUserId = profile?.userId || paramUserId;
 
     const [meetingData, setMeetingData] = useState<any>(null);
@@ -33,7 +39,7 @@ const DecisionPage = () => {
     const [confirmedRestaurant, setConfirmedRestaurant] = useState('');
     const [wheelFilter, setWheelFilter] = useState<'voted' | 'all'>('voted');
 
-    const isOrganizer = meetingData?.initial_data?.organizer_id === currentUserId;
+    const isOrganizer = isSurveyMode ? true : (meetingData?.initial_data?.organizer_id === currentUserId);
     const isFixed = meetingData?.initial_data?.timing_mode === 'fixed';
     const status = meetingData?.initial_data?.status;
     const votingState: any = meetingData?.voting_state || {};
@@ -119,9 +125,22 @@ const DecisionPage = () => {
         });
     }, [suggestionData, votingState]);
 
-    const finalDecision = meetingData?.voting_state?.final_decision;
+    const finalDecision = isSurveyMode ? null : meetingData?.voting_state?.final_decision;
 
     const handleSetDecisionMethod = async (targetType: 'time' | 'restaurant', method: string) => {
+        if (isSurveyMode) {
+            setMeetingData((prev: any) => {
+                const copy = { ...prev };
+                if (!copy.voting_state) copy.voting_state = {};
+                if (targetType === 'time') {
+                    copy.voting_state.time_decision_method = method;
+                } else {
+                    copy.voting_state.restaurant_decision_method = method;
+                }
+                return copy;
+            });
+            return;
+        }
         try {
             const updated = await apiService.setDecisionMethod(meetingId!, targetType, method);
             setMeetingData(updated);
@@ -135,6 +154,15 @@ const DecisionPage = () => {
         const updatedList = currentList.includes(key)
             ? currentList.filter((k: string) => k !== key)
             : [...currentList, key];
+        if (isSurveyMode) {
+            setMeetingData((prev: any) => {
+                const copy = { ...prev };
+                if (!copy.voting_state) copy.voting_state = {};
+                copy.voting_state.selected_time_slots = updatedList;
+                return copy;
+            });
+            return;
+        }
         const updated = await apiService.selectWheelTimeSlots(meetingId!, updatedList);
         setMeetingData(updated);
     };
@@ -144,6 +172,15 @@ const DecisionPage = () => {
         const updatedList = currentList.includes(name)
             ? currentList.filter((n: string) => n !== name)
             : [...currentList, name];
+        if (isSurveyMode) {
+            setMeetingData((prev: any) => {
+                const copy = { ...prev };
+                if (!copy.voting_state) copy.voting_state = {};
+                copy.voting_state.selected_restaurants = updatedList;
+                return copy;
+            });
+            return;
+        }
         const updated = await apiService.selectWheelRestaurants(meetingId!, updatedList);
         setMeetingData(updated);
     };
@@ -156,7 +193,7 @@ const DecisionPage = () => {
             let slotsToUse = selectedKeys.length > 0
                 ? sortedSlots.filter((slot: any) => selectedKeys.includes(`${slot.date}_${slot.time}`))
                 : sortedSlots;
-            
+
             if (wheelFilter === 'voted') {
                 const votedSlots = slotsToUse.filter((s: any) => {
                     const key = `${s.date}_${s.time}`;
@@ -203,6 +240,22 @@ const DecisionPage = () => {
         let stopAngle = (270 - targetDeg) + 360 * 5;
         if (stopAngle < 360 * 5) stopAngle += 360;
 
+        if (isSurveyMode) {
+            setMeetingData((prev: any) => {
+                const copy = { ...prev };
+                if (!copy.voting_state) copy.voting_state = {};
+                copy.voting_state.wheel_state = {
+                    status: "spinning",
+                    target_type: targetType,
+                    spin_at: Date.now(),
+                    landed_key: winner.key,
+                    stop_angle: stopAngle,
+                    selected_keys: candidates.map(c => c.key)
+                };
+                return copy;
+            });
+            return;
+        }
         try {
             const updated = await apiService.saveSpinResult(meetingId, targetType, winner.key, stopAngle, candidates.map(c => c.key));
             setMeetingData(updated);
@@ -219,6 +272,10 @@ const DecisionPage = () => {
         const restaurant = confirmedRestaurant;
         if (!timeVal && !isFixed) { alert('Please select a time slot.'); return; }
         if (!restaurant) { alert('Please select a restaurant.'); return; }
+        if (isSurveyMode) {
+            alert("🔍 Preview Mode — cannot submit in survey mode. Close this and continue the questionnaire.");
+            return;
+        }
         setConfirming(true);
         try {
             const updated = await apiService.confirmFinalMeetingPlan(meetingId, timeVal, restaurant);
@@ -292,16 +349,16 @@ const DecisionPage = () => {
                                         })
                                         .slice(0, 8).map((slot: any) => {
                                             const key = `${slot.date}_${slot.time}`;
-                                        const isChecked = votingState.selected_time_slots?.includes(key) || false;
-                                        const votes = votingState.time_votes?.[key]?.length || 0;
-                                        return (
-                                            <label key={key} className="flex items-center gap-2 text-[11px] font-semibold text-foreground/80 cursor-pointer">
-                                                <input type="checkbox" checked={isChecked} onChange={() => handleToggleTimeSlotForWheel(key)} className="rounded accent-primary" />
-                                                <span className="truncate flex-1">{slot.date.slice(5)} • {slot.time}</span>
-                                                <span className="text-[10px] text-primary font-black shrink-0">👍 {votes}</span>
-                                            </label>
-                                        );
-                                    })}
+                                            const isChecked = votingState.selected_time_slots?.includes(key) || false;
+                                            const votes = votingState.time_votes?.[key]?.length || 0;
+                                            return (
+                                                <label key={key} className="flex items-center gap-2 text-[11px] font-semibold text-foreground/80 cursor-pointer">
+                                                    <input type="checkbox" checked={isChecked} onChange={() => handleToggleTimeSlotForWheel(key)} className="rounded accent-primary" />
+                                                    <span className="truncate flex-1">{slot.date.slice(5)} • {slot.time}</span>
+                                                    <span className="text-[10px] text-primary font-black shrink-0">👍 {votes}</span>
+                                                </label>
+                                            );
+                                        })}
                                 </div>
                             </div>
                         )}
@@ -335,6 +392,16 @@ const DecisionPage = () => {
                                 if (votingState.wheel_state?.landed_key) {
                                     setConfirmedTimeSlot(votingState.wheel_state.landed_key);
                                     if (isOrganizer) {
+                                        if (isSurveyMode) {
+                                            setMeetingData((prev: any) => {
+                                                const copy = { ...prev };
+                                                if (copy.voting_state?.wheel_state) {
+                                                    copy.voting_state.wheel_state.status = "idle";
+                                                }
+                                                return copy;
+                                            });
+                                            return;
+                                        }
                                         try {
                                             const updated = await apiService.resetWheel(meetingId!);
                                             setMeetingData(updated);
@@ -452,6 +519,16 @@ const DecisionPage = () => {
                                 if (votingState.wheel_state?.landed_key) {
                                     setConfirmedRestaurant(votingState.wheel_state.landed_key);
                                     if (isOrganizer) {
+                                        if (isSurveyMode) {
+                                            setMeetingData((prev: any) => {
+                                                const copy = { ...prev };
+                                                if (copy.voting_state?.wheel_state) {
+                                                    copy.voting_state.wheel_state.status = "idle";
+                                                }
+                                                return copy;
+                                            });
+                                            return;
+                                        }
                                         try {
                                             const updated = await apiService.resetWheel(meetingId!);
                                             setMeetingData(updated);
@@ -518,6 +595,7 @@ const DecisionPage = () => {
 
     return (
         <div className="min-h-screen bg-background p-4 pb-20">
+            {isSurveyMode && <SurveyModeBanner />}
             <header className="mb-6 pt-4 text-center">
                 <h1 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 tracking-tight">
                     Decision Panel
@@ -611,9 +689,9 @@ const DecisionPage = () => {
                                 <p className="font-bold truncate mt-0.5">{confirmedRestaurant || 'Not selected'}</p>
                             </div>
                         </div>
-                        <button onClick={handleConfirm} disabled={confirming || (!confirmedTimeSlot && !isFixed) || !confirmedRestaurant}
+                        <button onClick={handleConfirm} disabled={isSurveyMode || confirming || (!confirmedTimeSlot && !isFixed) || !confirmedRestaurant}
                             className="w-full py-4 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-xs font-black uppercase tracking-wider rounded-2xl shadow-lg hover:shadow-emerald-500/25 active:scale-95 transition-all disabled:opacity-40 disabled:pointer-events-none">
-                            {confirming ? 'Confirming...' : 'Confirm & Notify Group'}
+                            {isSurveyMode ? 'Confirm & Notify Groups' : (confirming ? 'Confirming...' : 'Confirm & Notify Group')}
                         </button>
                     </div>
                 )}
@@ -635,10 +713,25 @@ const DecisionPage = () => {
                             View Full Results
                         </button>
                     )}
-                    <button onClick={() => { if (window.history.length > 1) router.back(); else router.push('/'); }}
-                        className="text-xs text-muted-foreground hover:text-foreground transition-colors text-center py-2">
-                        Back
-                    </button>
+                    {isSurveyMode ? (
+                        <button onClick={() => {
+                            const params = new URLSearchParams(window.location.search);
+                            const returnTo = params.get('return_to_survey');
+                            if (returnTo) {
+                                router.push(`/${returnTo}/feedback`);
+                            } else {
+                                router.push('/');
+                            }
+                        }}
+                            className="w-full py-3.5 rounded-xl bg-primary/10 border border-primary/20 text-xs font-black text-primary hover:bg-primary/20 transition-all text-center">
+                            ← กลับสู่แบบสอบถาม (Back to Survey)
+                        </button>
+                    ) : (
+                        <button onClick={() => { if (window.history.length > 1) router.back(); else router.push('/'); }}
+                            className="text-xs text-muted-foreground hover:text-foreground transition-colors text-center py-2">
+                            Back
+                        </button>
+                    )}
                 </div>
             </div>
         </div>

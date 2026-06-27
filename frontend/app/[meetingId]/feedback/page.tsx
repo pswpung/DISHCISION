@@ -348,7 +348,11 @@ export default function FeedbackPage() {
             setIsSubmitted(true);
         } catch (err: any) {
             console.error("Failed to submit feedback:", err);
-            setError("Failed to submit feedback. Please try again.");
+            if (err.response?.status === 409) {
+                setError("คุณเคยทำแบบประเมินสำหรับกิจกรรมนี้แล้ว (Feedback already submitted for this meeting)");
+            } else {
+                setError("Failed to submit feedback. Please try again.");
+            }
         } finally {
             setIsSubmitting(false);
         }
