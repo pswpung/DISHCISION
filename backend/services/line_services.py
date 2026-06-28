@@ -1210,8 +1210,8 @@ def handle_message(event):
                 else:
                     messages = [TextMessage(text=msg)]
 
-    else:
-        # Help / Unknown Command Flex Message
+    elif "#help" in user_text_lower:
+        # Help Command Flex Message
         help_flex = {
             "type": "bubble",
             "body": {
@@ -1261,6 +1261,10 @@ def handle_message(event):
                 contents=FlexContainer.from_dict(help_flex)
             )
         ]
+
+    else:
+        # Unknown command — silently ignore
+        return
 
     # Reply Messages
     with ApiClient(configuration) as api_client:
