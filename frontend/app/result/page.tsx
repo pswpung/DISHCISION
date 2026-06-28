@@ -961,7 +961,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
 
             setAllAttendees(enrichedAttendees);
 
-            const missing = enrichedAttendees.filter((a: any) => !a.preference || Object.keys(a.preference).length === 0);
+            const missing = enrichedAttendees.filter((a: any) => a.is_joined === null);
             setMissingVoters(missing);
 
             if (missing.length === 0) {
@@ -997,7 +997,7 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
                 // If suggestionsMap is null, check if we need to load full suggestions
                 if (!suggestionsMap) {
                     const attendees = await apiService.getMeetingAttendees(meetingId);
-                    const missing = attendees.filter((a: any) => !a.preference || Object.keys(a.preference).length === 0);
+                    const missing = attendees.filter((a: any) => a.is_joined === null);
                     if (missing.length === 0) {
                         loadResultData();
                     }
