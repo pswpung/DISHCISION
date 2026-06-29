@@ -14,7 +14,7 @@ class MeetingAttendee(Base):
     avaliable_at = Column(JSON, nullable=True)
     preference = Column(JSON, nullable=True)
     is_key_person = Column(Boolean, default=False)
-    is_joined = Column(Boolean, default=False)
+    is_joined = Column(Boolean, nullable=True, default=None)
 
     __table_args__ = (
         ForeignKeyConstraint(

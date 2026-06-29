@@ -10,7 +10,7 @@ class AttendeeBase(BaseModel):
     is_key_person : Optional[bool] = False
     avaliable_at: Optional[list[dict[str, Any]]] = None
     preference: Optional[dict[str, Any]] = None
-    is_joined: Optional[bool] = False
+    is_joined: Optional[bool] = None
 
 class AttendeeCreate(AttendeeBase):
     """Schema for adding a new user to a meeting."""

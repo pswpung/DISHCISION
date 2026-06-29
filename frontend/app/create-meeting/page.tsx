@@ -173,7 +173,6 @@ const CreateMeetingPage = () => {
           user_id: attendee.userId,
           group_id: data.groupId,
           is_key_person: data.keyPersons.some((k: any) => k.userId === attendee.userId),
-          is_joined: false
         });
       }
 

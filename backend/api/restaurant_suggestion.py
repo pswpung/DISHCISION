@@ -116,7 +116,7 @@ def generate_and_send_suggestion(meeting_id: UUID, db: Session, notify_type: str
     if not meeting_detail:
         raise HTTPException(status_code=404, detail="Meeting not found")
 
-    attendee_details = db.query(MeetingAttendee).filter(MeetingAttendee.meeting_id == meeting_id).all()
+    attendee_details = db.query(MeetingAttendee).filter(MeetingAttendee.meeting_id == meeting_id, MeetingAttendee.is_joined == True).all()
     if not attendee_details:
         raise HTTPException(status_code=404, detail="Attendees not found")
 
