@@ -78,7 +78,7 @@ def update_attendee_group(
     db.refresh(db_attendee)
 
     # Check if all attendees have voted
-    all_attendees = db.query(MeetingAttendee).filter(MeetingAttendee.meeting_id == meeting_id).all()
+    all_attendees = db.query(MeetingAttendee).filter(MeetingAttendee.meeting_id == meeting_id, MeetingAttendee.is_joined == True).all()
     print(f"All Attendees : {all_attendees}")
     all_voted = True
     for attendee in all_attendees:
