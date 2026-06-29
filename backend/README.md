@@ -56,12 +56,22 @@ backend/
 - `numpy<2` pinned in `pyproject.toml`.
 - Static file paths are relative to CWD (run from `backend/`).
 - Timezone is hardcoded to `Asia/Bangkok`.
+- **Flex Message Design**: All LINE Flex messages follow the spec in [`flex-design.md`](flex-design.md) (color palette, header/body/button patterns).
 
 ---
 
 ## 1. REST API Endpoints Reference
 
 The backend is modularized into FastAPI routers. The following is a detailed catalog of exposed endpoints.
+
+### 💬 LINE Bot Commands
+
+| Command | Action |
+|---------|--------|
+| `#create-meeting` / `#สร้างนัด` | Sends a "Create Meeting" LIFF button flex |
+| `#register` | Registers the sender's LINE profile to the database |
+| `#help` | Displays the bot command list flex |
+| (unknown) | Silently ignored — no reply sent |
 
 ### 🤖 LINE Bot Webhook Router (`/line`)
 *   `POST /line/callback`
@@ -131,6 +141,10 @@ The backend is modularized into FastAPI routers. The following is a detailed cat
     - **Description**: Toggles whether restaurants containing any vetoes (Tail Out) should be excluded from the results list for this meeting.
 *   `POST /meetings/{meeting_id}/confirm-final`
     - **Description**: Locks confirmed time slot and venue selections, marks meeting status as `"closed"`, and pushes the final ticket Flex Message to the LINE group.
+*   `POST /meetings/{meeting_id}/submit-votes`
+    - **Description**: Batch saves a user's voted time slots (`voted_slots`) and restaurants (`voted_restaurants`). Adds user to `votes_submitted` list. When all joined attendees have submitted, sends `push_message_decision_summary_flex` to the LINE group.
+*   `POST /meetings/{meeting_id}/select-wheel-time-slots`
+    - **Description**: Saves which time slots the organizer selected for the spin wheel.
 *   `POST /meetings/{meeting_id}/feedback`
     - **Description**: Submits beta user feedback answers and saves them as a structured JSON object in the database's `feedbacks` table.
 
@@ -141,7 +155,7 @@ The backend is modularized into FastAPI routers. The following is a detailed cat
 *   `GET /attendee/{meeting_id}`
     - **Description**: Lists all attendees for a meeting.
 *   `PATCH /attendee/{meeting_id}/{user_id}`
-    - **Description**: Submits or updates an attendee's availability schedule and MCDM preferences. On submission, the backend checks if all invitees have completed inputs; if yes, it executes the suggestion engine in the background and sends a LINE notification.
+    - **Description**: Submits or updates an attendee's availability schedule and MCDM preferences (`is_joined`, `avaliable_at`, `preference`). When all invited attendees have submitted (`preference is not None`), auto-triggers the suggestion engine as a background task. If zero attendees joined (`is_joined == True`), sends `push_message_all_declined_flex` instead — no scoring occurs. Scoring and flex messages exclude declined (`is_joined = False`) attendees.
 *   `DELETE /attendee/{meeting_id}/{user_id}`
     - **Description**: Unregisters attendee from a meeting.
 
@@ -354,7 +368,53 @@ Scoring a candidate **Japanese** restaurant:
 - **Weighted Score**: $S_{\text{final}} = (0.0 \times 0.7) + (100.0 \times 0.3) = 30.0$.
 
 Result: The **Italian** restaurant wins because the Key Person's preference dominates through the group weights.
-## Sequence Diagram
+
+## High-Level Flow Diagram
+---
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Att as Attendee (via PATCH)
+    participant API as API Handler
+    participant DB as PostgreSQL
+    participant LINE as LINE Messaging API
+
+    Att->>API: PATCH /attendee/{meetingId}/{userId}
+    API->>DB: Save is_joined, preference, avaliable_at
+
+    API->>DB: Query ALL attendees for preference is None
+    alt Not all voted (someone has preference = None)
+        API-->>Att: Return ok, no further action
+    else All have preference (not None)
+        API->>DB: Count is_joined == True
+        alt Zero joined (all declined)
+            API->>LINE: push_message_all_declined_flex
+        else Some joined
+            API-->>API: background_generate_suggestion
+            Note over API,LINE: [runs with is_joined == True filter — declined excluded]
+            API->>LINE: push_message_result_flex ("Suggestions Ready, Let's Vote.")
+        end
+    end
+
+    rect rgb(240, 240, 240)
+    Note over API,LINE: Step 3 — Vote on Result Page
+    Att->>API: POST /meetings/{id}/submit-votes
+    API->>DB: Save voted_slots, voted_restaurants
+    API->>DB: Check all joined attendees submitted
+    alt All submitted
+        API->>LINE: push_message_decision_summary_flex
+    end
+    end
+
+    rect rgb(230, 240, 250)
+    Note over API,LINE: Step 4 — Organizer Confirms
+    Att->>API: POST /meetings/{id}/confirm-final
+    API->>DB: Save final_decision, set status=closed
+    API->>LINE: push_message_result_flex ("📍 Finalized Meeting")
+    end
+```
+
+## Technical Sequence Diagram — Suggestion Algorithm
 ---
 ```mermaid
 sequenceDiagram

@@ -40,6 +40,12 @@ Monorepo: `backend/` (Python FastAPI) + `frontend/` (Next.js 15, React 19, Tailw
 - **Webhook**: POST `/line/callback` — validates `X-Line-Signature` header
 - **Frontend SDK**: `@line/liff`; Backend: LINE Messaging API
 - **LIFF login**: `LiffContext.tsx` handles init, suppresses SDK load failure rejections
+- **Flex message design**: `backend/flex-design.md` — color palette, header/body/button patterns. All new Flex messages must follow this.
+- **Flex Messages**: Three types:
+  - `push_message_creation_flex` — sent when a meeting is created, with "Add Preferences" button
+  - `push_message_result_flex` — sent when ALL attendees submit availability; header auto-adapts: "Suggestions Ready" / "Time Finalized" / "Restaurant Fixed" / "Finalized Meeting". Button: "See Suggestions & Vote" → `/result`
+  - `push_message_decision_summary_flex` — sent when ALL joined attendees submit votes on `/result`. "All Votes Collected! @organizer_name all votes are in!" Button: "Review & Decide" → `/decision`
+  - `push_message_all_declined_flex` — sent when every attendee declined. No action buttons.
 
 ## Page & API Structure
 

@@ -7,6 +7,8 @@ All notable changes to this project will be documented in this file.
 ### Added
 - **Decision Panel Page**: New `/decision` route with organizer mode (confirm & notify) and observer mode (read-only waiting state). Organizer can pick or spin wheel for both time slot and restaurant. Includes the `SpinWheel` canvas component extracted to shared `components/spin-wheel/`.
 - **Auto-Trigger on All Votes**: When the last attendee submits their preference, `PATCH /attendee/{meetingId}/{userId}` now auto-triggers suggestion generation in the background.
+- **All-Declined Edge Case**: When every attendee declines a meeting, `push_message_all_declined_flex` is sent instead of crashing with HTTP 404. No action buttons — meeting cannot proceed.
+- **Flex Message Design System**: Created `backend/flex-design.md` documenting color palette, header/body/button patterns for consistent LINE Flex messages.
 - **Summary Flex Message**: New `push_message_decision_summary_flex` sent to LINE group when all votes are collected — shows X/Y voted, attendee names, time range, and "Review & Decide" button linking to `/decision`.
 - **InfoTooltip Component**: Reusable CSS-only tooltip component for adding (i) help icons to form labels. Used on "Key Decision Makers" and "Timing Mode" fields in create-meeting form.
 - **Survey mode preferences toggle**: Preferences step hidden from normal create-meeting flow, only shown when `survey_mode=true`.
@@ -20,6 +22,11 @@ All notable changes to this project will be documented in this file.
 - **E2E Testing Setup**: Added Playwright, `e2e/feedback.spec.ts`, and `npm run test:e2e` command.
 
 ### Changed
+- **`is_joined` Default**: Changed `MeetingAttendee.is_joined` from `default=False` to `default=None` so new attendees start as "never responded" rather than "declined". Updated schema and removed `is_joined: false` from attendee creation call.
+- **Suggestion Filtering**: `restaurant_suggestion.py` now filters to `is_joined == True` so declined users are excluded from time slot and restaurant scoring.
+- **All-Voted Check Logic**: Restored `all_voted` check to use `preference is None` (removed incorrect `is_joined == True` filter) — prevents premature suggestion triggering when non-responded users exist.
+- **Missing Voters Display**: Restored `missingVoters` to `a.preference === null` — non-responded users show as pending, declined users don't.
+- **#help Command**: Unknown commands now silently ignored. Only `#help` triggers the command list flex.
 - **Glassmorphism Design System**: Standardized the premium "glass-panel" aesthetic across all forms, inputs, and interactive components.
 - **Theme-Aware Accessibility**: Overhauled dropdown and selection chip styling using theme-aware CSS variables to ensure high contrast and legibility in both light and dark modes (addressing the "white-on-white" issue).
 - **UX Flow Optimization**: If both system and user-suggested restaurants are disabled, the voting flow now skips Step 3 and presents a "Ready to Go!" completion state.

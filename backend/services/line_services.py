@@ -286,6 +286,48 @@ def push_message_creation_flex(group_id: str, meeting_id: str, meeting_name: str
         else:
             print(f"Error pushing creation message: {e}")
 
+def push_message_all_declined_flex(group_id: str, meeting_name: str):
+    if not group_id:
+        return
+
+    bubble = {
+        "type": "bubble",
+        "header": {
+            "type": "box",
+            "layout": "vertical",
+            "backgroundColor": "#F58357", # Primary Color
+            "paddingAll": "lg",
+            "contents": [
+                {"type": "text", "text": "😔 Meeting Declined", "weight": "bold", "color": "#FFFFFF", "size": "sm"},
+                {"type": "text", "text": meeting_name, "weight": "bold", "size": "xl", "color": "#FFFFFF", "wrap": True, "margin": "md"}
+            ]
+        },
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "spacing": "md",
+            "contents": [
+                {"type": "text", "text": "Everyone declined this meeting.", "size": "sm", "color": "#555555", "wrap": True},
+                {"type": "text", "text": "The organizer can create a new meeting to try again.", "size": "xs", "color": "#aaaaaa", "wrap": True}
+            ]
+        }
+    }
+
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        try:
+            line_bot_api.push_message(
+                PushMessageRequest(
+                    to=group_id,
+                    messages=[FlexMessage(
+                        alt_text=f"{meeting_name} — everyone declined",
+                        contents=FlexContainer.from_dict(bubble)
+                    )]
+                )
+            )
+        except Exception as e:
+            print(f"Error pushing all-declined message: {e}")
+
 def push_message_result_flex(group_id, meeting_id, meeting_name, top_slots, preferred_restaurants=None, all_scored_restaurants=None, meal_time="", start_date="", end_date="", fixed_restaurant=None, total_attendees=0):
     """
     Push a Flex Message with the voting results/suggestions to a LINE group.

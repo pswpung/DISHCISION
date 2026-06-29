@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List
 from uuid import UUID
-from models import MeetingAttendee
+from models import MeetingAttendee, MeetingDetail
 from schemas import AttendeeBase, AttendeeCreate, AttendeeUpdate, AttendeeResponse
 from services.postgres_services import get_db, SessionLocal
 from sqlalchemy.orm.attributes import flag_modified
@@ -88,8 +88,23 @@ def update_attendee_group(
             break
     
     if all_voted:
-        print(f"All attendees voted for meeting {meeting_id}. Triggering suggestion...")
-        background_tasks.add_task(background_generate_suggestion, meeting_id)
+        joined_count = db.query(MeetingAttendee).filter(
+            MeetingAttendee.meeting_id == meeting_id,
+            MeetingAttendee.is_joined == True
+        ).count()
+
+        if joined_count == 0:
+            print(f"All attendees declined meeting {meeting_id}.")
+            from services.line_services import push_message_all_declined_flex
+            meeting = db.query(MeetingDetail).filter(MeetingDetail.meeting_id == meeting_id).first()
+            if meeting and meeting.group_id:
+                push_message_all_declined_flex(
+                    group_id=meeting.group_id,
+                    meeting_name=meeting.meeting_name
+                )
+        else:
+            print(f"All attendees voted for meeting {meeting_id}. Triggering suggestion...")
+            background_tasks.add_task(background_generate_suggestion, meeting_id)
     else:
         print(f"Not all attendees voted for meeting {meeting_id}. Waiting for more votes...")
 
