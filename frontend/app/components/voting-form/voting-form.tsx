@@ -279,9 +279,14 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit, userId, allAt
         }
     }, [meetingData?.fixLocation]);
 
-    // Auto-fetch Current Location
+    // Auto-fetch/Request location permission on mount or when resetting to 'Current Location'
+    const hasFetchedOnMount = useRef(false);
     useEffect(() => {
-        if (departureLocation === 'Current Location' && !locationCoords) {
+        const isCurrentLocation = departureLocation === 'Current Location';
+        const shouldFetch = !locationCoords && (isCurrentLocation || (!hasFetchedOnMount.current && !meetingData?.fixLocation));
+
+        if (shouldFetch) {
+            hasFetchedOnMount.current = true;
             setIsLocating(true);
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
@@ -293,15 +298,15 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit, userId, allAt
                         setIsLocating(false);
                     },
                     (err) => {
-                        console.warn("Geolocation failed, using fallback (Bangkok Center):", err);
-                        // Fallback to Bangkok Center
+                        console.warn("Location fetch failed, using default (Bangkok Center):", err);
+                        // Fallback to Bangkok Center if fetch fails
                         setLocationCoords({ lat: 13.7563, lng: 100.5018 });
                         setIsLocating(false);
                     },
                     {
-                        enableHighAccuracy: false,
-                        timeout: 10000,
-                        maximumAge: 60000
+                        enableHighAccuracy: false, // Better for LINE/Android
+                        timeout: 15000,
+                        maximumAge: 60000 // Use cached location if available
                     }
                 );
             } else {
@@ -591,7 +596,7 @@ const VotingForm = ({ meetingData, restaurantConfig, onVoteSubmit, userId, allAt
             return;
         }
 
-        if (!locationCoords) {
+        if (isFactorActive('Distance from BTS') && !meetingData?.fixLocation && !locationCoords) {
             alert("Could not determine coordinates for the location. Please select a valid location from the search or map.");
             return;
         }
