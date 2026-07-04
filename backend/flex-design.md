@@ -133,8 +133,7 @@ All Flex messages pushed to LINE must follow this design spec for visual consist
 |----------|------|------|---------|
 | `push_message_creation_flex` | `line_services.py` | 143 | Meeting created → "Add Preferences" |
 | `push_message_all_declined_flex` | `line_services.py` | 289 | All declined → no action |
-| `push_message_result_flex` | `line_services.py` | 331 | Suggestions ready → "See Suggestions & Vote" |
-| `push_message_fixed_result_flex` | `line_services.py` | 901 | Organizer confirmed → finalized |
+| `push_message_result_flex` | `line_services.py` | 331 | Suggestions ready / finalized → "See Suggestions & Vote" |
 | `push_message_decision_summary_flex` | `line_services.py` | 1321 | All votes collected → "Review & Decide" |
 
 ---

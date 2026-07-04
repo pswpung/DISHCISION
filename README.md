@@ -72,20 +72,25 @@ sequenceDiagram
         LINE-->>Organizer: Broadcast recommendation results list to LINE Group Chat
     end
 
-    Note over Attendees, Server: Phase 4: Interactive Group Voting & Vetoing
-    Attendees->>LIFF: Taps recommendation card to vote & veto
-    LIFF->>Server: HTTP POST /vote-time OR /tail-in (Upvote) OR /tail-out (Veto)
+    Note over Attendees, Server: Phase 4: Interactive Group Voting
+    Attendees->>LIFF: Taps recommendation card to vote
+    LIFF->>Server: HTTP POST /submit-votes (batch save slots + restaurants)
     Server->>DB: Write vote transaction
     DB-->>Server: Return updated voting state
-    Server-->>LIFF: Push updated state (Real-time UI metrics & veto audit visual sync)
+    Server-->>LIFF: Push updated state
+    
+    opt All Joined Attendees Submit Votes
+        Server->>LINE: Send "All Votes Collected!" Flex Message
+        LINE-->>Organizer: Broadcast with "Review & Decide" button to LINE Group Chat
+    end
 
     Note over Organizer, Attendees: Phase 5: Finalization & Tie-breaking
     opt Decision Paralysis / Tied Votes
-        Organizer->>LIFF: Selects tied options & triggers Spin Wheel game
+        Organizer->>LIFF: Opens Decision Panel (/decision), selects candidates & triggers Spin Wheel
         LIFF->>Server: HTTP POST /meetings/{id}/spin-wheel
         Server-->>LIFF: Broadcast spinning state, angle, and landed result to all active sessions
     end
-    Organizer->>LIFF: Confirms final time slot and dining venue
+    Organizer->>LIFF: Confirms final time slot and dining venue on Decision Panel
     LIFF->>Server: HTTP POST /meetings/{id}/confirm-final
     Server->>DB: Update meeting status to "closed" & lock choices
     Server->>LINE: Send Booking Ticket Flex Message Card
@@ -104,11 +109,11 @@ Once all invitees submit their schedules and preferences, the server executes th
 - It evaluates the local restaurant database against the group's MCDM requirements, ranking options based on ROC calculations.
 - It pushes a **Group Suggestion Flex Message** to the LINE chat detailing the top recommendations.
 
-### 4. Interactive Voting & Vetoing
-Group members vote on the recommended slots and restaurants (using "Tail In" for upvotes and "Tail Out" for vetoes). If any member vetoes a venue, the UI highlights exactly who vetoed it to prevent silent consensus blocking. The Organizer can choose to filter out vetoed options entirely.
+### 4. Interactive Voting
+Group members vote on the recommended slots and restaurants on the `/result` page. They toggle **Prefer this time** on slots, and **Prefer** (❤️) or **Veto** (🚫) on restaurants, then tap **Submit My Votes** to batch save. After all joined attendees submit, the bot sends an **"All Votes Collected!"** flex message with a **Review & Decide** button linking to `/decision`.
 
 ### 5. Resolution & Final Decision
-If there is a tie, the Organizer can load the candidates into an interactive **Spin Wheel** game. When spun, the wheel animates on all active screens in real-time. Once the final time and venue are confirmed, DISHCISION locks the meeting and broadcasts the booking ticket to the LINE group.
+The Organizer opens the Decision Panel (`/decision`), selects the final time slot and restaurant (either by tapping the list or using the **Spin Wheel** for tie-breakers). When confirmed, the wheel animates on all active screens in real-time. Once the final time and venue are confirmed, the organizer taps **Confirm & Notify Group** — DISHCISION locks the meeting and broadcasts the **"📍 Finalized Meeting"** ticket to the LINE group.
 
 ---
 

@@ -33,17 +33,18 @@ graph TD
    - The system computes optimal scheduling windows and ranks venues, pushing a Flex Carousel card directly to the LINE group chat showing top matching slots and restaurants.
 4. **Step 4: Vote & Finalize (Decision Phase)**
    - Attendees click **"See Suggestions & Vote"**, opening `/result`.
-   - They land on the **Decision** tab, which guides them through the voting process:
-     - **Slots Tab**: Vote on preferred time slots.
-     - **Restaurants Tab**: Upvote ("Tail In") preferred venues, or veto ("Tail Out") undesired ones.
-     - **Decision Tab**: Real-time summary showing vote counts, user ready checks, and a live spin-wheel utility for tie-breakers.
-   - Once consensus is reached (or the organizer makes a choice), the organizer clicks **"Lock Decision"**. The meeting closes and a final event ticket with confirmed details is pushed to the group chat.
+   - **Slots Tab**: Tap **Prefer this time** on each slot you like.
+   - **Restaurants Tab**: Upvote (❤️) preferred venues, or veto (🚫) undesired ones.
+   - **Submit My Votes**: Tap to batch save all selections. After submitting, see "Waiting for others..."
+   - When all attendees have submitted, the bot sends **"All Votes Collected! @organizer"** with a **Review & Decide** button linking to `/decision`.
+   - **Decision Panel** (`/decision`): Organizer picks time + restaurant (tap list or spin wheel) → **Confirm & Notify Group**. Others see read-only state with live wheel animation.
+   - The meeting closes and a **"📍 Finalized Meeting"** ticket with confirmed details is pushed to the group chat.
 
 ---
 
 ## 2. Page Directory & Descriptions
 
-The frontend application consists of **5 main pages or view contexts**:
+The frontend application consists of **6 main pages or view contexts**:
 
 ### 1. Home / Landing Page (`/`)
 - **Purpose**: Brand entry-point showing logo, description, and redirection routes.
@@ -67,28 +68,32 @@ The frontend application consists of **5 main pages or view contexts**:
   - **Status Switcher**: Toggle between "Join Meeting" and "Cannot Join".
   - **Interactive Schedule Grid**: Desktop/mobile responsive scheduler that lets users tap/drag 30-minute time intervals to indicate availability.
   - **Preferences & Vetoes**: Sets price scale, preferred cuisines, vibes, parking/alcohol criteria.
-  - **Priorities Booster Interface**: A drag-and-drop or select interface where users rank their focus factors (Price, Category, Vibe, BTS Station, Rating, Parking, and Alcohol) using either **Normal Mode** (strict ranking) or **Advanced Mode** (tied/grouped ranking).
-  - **Priorities Validation**: Both organizers and attendees are strictly required to select at least one priority focus factor before submitting their forms to prevent unranked fallback states.
-  - **Bypass simulation console**: A dev tool to choose an attendee and fill preferences on their behalf, bypassing LIFF authentication.
+   - **Priorities Booster Interface**: A drag-and-drop or select interface where users rank their focus factors (Price, Category, Vibe, BTS Station, Rating, Parking, and Alcohol) using either **Normal Mode** (strict ranking) or **Advanced Mode** (tied/grouped ranking).
+   - **Priorities Validation**: At least one focus factor must be selected in survey preview mode. The organizer's preferences are submitted at meeting creation and don't require re-validation.
+   - **Bypass simulation console**: A dev tool to choose an attendee and fill preferences on their behalf, bypassing LIFF authentication.
 
 ### 5. Results & Group Dashboard (`/result`)
 This route handles two layout modes:
 - **A. Meeting Results View** (when loaded with `meeting_id` parameter):
-  - **Slots Tab**: Lists time slots sorted by scoring. Highlights full joins, partial joins (with overlap minutes), and allows toggling personal votes.
-  - **Restaurants Tab**: Displays matching restaurants (both **Friends** recommendations and system-ranked **Suggested** venues nearby) with the following features:
+  - **Slots Tab**: Lists time slots with "Prefer this time" toggles. Tap to select. Submit all votes via **Submit My Votes** button.
+  - **Restaurants Tab**: Displays matching restaurants (both **Friends** recommendations and system-ranked **Suggested** venues) with the following features:
     - **Geodistance Metric**: Displays the precise distance (in km) of the restaurant from the meeting's coordinates.
-    - **Veto Auditing**: Lists the exact display names of all attendees who placed a veto (`Tail Out`) on each restaurant.
+    - **Veto Auditing**: Lists the exact display names of all attendees who placed a veto on each restaurant.
     - **Algorithmic Highlight Badges**: Displays tags (e.g. `👑 Key Choice`, `💰 Budget Match`, `🚇 Transit Friendly`, `🚗 Parking`, `🍻 Drinks`, `✨ Good Vibe`) calculated from the MCDM scores.
     - **Recommendation Summary**: Formulates a natural language explanation (for the top venue candidate) outlining which group criteria matched.
-  - **Decision Tab**:
-    - Displays a **Guidance Banner** prompting users to vote in Slots/Restaurants if they haven't yet.
-    - Lists real-time time/restaurant voting tallies.
-    - Shows list of attendees and their "Ready" state checks.
-    - **Veto Filtering Toggle**: Organizer can check *"Exclude Vetoed Restaurants (Tail Out)"* to filter out all vetoed venues from the active selections. Non-organizers receive an information indicator warning them that vetoes have been excluded.
-    - **Spin Wheel Panel**: Allows the organizer to choose a tie-breaker wheel for slots or restaurants, select candidates, spin, and automatically populate the winner.
-    - **Lock Decision Action**: For organizers to submit confirmed parameters and close voting.
-    - **Beta Survey Integration**: Displays a feedback survey button inside the locked ticket container if the `NEXT_PUBLIC_ENABLE_BETA_SURVEY` environment variable is set to `true`. This opens a step-by-step feedback modal powered by the questions in `app/config/survey-questions.json` to collect UAT responses from beta groups.
+  - **Submit My Votes**: Batch saves all toggled slots and restaurant preferences. After submit, shows "Waiting for others..." until all joined attendees have voted.
+  - **Link to Decision Panel**: Bottom card links to `/decision` page for the organizer to finalize.
+  - **Veto Filtering Toggle**: Organizer can check *"Exclude Vetoed Restaurants"* to filter out all vetoed venues.
+  - **Beta Survey Integration**: Displays a feedback survey button inside the locked ticket container if `NEXT_PUBLIC_ENABLE_BETA_SURVEY` is `true`.
 - **B. Group Dashboard View** (when loaded with `group_id` parameter only):
+
+### 6. Decision Panel (`/decision`)
+- **Purpose**: Organizer finalizes the meeting decision. Others observe read-only.
+- **Key Sections**:
+  - **Time Selection**: Pick from ranked list or use spin wheel.
+  - **Restaurant Selection**: Pick from ranked list or use spin wheel.
+  - **Confirm & Notify Group**: Locks the final plan and sends the finalized flex to LINE.
+  - **Observer View**: Non-organizers see the current selections and live wheel animation.
   - Lists all meetings created within that LINE group.
   - Displays dates, status badges (**Vote Now** / **Closed**), and provides direct links to the meeting result pages.
 
