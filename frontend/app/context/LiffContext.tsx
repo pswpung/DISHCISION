@@ -70,12 +70,18 @@ export const LiffProvider = ({ children }: { children: ReactNode }) => {
         // Mock for local dev if LIFF fails (e.g. not in LINE browser)
         if (process.env.NODE_ENV === 'development') {
           console.log("Mocking LIFF for development");
-          setIsLoggedIn(true);
-          setProfile({
-            userId: 'mock-user-id',
-            displayName: 'Mock User',
-            pictureUrl: 'https://via.placeholder.com/150'
-          });
+          const urlParams = new URLSearchParams(window.location.search);
+          const urlUserId = urlParams.get('user_id');
+          if (urlUserId) {
+            setIsLoggedIn(true);
+            setProfile({
+              userId: urlUserId,
+              displayName: `Mock (${urlUserId.substring(0, 8)})`,
+              pictureUrl: 'https://via.placeholder.com/150'
+            });
+          } else {
+            console.log("No user_id found in URL. Staying logged out until bypassed.");
+          }
         }
       }
     };
@@ -100,10 +106,22 @@ export const LiffProvider = ({ children }: { children: ReactNode }) => {
 
   const bypassLiff = () => {
     console.log("Bypassing LIFF validation - using mock profile");
+    const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    let urlUserId = urlParams?.get('user_id');
+    
+    if (!urlUserId) {
+      const userInput = window.prompt("Enter a mock LINE User ID (e.g. U123456) to bypass LINE validation:");
+      if (!userInput || userInput.trim() === "") {
+        alert("A valid user ID is required to bypass LINE validation.");
+        return;
+      }
+      urlUserId = userInput.trim();
+    }
+    
     setIsLoggedIn(true);
     setProfile({
-      userId: 'mock-user-id',
-      displayName: 'Mock User',
+      userId: urlUserId,
+      displayName: `Mock (${urlUserId.substring(0, 8)})`,
       pictureUrl: 'https://via.placeholder.com/150'
     });
     setError(null);
@@ -115,8 +133,8 @@ export const LiffProvider = ({ children }: { children: ReactNode }) => {
       logout: () => { },
       isLoggedIn: () => true,
       getProfile: () => Promise.resolve({
-        userId: 'mock-user-id',
-        displayName: 'Mock User',
+        userId: urlUserId,
+        displayName: `Mock (${urlUserId.substring(0, 8)})`,
         pictureUrl: 'https://via.placeholder.com/150'
       }),
     } as any);

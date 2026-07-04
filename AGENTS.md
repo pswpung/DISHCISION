@@ -24,6 +24,8 @@ Monorepo: `backend/` (Python FastAPI) + `frontend/` (Next.js 15, React 19, Tailw
 - **Models**: SQLAlchemy ORM, auto-created on startup via `Base.metadata.create_all`
 - **Timezone**: hardcoded `Asia/Bangkok`
 - **Pin**: `numpy<2` in pyproject.toml
+- **Flex message design**: `backend/flex-design.md` — color palette, header/body/button patterns. All new Flex messages must follow this.
+- **Scoring filter**: `restaurant_suggestion.py` queries `is_joined == True` only — declined attendees are excluded from all time slot and restaurant scoring.
 
 ## Frontend
 
@@ -40,8 +42,8 @@ Monorepo: `backend/` (Python FastAPI) + `frontend/` (Next.js 15, React 19, Tailw
 - **Webhook**: POST `/line/callback` — validates `X-Line-Signature` header
 - **Frontend SDK**: `@line/liff`; Backend: LINE Messaging API
 - **LIFF login**: `LiffContext.tsx` handles init, suppresses SDK load failure rejections
-- **Flex message design**: `backend/flex-design.md` — color palette, header/body/button patterns. All new Flex messages must follow this.
-- **Flex Messages**: Three types:
+- **Commands**: `#create-meeting` / `#สร้างนัด` — sends Create Meeting button. `#register` — links LINE profile to DB. `#help` — shows command list. Unknown commands silently ignored.
+- **Flex Messages**: Four types:
   - `push_message_creation_flex` — sent when a meeting is created, with "Add Preferences" button
   - `push_message_result_flex` — sent when ALL attendees submit availability; header auto-adapts: "Suggestions Ready" / "Time Finalized" / "Restaurant Fixed" / "Finalized Meeting". Button: "See Suggestions & Vote" → `/result`
   - `push_message_decision_summary_flex` — sent when ALL joined attendees submit votes on `/result`. "All Votes Collected! @organizer_name all votes are in!" Button: "Review & Decide" → `/decision`
@@ -71,7 +73,7 @@ Monorepo: `backend/` (Python FastAPI) + `frontend/` (Next.js 15, React 19, Tailw
 ## Flow
 
 1. **Create meeting** — Organizer fills 3 steps (details → availability → preferences). Submits → meeting created + organizer's vote saved. Survey mode: preview only, no submit.
-2. **Attendees vote** — Each attendee (not organizer) goes to `/availability`, submits RSVP + availability + preferences. When ALL submit → auto-trigger suggestions.
+2. **Attendees vote** — Each attendee (not organizer) goes to `/availability`, submits RSVP + availability + preferences. When ALL attendees have `preference is not None` (including declined — `{}` counts as submitted), auto-triggers suggestions. If zero attendees joined, sends `push_message_all_declined_flex` instead.
 3. **Suggestions ready** — Backend sends `push_message_result_flex` to LINE ("Suggestions Ready, Let's Vote.") → button links to `/result`.
 4. **Vote on result** — `/result` page: toggle "Prefer this time" per slot, prefer/veto restaurants, then "Submit My Votes" (glass-button, batch save). After submit: "Waiting for others..."
 5. **All voted** — When ALL joined attendees submit votes → backend sends `push_message_decision_summary_flex` ("All Votes Collected! @organizer") → button links to `/decision`.

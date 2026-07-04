@@ -1293,6 +1293,27 @@ const MeetingResultView = ({ groupId, meetingId, paramUserId, profile, isLoggedI
         </div>
     );
 
+    if (currentUserId === 'mock-user-id') {
+        return (
+            <div className="flex items-center justify-center min-h-screen p-4">
+                <div className="glass-panel p-8 rounded-2xl flex flex-col items-center gap-6 text-center max-w-sm border border-yellow-500/10">
+                    <div className="w-16 h-16 bg-yellow-500/10 rounded-full flex items-center justify-center text-3xl text-yellow-400">
+                        ⚠️
+                    </div>
+                    <div>
+                        <h2 className="text-xl font-bold mb-2">Invalid Mock User ID</h2>
+                        <p className="text-muted-foreground text-xs leading-relaxed">
+                            Using the generic <strong>'mock-user-id'</strong> is not allowed on the results page to prevent database pollution.
+                        </p>
+                        <p className="text-[10px] text-muted-foreground mt-4 leading-relaxed bg-yellow-500/5 p-3 border border-yellow-500/10 rounded-xl">
+                            Please append your test user ID to the URL (e.g. <code>?user_id=U123456</code>) and refresh.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     if (error) {
         return (
             <div className="flex flex-col items-center justify-center min-h-screen p-4 text-center space-y-4">
