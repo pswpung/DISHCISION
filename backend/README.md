@@ -86,6 +86,8 @@ The backend is modularized into FastAPI routers. The following is a detailed cat
     - **Description**: Fetches user profile data for a specific LINE ID.
 *   `GET /users/group/{group_id}`
     - **Description**: Retrieves all users registered under a specific LINE group.
+*   `GET /users/{user_id}/last-preference`
+    - **Description**: Fetches the last submitted MCDM preferences for a user to prefill new forms.
 *   `PATCH /users/{user_id}`
     - **Description**: Updates user profile properties (display name, picture URL, group mapping).
 *   `DELETE /users/{user_id}`
@@ -135,6 +137,8 @@ The backend is modularized into FastAPI routers. The following is a detailed cat
     - **Description**: Saves organizer preference for slot/restaurant selection: `"majority"`, `"wheel"`, or `"list"`.
 *   `POST /meetings/{meeting_id}/spin-wheel`
     - **Description**: Commits spin wheel animations, landed result, and stop angle values to sync UI states for all group members in real-time.
+*   `POST /meetings/{meeting_id}/reset-wheel`
+    - **Description**: Resets the spin wheel state to allow spin repetition or reconfiguration.
 *   `POST /meetings/{meeting_id}/select-wheel-restaurants`
     - **Description**: Logs a subset of user-selected restaurants to populate the tie-breaker wheel.
 *   `POST /meetings/{meeting_id}/toggle-exclude-vetoed`
@@ -147,6 +151,8 @@ The backend is modularized into FastAPI routers. The following is a detailed cat
     - **Description**: Saves which time slots the organizer selected for the spin wheel.
 *   `POST /meetings/{meeting_id}/feedback`
     - **Description**: Submits beta user feedback answers and saves them as a structured JSON object in the database's `feedbacks` table.
+*   `GET /meetings/{meeting_id}/feedback/{user_id}`
+    - **Description**: Fetches feedback submitted by a specific user for a specific meeting.
 
 
 ### 🙋 Meeting Attendees Router (`/attendee`)
@@ -164,6 +170,8 @@ The backend is modularized into FastAPI routers. The following is a detailed cat
     - **Description**: Exposes available values for preferences (sorted price lists, categories, parking, alcohols, vibes).
 *   `POST /restaurant/suggest/{meeting_id}`
     - **Description**: Generates schedule slots and restaurant recommendations, caching them in the database.
+*   `GET /restaurant/search`
+    - **Description**: Performs a hybrid vector search or fast name-based query against the database using a search keyword.
 
 ### 🧪 Playground Router (`/playground`)
 *   `POST /playground/calculate`
@@ -195,7 +203,7 @@ The system evaluates every possible 30-minute slot within the meeting date range
 
 ### Formula
 ---
-$$S_{\text{final}} = (S_{\text{avail}} \times 0.5) + (S_{\text{meal}} \times 0.3) + (S_{\text{quality}} \times 0.2)$$
+$$S_{\text{final}} = (S_{\text{avail}} \times 0.7) + (S_{\text{meal}} \times 0.2) + (S_{\text{quality}} \times 0.1)$$
 
 Where:
 - $S_{\text{final}}$: The final score of the time slot (1–10).
@@ -205,21 +213,29 @@ Where:
 
 ### Components
 ---
-#### A. Availability Score (50%)
-Measures how many people can attend, prioritizing Key Persons over General Attendees.
+#### A. Availability Score (70%)
+Measures how many people can attend, prioritizing Key Persons over General Attendees. Rather than evaluating attendance as binary (1 or 0), the system dynamically computes **Full Joins** and **Partial Joins** based on the overlap between an attendee's availability and the candidate slot's duration:
+
+*   **Full Join**: The attendee is available for the entire duration of the slot.
+*   **Partial Join**: The attendee is available for part of the slot. A fractional weight is assigned:
+    $$\text{weight}_p = \frac{\text{overlap\_minutes}}{\text{slot\_duration\_minutes}}$$
+
+These weights are used to calculate the adjusted ratios of Key Persons and General Attendees:
 
 $$S_{\text{avail}} = \left( (R_{\text{kp}} \times W_{\text{kp}}) + (R_{\text{gen}} \times W_{\text{gen}}) \right) \times 10$$
 
 Where:
 - $S_{\text{avail}}$: The calculated availability score (0–10).
-- $R_{\text{kp}}$: The ratio of available Key Persons, defined as $\frac{\text{Available Key Persons}}{\text{Total Key Persons}}$.
-- $R_{\text{gen}}$: The ratio of available General Attendees, defined as $\frac{\text{Available General Attendees}}{\text{Total General Attendees}}$.
+- $R_{\text{kp}}$: The adjusted ratio of available Key Persons:
+  $$R_{\text{kp}} = \frac{\text{full\_kp\_count} + \sum_{p \in \text{partial\_kp}} \text{weight}_p}{\text{Total Key Persons}}$$
+- $R_{\text{gen}}$: The adjusted ratio of available General Attendees:
+  $$R_{\text{gen}} = \frac{\text{full\_at\_count} + \sum_{p \in \text{partial\_at}} \text{weight}_p}{\text{Total Attendees}}$$
 - $W_{\text{kp}}$: The weight assigned to Key Persons (default is $0.7$).
 - $W_{\text{gen}}$: The weight assigned to General Attendees (default is $0.3$).
 
-*Example: If all Key Persons are available ($R_{\text{kp}} = 1.0$) and 50% of others are available ($R_{\text{gen}} = 0.5$), the score is $((1.0 \times 0.7) + (0.5 \times 0.3)) \times 10 = 8.5$.*
+*Example: If a 2-hour slot is evaluated, and the only Key Person ($N_{\text{kp}} = 1$) can join for only 1.5 hours ($\text{weight}_p = 0.75$), the adjusted ratio $R_{\text{kp}}$ is $0.75$ instead of $0$ (which would occur if full attendance was strictly required).*
 
-#### B. Meal Preference Score (30%)
+#### B. Meal Preference Score (20%)
 Measures if the slot duration matches the group's meal preferences (e.g., Lunch or Dinner).
 - **Goal:** Suggest a slot long enough for a proper meal.
 - **Max Score:** Based on total attendee count multiplied by ideal duration steps (e.g., 2 hours = 4 steps).
@@ -231,7 +247,7 @@ Where:
 - $P_{\text{accumulated}}$: Total accumulated points based on overlap with the ideal meal hours requested by attendees.
 - $P_{\text{max}}$: The maximum possible points for the slot duration (total attendee count $\times$ ideal duration steps).
 
-#### C. Time Quality Score (20%)
+#### C. Time Quality Score (10%)
 Measures the "quality" of the time based on standard eating habits.
 
 | Time Range | Points | Meal Type |
@@ -294,17 +310,18 @@ Where:
 - $s_f$: The match score of the restaurant for factor $f$ (0 or 100, except for continuous metrics like Station Proximity and Rating):
 
 ##### 1. Individual ROC Weight Calculation ($w_f$):
-The software offers two modes for factor prioritization in the user interface:
+The software offers three modes for factor weight determination:
+- **AI Craving Mode**: If the attendee provides a non-empty `free_text` query, the prioritization process is bypassed entirely. The `AICraving` factor receives a weight of `1.0`, and all other factors are set to `0.0`.
 - **Normal Mode**: Allows attendees to strictly drag-and-drop or select one factor per rank level (no ties).
 - **Advanced Mode**: Allows attendees to group multiple factors together in the same rank tier (creating tied priorities).
 
-For any prioritized list of lists (where rank 1 is highest priority), the ROC weight for a factor at rank slot position $r$ out of $k$ total prioritized items is:
+For any prioritized list of lists in Normal or Advanced Mode (where rank 1 is highest priority), the ROC weight for a factor at rank slot position $r$ out of $k$ total prioritized items is:
 $$w_r = \frac{1}{k} \sum_{j=r}^{k} \frac{1}{j}$$
 
 - **Tied-Rank Weight Adjustment (Advanced Mode)**: When multiple factors share the same priority tier $T$, they share the average of the ROC weights of the rank slots they span. For a tier $T$ covering rank slots from $r_{\text{start}}$ to $r_{\text{end}}$:
   $$w_f = \frac{1}{|T|} \sum_{i=r_{\text{start}}}^{r_{\text{end}}} w_i, \quad \forall f \in T$$
   Where $|T| = r_{\text{end}} - r_{\text{start}} + 1$ is the number of factors in that tier.
-- **Unranked Fallback**: Factors not prioritized by the attendee receive a weight of $0.0$. If no priorities are specified at all, all standard factors share equal weight ($1/7$ or $\approx 14.3\%$).
+- **Unranked Fallback**: Factors not prioritized by the attendee receive a weight of $0.0$. If no priorities are specified at all (and no `free_text` is provided), all standard factors share equal weight ($1/7$ or $\approx 14.3\%$).
 
 ###### **Normal Mode Example (Strict Ordering: One factor per rank)**
 Suppose a user prioritizes exactly three single factors: Rank 1 = $\text{Category}$, Rank 2 = $\text{Price}$, Rank 3 = $\text{Vibe}$.
